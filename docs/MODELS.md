@@ -70,6 +70,9 @@ pvforecast train --model xgb
 | `cloud_cover` | Bewölkung (%) | Open-Meteo |
 | `temperature` | Temperatur (°C) | Open-Meteo |
 | `sun_elevation` | Sonnenhöhe (°) | Berechnet |
+| `wind_speed` | Windgeschwindigkeit (m/s) | Open-Meteo |
+| `humidity` | Relative Luftfeuchtigkeit (%) | Open-Meteo |
+| `dhi` | Diffusstrahlung (W/m²) | Open-Meteo |
 
 ---
 

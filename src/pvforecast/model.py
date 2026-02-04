@@ -114,13 +114,15 @@ def prepare_features(df: pd.DataFrame, lat: float, lon: float) -> pd.DataFrame:
     Erstellt Feature-DataFrame für ML-Modell.
 
     Args:
-        df: DataFrame mit timestamp, ghi_wm2, cloud_cover_pct, temperature_c
+        df: DataFrame mit timestamp, ghi_wm2, cloud_cover_pct, temperature_c,
+            und optional: wind_speed_ms, humidity_pct, dhi_wm2
         lat: Breitengrad (für Sonnenhöhe)
         lon: Längengrad
 
     Returns:
         DataFrame mit Features: hour, month, day_of_year, ghi, cloud_cover,
-                               temperature, sun_elevation
+                               temperature, sun_elevation, wind_speed,
+                               humidity, dhi
     """
     features = pd.DataFrame()
 
@@ -130,10 +132,20 @@ def prepare_features(df: pd.DataFrame, lat: float, lon: float) -> pd.DataFrame:
     features["month"] = timestamps.dt.month
     features["day_of_year"] = timestamps.dt.dayofyear
 
-    # Wetter-Features
+    # Wetter-Features (Basis)
     features["ghi"] = df["ghi_wm2"]
     features["cloud_cover"] = df["cloud_cover_pct"]
     features["temperature"] = df["temperature_c"]
+
+    # Erweiterte Wetter-Features (optional, Defaults wenn nicht vorhanden)
+    features["wind_speed"] = df.get("wind_speed_ms", pd.Series([0.0] * len(df)))
+    features["humidity"] = df.get("humidity_pct", pd.Series([50] * len(df)))
+    features["dhi"] = df.get("dhi_wm2", pd.Series([0.0] * len(df)))
+
+    # NaN-Handling für erweiterte Features
+    features["wind_speed"] = features["wind_speed"].fillna(0.0)
+    features["humidity"] = features["humidity"].fillna(50)
+    features["dhi"] = features["dhi"].fillna(0.0)
 
     # Sonnenhöhe berechnen
     features["sun_elevation"] = df["timestamp"].apply(
@@ -225,7 +237,10 @@ def train(
                 p.production_w,
                 w.ghi_wm2,
                 w.cloud_cover_pct,
-                w.temperature_c
+                w.temperature_c,
+                w.wind_speed_ms,
+                w.humidity_pct,
+                w.dhi_wm2
             FROM pv_readings p
             INNER JOIN weather_history w ON p.timestamp = w.timestamp
             WHERE p.curtailed = 0  -- Keine abgeregelten Daten
@@ -319,7 +334,10 @@ def tune(
                 p.production_w,
                 w.ghi_wm2,
                 w.cloud_cover_pct,
-                w.temperature_c
+                w.temperature_c,
+                w.wind_speed_ms,
+                w.humidity_pct,
+                w.dhi_wm2
             FROM pv_readings p
             INNER JOIN weather_history w ON p.timestamp = w.timestamp
             WHERE p.curtailed = 0

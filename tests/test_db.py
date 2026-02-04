@@ -117,6 +117,8 @@ class TestDatabase:
 
     def test_schema_version_stored(self, tmp_path):
         """Test: Schema-Version wird gespeichert."""
+        from pvforecast.db import SCHEMA_VERSION
+
         db = Database(tmp_path / "test.db")
 
         with db.connect() as conn:
@@ -125,4 +127,4 @@ class TestDatabase:
             ).fetchone()
 
         assert result is not None
-        assert result[0] == "1"
+        assert result[0] == str(SCHEMA_VERSION)

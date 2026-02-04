@@ -91,7 +91,10 @@ CREATE TABLE weather_history (
     timestamp           INTEGER PRIMARY KEY,
     ghi_wm2             REAL NOT NULL,    -- Globalstrahlung W/m²
     cloud_cover_pct     INTEGER,          -- Bewölkung %
-    temperature_c       REAL              -- Temperatur °C
+    temperature_c       REAL,             -- Temperatur °C
+    wind_speed_ms       REAL,             -- Windgeschwindigkeit m/s
+    humidity_pct        INTEGER,          -- Luftfeuchtigkeit %
+    dhi_wm2             REAL              -- Diffusstrahlung W/m²
 );
 ```
 
@@ -133,6 +136,9 @@ Wetterdaten werden automatisch von [Open-Meteo](https://open-meteo.com/) geladen
 | GHI | `shortwave_radiation` | Globalstrahlung (W/m²) |
 | Bewölkung | `cloud_cover` | Bewölkungsgrad (%) |
 | Temperatur | `temperature_2m` | Temperatur in 2m Höhe (°C) |
+| Wind | `wind_speed_10m` | Windgeschwindigkeit in 10m (m/s) |
+| Luftfeuchtigkeit | `relative_humidity_2m` | Relative Luftfeuchtigkeit (%) |
+| DHI | `diffuse_radiation` | Diffusstrahlung (W/m²) |
 
 ### Automatisches Laden
 

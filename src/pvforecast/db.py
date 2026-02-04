@@ -8,7 +8,7 @@ from contextlib import contextmanager
 from pathlib import Path
 
 # Schema Version für Migrations
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 SCHEMA_SQL = """
 -- PV-Ertragsdaten (aus E3DC CSV)
@@ -27,7 +27,11 @@ CREATE TABLE IF NOT EXISTS weather_history (
     timestamp           INTEGER PRIMARY KEY,  -- Unix timestamp (UTC)
     ghi_wm2             REAL NOT NULL,        -- Globalstrahlung W/m²
     cloud_cover_pct     INTEGER,              -- Bewölkung %
-    temperature_c       REAL                  -- Temperatur °C
+    temperature_c       REAL,                 -- Temperatur °C
+    -- Erweiterte Features (v2)
+    wind_speed_ms       REAL,                 -- Windgeschwindigkeit m/s
+    humidity_pct        INTEGER,              -- Relative Luftfeuchtigkeit %
+    dhi_wm2             REAL                  -- Diffusstrahlung W/m²
 );
 
 -- Metadaten
@@ -41,6 +45,13 @@ CREATE INDEX IF NOT EXISTS idx_pv_timestamp ON pv_readings(timestamp);
 CREATE INDEX IF NOT EXISTS idx_weather_timestamp ON weather_history(timestamp);
 """
 
+# Migration von Schema v1 zu v2
+MIGRATION_V1_TO_V2 = """
+ALTER TABLE weather_history ADD COLUMN wind_speed_ms REAL;
+ALTER TABLE weather_history ADD COLUMN humidity_pct INTEGER;
+ALTER TABLE weather_history ADD COLUMN dhi_wm2 REAL;
+"""
+
 
 class Database:
     """SQLite Datenbank-Wrapper für pvforecast."""
@@ -50,15 +61,43 @@ class Database:
         self._ensure_schema()
 
     def _ensure_schema(self) -> None:
-        """Erstellt Schema falls nicht vorhanden."""
+        """Erstellt Schema falls nicht vorhanden und führt Migrationen durch."""
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         with self.connect() as conn:
             conn.executescript(SCHEMA_SQL)
+
+            # Aktuelle Schema-Version prüfen
+            try:
+                result = conn.execute(
+                    "SELECT value FROM metadata WHERE key = 'schema_version'"
+                ).fetchone()
+                current_version = int(result[0]) if result else 1
+            except sqlite3.OperationalError:
+                # metadata Tabelle existiert noch nicht
+                current_version = 1
+
+            # Migrationen durchführen
+            if current_version < 2:
+                self._migrate_v1_to_v2(conn)
+
             # Schema-Version setzen
             conn.execute(
                 "INSERT OR REPLACE INTO metadata (key, value) VALUES (?, ?)",
                 ("schema_version", str(SCHEMA_VERSION)),
             )
+
+    def _migrate_v1_to_v2(self, conn: sqlite3.Connection) -> None:
+        """Migration von Schema v1 zu v2: Erweiterte Wetter-Features."""
+        # Prüfe ob Spalten bereits existieren
+        cursor = conn.execute("PRAGMA table_info(weather_history)")
+        columns = {row[1] for row in cursor.fetchall()}
+
+        if "wind_speed_ms" not in columns:
+            conn.execute("ALTER TABLE weather_history ADD COLUMN wind_speed_ms REAL")
+        if "humidity_pct" not in columns:
+            conn.execute("ALTER TABLE weather_history ADD COLUMN humidity_pct INTEGER")
+        if "dhi_wm2" not in columns:
+            conn.execute("ALTER TABLE weather_history ADD COLUMN dhi_wm2 REAL")
 
     @contextmanager
     def connect(self) -> Generator[sqlite3.Connection, None, None]:
