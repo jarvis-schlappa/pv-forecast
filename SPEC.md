@@ -11,10 +11,10 @@
 **Warum:** Bessere Planung von Energieverbrauch, Speichernutzung und ggf. Einspeisung.
 
 **Erfolgskriterien:**
-- [ ] Prognose für 48h mit Stundenwerten (W) und Tagesertrag (kWh)
-- [ ] Abweichung vom tatsächlichen Ertrag < 20% (MAPE) bei normalen Wetterbedingungen
-- [ ] CLI-Aufruf liefert Ergebnis in < 10 Sekunden
-- [ ] Läuft auf macOS (Mac mini) und Linux (Raspberry Pi)
+- [x] Prognose für 48h mit Stundenwerten (W) und Tagesertrag (kWh)
+- [ ] Abweichung vom tatsächlichen Ertrag < 20% (MAPE) bei normalen Wetterbedingungen *(aktuell: 45.6%)*
+- [x] CLI-Aufruf liefert Ergebnis in < 10 Sekunden
+- [x] Läuft auf macOS (Mac mini) und Linux (Raspberry Pi)
 
 ---
 
@@ -472,24 +472,24 @@ class ModelNotFoundError(PVForecastError):
 - [x] Entscheidungen dokumentiert
 
 ### 👨‍💻 Entwickler
-- [ ] Projektsetup (pyproject.toml, venv)
-- [ ] DB-Schema + Migrations
-- [ ] data_loader.py
-- [ ] weather.py
-- [ ] model.py
-- [ ] cli.py
-- [ ] README.md
+- [x] Projektsetup (pyproject.toml, venv)
+- [x] DB-Schema + Migrations
+- [x] data_loader.py
+- [x] weather.py
+- [x] model.py (RandomForest + XGBoost)
+- [x] cli.py
+- [ ] README.md aktualisieren (#20)
 
 ### 🧪 Tester
-- [ ] Unit Tests pro Modul
-- [ ] Integration Test (End-to-End)
-- [ ] Edge Cases (leere DB, API-Fehler, fehlende Daten)
+- [x] Unit Tests pro Modul (65 Tests)
+- [ ] Integration Test (End-to-End) (#21)
+- [x] Edge Cases (leere DB, API-Fehler, fehlende Daten)
 - [ ] Performance-Test (< 10s Ziel)
 
 ### 🔒 Security
-- [ ] Keine Secrets im Code
-- [ ] Input-Validierung (Pfade, Koordinaten)
-- [ ] API-Rate-Limiting beachtet (Open-Meteo: 10k/Tag)
+- [x] Keine Secrets im Code
+- [ ] Input-Validierung (Pfade, Koordinaten) (#22)
+- [x] API-Rate-Limiting beachtet (Retry mit Backoff + Jitter)
 
 ---
 
@@ -509,26 +509,30 @@ class ModelNotFoundError(PVForecastError):
 
 ## 12. Roadmap
 
-### Phase 1: MVP
+### Phase 1: MVP ✅
 1. ✅ SPEC.md
-2. Projektsetup (pyproject.toml)
-3. DB-Schema + `db.py`
-4. `data_loader.py` – CSV Import
-5. `weather.py` – Open-Meteo Client
-6. `model.py` – RandomForest Training/Predict
-7. `cli.py` – predict, import, train, status
-8. README.md
+2. ✅ Projektsetup (pyproject.toml)
+3. ✅ DB-Schema + `db.py`
+4. ✅ `data_loader.py` – CSV Import
+5. ✅ `weather.py` – Open-Meteo Client
+6. ✅ `model.py` – RandomForest Training/Predict
+7. ✅ `cli.py` – predict, import, train, status
+8. 🔲 README.md (#20)
 
-### Phase 2: Polish
-- Bessere Evaluation-Metriken
-- XGBoost als Alternative
-- Caching optimieren
-- Error-Handling verbessern
+### Phase 2: Polish ✅
+- ✅ Bessere Evaluation-Metriken (`evaluate` Befehl)
+- ✅ XGBoost als Alternative (#6, PR #19)
+- ✅ Caching/Performance optimieren (Bulk Insert #11)
+- ✅ Error-Handling verbessern (Retry-Logic #2, #12)
+- ✅ Config-File Support (YAML, #4)
+- 🔲 Input-Validierung (#22)
+- 🔲 Integration Tests (#21)
 
-### Phase 3: GUI (später)
-- Web-UI oder TUI
-- Visualisierung (Charts)
-- Automatische tägliche Updates
+### Phase 3: Erweiterungen (später)
+- 🔲 Automatische tägliche Updates (#23)
+- 🔲 Visualisierung (Charts)
+- 🔲 Web-UI oder TUI
+- 🔲 Hyperparameter-Tuning (#18)
 
 ---
 
