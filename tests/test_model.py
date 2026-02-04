@@ -282,3 +282,49 @@ class TestTune:
 
             lr = param_dist["learning_rate"].rvs()
             assert 0.01 <= lr <= 0.30
+
+
+class TestExtendedFeatures:
+    """Tests für erweiterte Wetter-Features in prepare_features."""
+
+    def test_prepare_features_with_extended_weather(self):
+        """Test: prepare_features nutzt erweiterte Wetter-Features."""
+        from pvforecast.model import prepare_features
+
+        df = pd.DataFrame({
+            "timestamp": [1704067200, 1704070800],  # 2 Stunden
+            "ghi_wm2": [500.0, 600.0],
+            "cloud_cover_pct": [30, 40],
+            "temperature_c": [15.0, 16.0],
+            "wind_speed_ms": [5.5, 6.0],
+            "humidity_pct": [65, 70],
+            "dhi_wm2": [150.0, 180.0],
+        })
+
+        features = prepare_features(df, 51.83, 7.28)
+
+        assert "wind_speed" in features.columns
+        assert "humidity" in features.columns
+        assert "dhi" in features.columns
+        assert features["wind_speed"].iloc[0] == 5.5
+        assert features["humidity"].iloc[0] == 65
+        assert features["dhi"].iloc[0] == 150.0
+
+    def test_prepare_features_without_extended_weather(self):
+        """Test: prepare_features funktioniert auch ohne erweiterte Features."""
+        from pvforecast.model import prepare_features
+
+        # Nur Basis-Features (wie alte Daten)
+        df = pd.DataFrame({
+            "timestamp": [1704067200],
+            "ghi_wm2": [500.0],
+            "cloud_cover_pct": [30],
+            "temperature_c": [15.0],
+        })
+
+        features = prepare_features(df, 51.83, 7.28)
+
+        # Sollte Defaults verwenden
+        assert features["wind_speed"].iloc[0] == 0.0
+        assert features["humidity"].iloc[0] == 50
+        assert features["dhi"].iloc[0] == 0.0

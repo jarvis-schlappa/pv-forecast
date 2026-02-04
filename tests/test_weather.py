@@ -414,3 +414,128 @@ class TestSaveWeatherToDb:
             ).fetchone()
             assert row[0] == 200.0
             assert row[1] == 75
+
+
+class TestExtendedWeatherFeatures:
+    """Tests für erweiterte Wetter-Features (Wind, Humidity, DHI)."""
+
+    def test_save_extended_features(self, tmp_path):
+        """Test: Erweiterte Features werden gespeichert."""
+        from pvforecast.db import Database
+        from pvforecast.weather import save_weather_to_db
+
+        db = Database(tmp_path / "test.db")
+
+        df = pd.DataFrame([{
+            "timestamp": 1704067200,
+            "ghi_wm2": 500.0,
+            "cloud_cover_pct": 30,
+            "temperature_c": 15.0,
+            "wind_speed_ms": 5.5,
+            "humidity_pct": 65,
+            "dhi_wm2": 150.0,
+        }])
+        result = save_weather_to_db(df, db)
+
+        assert result == 1
+
+        with db.connect() as conn:
+            row = conn.execute(
+                """SELECT wind_speed_ms, humidity_pct, dhi_wm2
+                   FROM weather_history WHERE timestamp = ?""",
+                (1704067200,)
+            ).fetchone()
+            assert row[0] == 5.5
+            assert row[1] == 65
+            assert row[2] == 150.0
+
+    def test_parse_response_with_extended_features(self):
+        """Test: API-Response mit erweiterten Features wird korrekt geparst."""
+        from pvforecast.weather import _parse_weather_response
+
+        data = {
+            "hourly": {
+                "time": ["2024-01-01T12:00", "2024-01-01T13:00"],
+                "shortwave_radiation": [500.0, 600.0],
+                "cloud_cover": [30, 40],
+                "temperature_2m": [15.0, 16.0],
+                "wind_speed_10m": [5.5, 6.0],
+                "relative_humidity_2m": [65, 70],
+                "diffuse_radiation": [150.0, 180.0],
+            }
+        }
+
+        df = _parse_weather_response(data)
+
+        assert len(df) == 2
+        assert df["wind_speed_ms"].iloc[0] == 5.5
+        assert df["humidity_pct"].iloc[0] == 65
+        assert df["dhi_wm2"].iloc[0] == 150.0
+
+    def test_parse_response_missing_extended_features(self):
+        """Test: Fehlende erweiterte Features bekommen Defaults."""
+        from pvforecast.weather import _parse_weather_response
+
+        data = {
+            "hourly": {
+                "time": ["2024-01-01T12:00"],
+                "shortwave_radiation": [500.0],
+                "cloud_cover": [30],
+                "temperature_2m": [15.0],
+                # Keine erweiterten Features
+            }
+        }
+
+        df = _parse_weather_response(data)
+
+        assert len(df) == 1
+        assert df["wind_speed_ms"].iloc[0] == 0.0  # Default
+        assert df["humidity_pct"].iloc[0] == 50    # Default
+        assert df["dhi_wm2"].iloc[0] == 0.0        # Default
+
+    def test_db_migration_adds_columns(self, tmp_path):
+        """Test: DB-Migration fügt neue Spalten hinzu."""
+        import sqlite3
+
+        db_path = tmp_path / "test.db"
+
+        # Erstelle alte DB ohne neue Spalten
+        conn = sqlite3.connect(db_path)
+        conn.execute("""
+            CREATE TABLE weather_history (
+                timestamp INTEGER PRIMARY KEY,
+                ghi_wm2 REAL NOT NULL,
+                cloud_cover_pct INTEGER,
+                temperature_c REAL
+            )
+        """)
+        conn.execute("""
+            CREATE TABLE metadata (key TEXT PRIMARY KEY, value TEXT)
+        """)
+        conn.execute("INSERT INTO metadata VALUES ('schema_version', '1')")
+        conn.execute("""
+            INSERT INTO weather_history VALUES (1704067200, 500.0, 30, 15.0)
+        """)
+        conn.commit()
+        conn.close()
+
+        # Jetzt mit Database öffnen - sollte migrieren
+        from pvforecast.db import Database
+        db = Database(db_path)
+
+        # Prüfe dass neue Spalten existieren
+        with db.connect() as conn:
+            cursor = conn.execute("PRAGMA table_info(weather_history)")
+            columns = {row[1] for row in cursor.fetchall()}
+
+            assert "wind_speed_ms" in columns
+            assert "humidity_pct" in columns
+            assert "dhi_wm2" in columns
+
+            # Alte Daten sollten NULL haben für neue Spalten
+            row = conn.execute(
+                "SELECT wind_speed_ms, humidity_pct, dhi_wm2 FROM weather_history"
+            ).fetchone()
+            assert row[0] is None
+            assert row[1] is None
+            assert row[2] is None
