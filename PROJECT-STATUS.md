@@ -1,49 +1,36 @@
 # PV-Forecast – Projektstatus
 
-> Letzte Aktualisierung: 2026-02-04 20:20
+> Letzte Aktualisierung: 2026-02-04 21:05
 
-## 🎯 Aktueller Stand: MVP + Verbesserungen ✅
+## 🎯 Aktueller Stand: Phase 2 abgeschlossen ✅
 
-Das CLI-Tool funktioniert und wird aktiv verbessert.
-
----
-
-## 🔄 Entwicklungs-Workflow
-
-**⚠️ Vor jedem Commit: Architekten-Review!**
-
-```
-1. Issue auswählen
-2. Branch erstellen (fix/... oder feature/...)
-3. Code implementieren
-4. 🏗️ ARCHITEKTEN-REVIEW (vor Commit!)
-5. Tests schreiben/laufen lassen
-6. Commit + Push
-7. PR erstellen
-8. CI abwarten
-9. Merge + Cleanup
-```
+MVP + alle geplanten Verbesserungen implementiert.
 
 ---
 
 ## ✅ Erledigte Issues
 
-| # | Titel | PR |
-|---|-------|-----|
-| #1 | Lücken-Erkennung | #7 ✅ |
-| #2 | Retry-Logic | #8 ✅ |
-| #4 | Config-File (YAML) | #9 ✅ |
+| # | Titel | PR | Status |
+|---|-------|-----|--------|
+| #1 | Lücken-Erkennung | #7 | ✅ |
+| #2 | Retry-Logic | #8 | ✅ |
+| #3 | evaluate (Backtesting) | #15 | ✅ |
+| #4 | Config-File (YAML) | #9 | ✅ |
+| #5 | Tests vervollständigen | #16 | ✅ |
+| #6 | XGBoost | #19 | ✅ |
+| #10 | Config-Validierung | #13 | ✅ |
+| #11 | Bulk Insert Performance | #14 | ✅ |
+| #12 | Retry 429 + Jitter | #17 | ✅ |
 
 ## 🔓 Offene Issues
 
-| # | Titel | Prio |
-|---|-------|------|
-| #10 | Config-Validierung | 🔴 Hoch |
-| #11 | Bulk Insert Performance | 🔴 Hoch |
-| #3 | evaluate (Backtesting) | 🟡 Mittel |
-| #5 | Tests vervollständigen | 🟡 Mittel |
-| #6 | XGBoost | 🟢 Niedrig |
-| #12 | Retry 429 + Jitter | 🟢 Niedrig |
+| # | Titel | Prio | Phase |
+|---|-------|------|-------|
+| #18 | Hyperparameter-Tuning | 🟢 Niedrig | 3 |
+| #20 | README aktualisieren | 🟡 Mittel | 2 |
+| #21 | Integration Tests (E2E) | 🟡 Mittel | 2 |
+| #22 | Input-Validierung | 🟢 Niedrig | 2 |
+| #23 | Automatische tägliche Prognose | 🟢 Niedrig | 3 |
 
 ---
 
@@ -52,14 +39,22 @@ Das CLI-Tool funktioniert und wird aktiv verbessert.
 | Daten | Anzahl | Zeitraum |
 |-------|--------|----------|
 | PV-Readings | 61.354 | 2019-2025 |
-| Wetter | 61.320 | 2018-2025 |
+| Wetter | 62.136 | 2018-2025 |
 
 ## 🤖 Modell-Performance
 
-| Metrik | Wert |
-|--------|------|
-| **MAE** | 183 W |
-| **MAPE** | 45.6% |
+| Modell | MAE | MAPE |
+|--------|-----|------|
+| RandomForest | 183 W | 45.6% |
+| XGBoost | 185 W | 45.6% |
+
+---
+
+## 🧪 Test-Abdeckung
+
+- **65 Unit-Tests** ✅
+- Module: data_loader, weather, model, config, db
+- CI: GitHub Actions (Python 3.9-3.12)
 
 ---
 
@@ -68,19 +63,28 @@ Das CLI-Tool funktioniert und wird aktiv verbessert.
 ```bash
 cd ~/projects/pv-forecast && source .venv/bin/activate
 
-pvforecast today              # Prognose heute
+# Prognose
+pvforecast today              # heute (ganzer Tag)
 pvforecast predict            # morgen + übermorgen
 pvforecast predict --days 3   # 3 Tage
+
+# Training
+pvforecast train              # RandomForest (default)
+pvforecast train --model xgb  # XGBoost
+
+# Verwaltung
 pvforecast status             # DB-Status
-pvforecast train              # Modell trainieren
 pvforecast import <csv>       # E3DC CSV importieren
+pvforecast evaluate           # Modell evaluieren
+
+# Konfiguration
 pvforecast config --show      # Config anzeigen
 pvforecast config --init      # Config-Datei erstellen
 ```
 
 ---
 
-## 📂 Struktur
+## 📂 Dateien
 
 ```
 ~/.config/pvforecast/config.yaml    # Konfiguration
@@ -94,3 +98,4 @@ pvforecast config --init      # Config-Datei erstellen
 
 - **GitHub:** https://github.com/jarvis-schlappa/pv-forecast
 - **CI:** GitHub Actions (Python 3.9-3.12)
+- **Issues:** https://github.com/jarvis-schlappa/pv-forecast/issues
