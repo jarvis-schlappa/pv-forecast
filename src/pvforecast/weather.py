@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import random
 import time
 from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
@@ -67,14 +68,24 @@ def _request_with_retry(
                 return response.json()
 
         except httpx.HTTPStatusError as e:
-            # HTTP-Fehler (4xx, 5xx) - nicht wiederholen bei Client-Fehlern
-            if e.response.status_code < 500:
-                raise WeatherAPIError(f"API-Fehler: {e.response.status_code}") from e
-            last_error = e
-            logger.warning(
-                f"Server-Fehler {e.response.status_code}, "
-                f"Versuch {attempt + 1}/{max_retries}"
-            )
+            status = e.response.status_code
+
+            # HTTP 429 (Rate Limited) - wiederholen mit längerem Backoff
+            if status == 429:
+                last_error = e
+                logger.warning(
+                    f"Rate limited (429), Versuch {attempt + 1}/{max_retries}"
+                )
+            # Andere 4xx Fehler - nicht wiederholen
+            elif status < 500:
+                raise WeatherAPIError(f"API-Fehler: {status}") from e
+            # 5xx Server-Fehler - wiederholen
+            else:
+                last_error = e
+                logger.warning(
+                    f"Server-Fehler {status}, "
+                    f"Versuch {attempt + 1}/{max_retries}"
+                )
 
         except (httpx.TimeoutException, httpx.ConnectError) as e:
             # Timeout oder Verbindungsfehler - wiederholen
@@ -92,9 +103,13 @@ def _request_with_retry(
                 f"Versuch {attempt + 1}/{max_retries}"
             )
 
-        # Warte vor nächstem Versuch (exponential backoff)
+        # Warte vor nächstem Versuch (exponential backoff mit Jitter)
         if attempt < max_retries - 1:
-            delay = retry_delay * (2 ** attempt)
+            # Basis-Delay mit Exponential Backoff
+            base_delay = retry_delay * (2 ** attempt)
+            # Jitter: 50-150% des Basis-Delays (verhindert "Thundering Herd")
+            jitter = 0.5 + random.random()  # 0.5 bis 1.5
+            delay = base_delay * jitter
             logger.info(f"Warte {delay:.1f}s vor nächstem Versuch...")
             time.sleep(delay)
 
