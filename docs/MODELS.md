@@ -148,18 +148,21 @@ pvforecast evaluate --year 2024
 
 | Metrik | Beschreibung | Gut wenn |
 |--------|--------------|----------|
-| **MAE** | Mean Absolute Error (Watt) | < 200 W |
-| **MAPE** | Mean Absolute Percentage Error | < 30% |
+| **MAE** | Mean Absolute Error (Watt) | < 150 W |
+| **MAPE** | Mean Absolute Percentage Error | < 35% |
 
 **Hinweis:** MAPE wird nur für Stunden >100W berechnet (vermeidet Verzerrung bei Nacht/Dämmerung).
 
 ### Aktuelle Performance
 
-| Modell | MAE | MAPE |
-|--------|-----|------|
-| RandomForest (default) | 183 W | 45.6% |
-| XGBoost (default) | 185 W | 45.6% |
-| XGBoost (tuned) | 176 W | 43.4% |
+*Mit erweiterten Wetter-Features (Wind, Humidity, DHI):*
+
+| Modell | MAE | MAPE | Anmerkung |
+|--------|-----|------|-----------|
+| **XGBoost (tuned)** | **117 W** | **29.4%** | ⭐ Empfohlen |
+| RandomForest | 183 W | ~45% | Basis |
+
+*Die erweiterten Wetter-Features haben die Genauigkeit um ~15 Prozentpunkte verbessert.*
 
 ---
 

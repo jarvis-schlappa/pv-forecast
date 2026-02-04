@@ -1,10 +1,11 @@
 # PV-Forecast – Projektstatus
 
-> Letzte Aktualisierung: 2026-02-04 21:25
+> Letzte Aktualisierung: 2026-02-04 22:50
 
-## 🎯 Aktueller Stand: Phase 2 abgeschlossen ✅
+## 🎯 Aktueller Stand: Phase 3 begonnen ✅
 
 MVP + alle geplanten Verbesserungen implementiert.
+Erweiterte Wetter-Features (Wind, Humidity, DHI) integriert.
 
 ---
 
@@ -22,21 +23,23 @@ MVP + alle geplanten Verbesserungen implementiert.
 | #11 | Bulk Insert Performance | #14 | ✅ |
 | #12 | Retry 429 + Jitter | #17 | ✅ |
 | #18 | Hyperparameter-Tuning | #30 | ✅ |
+| #20 | Dokumentation (docs/) | #33 | ✅ |
+| #21 | E2E Integration Tests | #31 | ✅ |
+| #25 | Erweiterte Wetter-Features | #34 | ✅ |
 
 ## 🔓 Offene Issues
 
 | # | Titel | Prio | Phase |
 |---|-------|------|-------|
-| #20 | README aktualisieren | 🟡 Mittel | 2 |
-| #21 | Integration Tests (E2E) | 🟡 Mittel | 2 |
-| #22 | Input-Validierung | 🟢 Niedrig | 2 |
+| #22 | Input-Validierung | 🟢 Niedrig | 3 |
 | #23 | Automatische tägliche Prognose | 🟢 Niedrig | 3 |
-| #24 | Startup-Check für libomp | 🟡 Mittel | 2 |
-| #25 | Erweiterte Wetter-Features | 🟡 Mittel | 3 |
+| #24 | Startup-Check für libomp | 🟡 Mittel | 3 |
 | #26 | Feature Engineering | 🟡 Mittel | 3 |
 | #27 | Separate Modelle pro Saison | 🟢 Niedrig | 3 |
 | #28 | Ensemble RF+XGB | 🟢 Niedrig | 3 |
 | #29 | Optuna Tuning | 🟢 Niedrig | 3 |
+| #30 | RF-Tuning Geschwindigkeit | 🟢 Niedrig | 3 |
+| #32 | E2E Tests Refactoring | 🟢 Niedrig | 3 |
 
 ---
 
@@ -45,21 +48,34 @@ MVP + alle geplanten Verbesserungen implementiert.
 | Daten | Anzahl | Zeitraum |
 |-------|--------|----------|
 | PV-Readings | 61.354 | 2019-2025 |
-| Wetter | 62.136 | 2018-2025 |
+| Wetter | 61.392 | 2018-2025 |
+
+### Wetter-Features
+
+| Feature | Beschreibung | Einfluss |
+|---------|--------------|----------|
+| GHI | Globalstrahlung | Hauptindikator |
+| Cloud Cover | Bewölkung | Wolkenabschattung |
+| Temperature | Temperatur | Moduleffizienz |
+| **Wind Speed** | Windgeschwindigkeit | Modulkühlung |
+| **Humidity** | Luftfeuchtigkeit | Dunst-Erkennung |
+| **DHI** | Diffusstrahlung | Bewölkungs-Charakter |
 
 ## 🤖 Modell-Performance
 
-| Modell | MAE | MAPE |
-|--------|-----|------|
-| RandomForest | 183 W | 45.6% |
-| XGBoost | 185 W | 45.6% |
+| Modell | MAE | MAPE | Anmerkung |
+|--------|-----|------|-----------|
+| XGBoost (tuned) | **117 W** | **29.4%** | ⭐ Empfohlen |
+| RandomForest | 183 W | 45.6% | Basis |
+
+*Nach Integration der erweiterten Wetter-Features (Wind, Humidity, DHI) und Tuning.*
 
 ---
 
 ## 🧪 Test-Abdeckung
 
-- **65 Unit-Tests** ✅
-- Module: data_loader, weather, model, config, db
+- **88 Tests** ✅ (Unit + E2E)
+- Module: data_loader, weather, model, config, db, cli
 - CI: GitHub Actions (Python 3.9-3.12)
 
 ---
