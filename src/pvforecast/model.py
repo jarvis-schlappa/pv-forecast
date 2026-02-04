@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from math import asin, cos, radians, sin
 from pathlib import Path
+from typing import Literal
 from zoneinfo import ZoneInfo
 
 import pandas as pd
@@ -21,6 +22,21 @@ from pvforecast.db import Database
 logger = logging.getLogger(__name__)
 
 UTC_TZ = ZoneInfo("UTC")
+
+# XGBoost ist optional
+try:
+    from xgboost import XGBRegressor
+
+    XGBOOST_AVAILABLE = True
+except (ImportError, OSError, Exception) as e:
+    # ImportError: nicht installiert
+    # OSError/Exception: installiert aber kaputt (z.B. fehlende libomp auf macOS)
+    XGBOOST_AVAILABLE = False
+    XGBRegressor = None  # type: ignore
+    logger.debug(f"XGBoost nicht verfügbar: {e}")
+
+# Verfügbare Modell-Typen
+ModelType = Literal["rf", "xgb"]
 
 
 class ModelNotFoundError(Exception):
@@ -125,7 +141,66 @@ def prepare_features(df: pd.DataFrame, lat: float, lon: float) -> pd.DataFrame:
     return features
 
 
-def train(db: Database, lat: float, lon: float) -> tuple[Pipeline, dict]:
+def _create_pipeline(model_type: ModelType) -> Pipeline:
+    """
+    Erstellt ML-Pipeline für den angegebenen Modelltyp.
+
+    Args:
+        model_type: 'rf' für RandomForest, 'xgb' für XGBoost
+
+    Returns:
+        sklearn Pipeline mit Scaler und Modell
+
+    Raises:
+        ValueError: Wenn XGBoost nicht installiert ist
+    """
+    if model_type == "xgb":
+        if not XGBOOST_AVAILABLE:
+            raise ValueError(
+                "XGBoost nicht installiert. "
+                "Installiere mit: pip install pvforecast[xgb]"
+            )
+        return Pipeline(
+            [
+                ("scaler", StandardScaler()),
+                (
+                    "model",
+                    XGBRegressor(
+                        n_estimators=100,
+                        max_depth=6,
+                        learning_rate=0.1,
+                        min_child_weight=5,
+                        random_state=42,
+                        n_jobs=-1,
+                        verbosity=0,
+                    ),
+                ),
+            ]
+        )
+    else:  # rf (default)
+        return Pipeline(
+            [
+                ("scaler", StandardScaler()),
+                (
+                    "model",
+                    RandomForestRegressor(
+                        n_estimators=100,
+                        max_depth=15,
+                        min_samples_leaf=5,
+                        random_state=42,
+                        n_jobs=-1,
+                    ),
+                ),
+            ]
+        )
+
+
+def train(
+    db: Database,
+    lat: float,
+    lon: float,
+    model_type: ModelType = "rf",
+) -> tuple[Pipeline, dict]:
     """
     Trainiert Modell auf allen Daten in der Datenbank.
 
@@ -133,9 +208,10 @@ def train(db: Database, lat: float, lon: float) -> tuple[Pipeline, dict]:
         db: Database-Instanz
         lat: Breitengrad
         lon: Längengrad
+        model_type: 'rf' für RandomForest (default), 'xgb' für XGBoost
 
     Returns:
-        (sklearn Pipeline, metrics dict mit 'mape', 'mae', 'n_samples')
+        (sklearn Pipeline, metrics dict mit 'mape', 'mae', 'n_samples', 'model_type')
     """
     logger.info("Lade Trainingsdaten aus Datenbank...")
 
@@ -173,24 +249,12 @@ def train(db: Database, lat: float, lon: float) -> tuple[Pipeline, dict]:
     logger.info(f"Training: {len(X_train)}, Test: {len(X_test)}")
 
     # Pipeline erstellen
-    pipeline = Pipeline(
-        [
-            ("scaler", StandardScaler()),
-            (
-                "model",
-                RandomForestRegressor(
-                    n_estimators=100,
-                    max_depth=15,
-                    min_samples_leaf=5,
-                    random_state=42,
-                    n_jobs=-1,
-                ),
-            ),
-        ]
-    )
+    model_name = "XGBoost" if model_type == "xgb" else "RandomForest"
+    logger.info(f"Erstelle {model_name} Pipeline...")
+    pipeline = _create_pipeline(model_type)
 
     # Training
-    logger.info("Trainiere Modell...")
+    logger.info(f"Trainiere {model_name}...")
     pipeline.fit(X_train, y_train)
 
     # Evaluation
@@ -213,9 +277,10 @@ def train(db: Database, lat: float, lon: float) -> tuple[Pipeline, dict]:
         "n_samples": len(df),
         "n_train": len(X_train),
         "n_test": len(X_test),
+        "model_type": model_type,
     }
 
-    logger.info(f"Training abgeschlossen. MAPE: {mape:.1f}%, MAE: {mae:.0f}W")
+    logger.info(f"{model_name} Training abgeschlossen. MAPE: {mape:.1f}%, MAE: {mae:.0f}W")
 
     return pipeline, metrics
 
@@ -224,17 +289,21 @@ def save_model(model: Pipeline, path: Path, metrics: dict | None = None) -> None
     """Speichert Modell und optional Metriken."""
     path.parent.mkdir(parents=True, exist_ok=True)
 
+    # Version basierend auf Modell-Typ
+    model_type = metrics.get("model_type", "rf") if metrics else "rf"
+    version = f"{model_type}-v1"
+
     data = {
         "model": model,
         "metrics": metrics,
-        "version": "rf-v1",
+        "version": version,
         "created_at": datetime.now(UTC_TZ).isoformat(),
     }
 
     with open(path, "wb") as f:
         pickle.dump(data, f)
 
-    logger.info(f"Modell gespeichert: {path}")
+    logger.info(f"Modell gespeichert: {path} (Version: {version})")
 
 
 def load_model(path: Path) -> tuple[Pipeline, dict | None]:

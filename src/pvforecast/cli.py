@@ -323,9 +323,11 @@ def cmd_train(args: argparse.Namespace, config: Config) -> int:
     print(f"🌡️  Wetterdatensätze: {weather_count}")
 
     # Training
-    print("🧠 Trainiere Modell...")
+    model_type = getattr(args, "model", "rf")
+    model_name = "XGBoost" if model_type == "xgb" else "RandomForest"
+    print(f"🧠 Trainiere {model_name} Modell...")
     try:
-        model, metrics = train(db, config.latitude, config.longitude)
+        model, metrics = train(db, config.latitude, config.longitude, model_type)
     except ValueError as e:
         print(f"❌ Training fehlgeschlagen: {e}", file=sys.stderr)
         return 1
@@ -643,7 +645,13 @@ def create_parser() -> argparse.ArgumentParser:
     subparsers.add_parser("today", help="Prognose für heute")
 
     # train
-    subparsers.add_parser("train", help="Trainiert das ML-Modell")
+    p_train = subparsers.add_parser("train", help="Trainiert das ML-Modell")
+    p_train.add_argument(
+        "--model",
+        choices=["rf", "xgb"],
+        default="rf",
+        help="Modell-Typ: rf=RandomForest (default), xgb=XGBoost",
+    )
 
     # status
     subparsers.add_parser("status", help="Zeigt Status an")
