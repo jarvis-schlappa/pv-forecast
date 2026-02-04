@@ -395,9 +395,148 @@ def cmd_status(args: argparse.Namespace, config: Config) -> int:
 
 
 def cmd_evaluate(args: argparse.Namespace, config: Config) -> int:
-    """Evaluiert das Modell gegen echte Daten."""
-    # TODO: Implementierung
-    print("⚠️  evaluate noch nicht implementiert")
+    """Evaluiert das Modell gegen echte Daten (Backtesting)."""
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    import pandas as pd
+    from sklearn.metrics import mean_absolute_error, mean_absolute_percentage_error
+
+    from pvforecast.db import Database
+    from pvforecast.model import ModelNotFoundError, load_model, prepare_features
+
+    UTC_TZ = ZoneInfo("UTC")
+
+    # Modell laden
+    try:
+        model, _ = load_model(config.model_path)
+    except ModelNotFoundError:
+        print("❌ Kein trainiertes Modell gefunden!")
+        print(f"   Pfad: {config.model_path}")
+        print("   Tipp: Erst 'pvforecast train' ausführen")
+        return 1
+
+    # Datenbank öffnen
+    db = Database(config.db_path)
+
+    # Jahr ermitteln
+    if args.year:
+        year = args.year
+    else:
+        # Standardmäßig das letzte vollständige Jahr
+        year = datetime.now().year - 1
+
+    print(f"📊 Backtesting für {year}")
+    print("=" * 50)
+
+    # Daten für das Jahr laden (PV + Wetter)
+    with db.connect() as conn:
+        start_ts = int(datetime(year, 1, 1, tzinfo=UTC_TZ).timestamp())
+        end_ts = int(datetime(year, 12, 31, 23, 59, 59, tzinfo=UTC_TZ).timestamp())
+
+        query = """
+            SELECT
+                p.timestamp,
+                p.production_w,
+                w.ghi_wm2,
+                w.cloud_cover_pct,
+                w.temperature_c
+            FROM pv_readings p
+            INNER JOIN weather_history w ON p.timestamp = w.timestamp
+            WHERE p.timestamp >= ? AND p.timestamp <= ?
+              AND p.curtailed = 0
+              AND p.production_w >= 0
+              AND w.ghi_wm2 IS NOT NULL
+        """
+        df = pd.read_sql_query(query, conn, params=(start_ts, end_ts))
+
+    if len(df) == 0:
+        print(f"❌ Keine Daten für {year} gefunden!")
+        return 1
+
+    print(f"📈 Datenpunkte: {len(df):,}")
+
+    # Features erstellen und Vorhersagen machen
+    X = prepare_features(df, config.latitude, config.longitude)
+    y_true = df["production_w"].values
+    y_pred = model.predict(X)
+
+    # Negative Vorhersagen auf 0 setzen
+    y_pred = [max(0, p) for p in y_pred]
+
+    # Nacht-Stunden auf 0 setzen
+    for i, row in enumerate(X.itertuples()):
+        if row.sun_elevation < 0:
+            y_pred[i] = 0
+
+    y_pred = pd.Series(y_pred)
+
+    # Gesamtmetriken
+    mae = mean_absolute_error(y_true, y_pred)
+
+    # MAPE nur für Stunden > 100W
+    mape_threshold = 100
+    mask = y_true > mape_threshold
+    if mask.sum() > 0:
+        mape = mean_absolute_percentage_error(y_true[mask], y_pred[mask]) * 100
+    else:
+        mape = 0.0
+
+    # Tagesweise Aggregation für Übersicht
+    df["date"] = pd.to_datetime(df["timestamp"], unit="s", utc=True).dt.date
+    df["pred_w"] = y_pred.values
+    daily = df.groupby("date").agg(
+        actual_kwh=("production_w", lambda x: x.sum() / 1000),
+        predicted_kwh=("pred_w", lambda x: x.sum() / 1000),
+    )
+    daily["error_kwh"] = daily["predicted_kwh"] - daily["actual_kwh"]
+    daily["error_pct"] = (daily["error_kwh"] / daily["actual_kwh"].replace(0, 1)) * 100
+
+    # Monatsweise Aggregation
+    df["month"] = pd.to_datetime(df["timestamp"], unit="s", utc=True).dt.month
+    monthly = df.groupby("month").agg(
+        actual_kwh=("production_w", lambda x: x.sum() / 1000),
+        predicted_kwh=("pred_w", lambda x: x.sum() / 1000),
+    )
+    monthly["error_pct"] = (
+        (monthly["predicted_kwh"] - monthly["actual_kwh"]) / monthly["actual_kwh"] * 100
+    )
+
+    # Ausgabe
+    print()
+    print("📉 Gesamtmetriken:")
+    print(f"   MAE:  {mae:.0f} W")
+    print(f"   MAPE: {mape:.1f}% (nur Stunden > 100W)")
+    print()
+
+    # Jahresübersicht
+    total_actual = daily["actual_kwh"].sum()
+    total_predicted = daily["predicted_kwh"].sum()
+    total_error = total_predicted - total_actual
+    total_error_pct = (total_error / total_actual) * 100
+
+    print(f"☀️  Jahresertrag {year}:")
+    print(f"   Tatsächlich:  {total_actual:,.0f} kWh")
+    print(f"   Vorhersage:   {total_predicted:,.0f} kWh")
+    print(f"   Abweichung:   {total_error:+,.0f} kWh ({total_error_pct:+.1f}%)")
+    print()
+
+    # Monatsübersicht
+    print("📅 Monatliche Abweichung:")
+    month_names = [
+        "Jan", "Feb", "Mär", "Apr", "Mai", "Jun",
+        "Jul", "Aug", "Sep", "Okt", "Nov", "Dez",
+    ]
+    for month in range(1, 13):
+        if month in monthly.index:
+            row = monthly.loc[month]
+            err = row["error_pct"]
+            bar = "█" * min(10, int(abs(err) / 2))
+            sign = "+" if err > 0 else "-" if err < 0 else " "
+            print(f"   {month_names[month-1]}: {sign}{abs(err):5.1f}% {bar}")
+        else:
+            print(f"   {month_names[month-1]}: keine Daten")
+
     return 0
 
 
