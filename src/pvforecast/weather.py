@@ -195,6 +195,79 @@ def save_weather_to_db(df: pd.DataFrame, db: Database) -> int:
     return inserted
 
 
+def find_weather_gaps(
+    db: Database,
+    start_ts: int,
+    end_ts: int,
+    min_gap_hours: int = 24,
+) -> list[tuple[date, date]]:
+    """
+    Findet Lücken in den Wetterdaten.
+
+    Args:
+        db: Database-Instanz
+        start_ts: Start Unix timestamp
+        end_ts: End Unix timestamp
+        min_gap_hours: Minimale Lückengröße in Stunden (default: 24)
+
+    Returns:
+        Liste von (start_date, end_date) Tupeln für fehlende Zeiträume
+    """
+    start_date = datetime.fromtimestamp(start_ts, UTC_TZ).date()
+    end_date = datetime.fromtimestamp(end_ts, UTC_TZ).date()
+
+    gaps = []
+    current_month_start = date(start_date.year, start_date.month, 1)
+
+    while current_month_start <= end_date:
+        # Monatsende berechnen
+        if current_month_start.month == 12:
+            next_month = date(current_month_start.year + 1, 1, 1)
+        else:
+            next_month = date(current_month_start.year, current_month_start.month + 1, 1)
+        current_month_end = next_month - timedelta(days=1)
+
+        # Auf gewünschten Zeitraum beschränken
+        check_start = max(current_month_start, start_date)
+        check_end = min(current_month_end, end_date)
+
+        # Timestamps für Abfrage
+        check_start_ts = int(
+            datetime.combine(check_start, datetime.min.time())
+            .replace(tzinfo=UTC_TZ)
+            .timestamp()
+        )
+        check_end_ts = int(
+            datetime.combine(check_end, datetime.max.time())
+            .replace(tzinfo=UTC_TZ)
+            .timestamp()
+        )
+
+        # Zähle vorhandene Stunden in DB
+        with db.connect() as conn:
+            result = conn.execute(
+                "SELECT COUNT(*) FROM weather_history WHERE timestamp >= ? AND timestamp <= ?",
+                (check_start_ts, check_end_ts),
+            ).fetchone()
+            existing_hours = result[0] if result else 0
+
+        # Erwartete Stunden
+        expected_hours = (check_end - check_start).days * 24 + 24
+
+        # Wenn mehr als min_gap_hours fehlen, als Lücke markieren
+        missing_hours = expected_hours - existing_hours
+        if missing_hours >= min_gap_hours:
+            gaps.append((check_start, check_end))
+            logger.debug(
+                f"Lücke gefunden: {check_start} - {check_end} "
+                f"({missing_hours} Stunden fehlen)"
+            )
+
+        current_month_start = next_month
+
+    return gaps
+
+
 def ensure_weather_history(
     db: Database,
     lat: float,
@@ -204,7 +277,7 @@ def ensure_weather_history(
 ) -> int:
     """
     Stellt sicher, dass Wetterdaten für einen Zeitraum vorhanden sind.
-    Lädt fehlende Daten automatisch nach.
+    Lädt fehlende Daten automatisch nach, erkennt auch Lücken in der Mitte.
 
     Args:
         db: Database-Instanz
@@ -216,45 +289,48 @@ def ensure_weather_history(
     Returns:
         Anzahl nachgeladener Datensätze
     """
-    # Prüfe welche Daten fehlen
-    with db.connect() as conn:
-        result = conn.execute(
-            "SELECT MIN(timestamp), MAX(timestamp) FROM weather_history"
-        ).fetchone()
-        existing_start, existing_end = result if result else (None, None)
+    # Finde alle Lücken
+    gaps = find_weather_gaps(db, start_ts, end_ts)
 
-    start_date = datetime.fromtimestamp(start_ts, UTC_TZ).date()
-    end_date = datetime.fromtimestamp(end_ts, UTC_TZ).date()
+    if not gaps:
+        logger.info("Keine Wetterdaten-Lücken gefunden")
+        return 0
+
+    logger.info(f"Gefundene Lücken: {len(gaps)} Zeiträume")
 
     total_loaded = 0
 
-    # Lade Daten in Chunks (Open-Meteo limitiert auf ~1 Jahr pro Request)
-    chunk_days = 365
-    current_start = start_date
+    # Lade fehlende Zeiträume (kombiniere aufeinanderfolgende Monate)
+    # Open-Meteo erlaubt bis zu ~1 Jahr pro Request
+    max_chunk_days = 365
 
-    while current_start < end_date:
-        current_end = min(current_start + timedelta(days=chunk_days), end_date)
+    i = 0
+    while i < len(gaps):
+        chunk_start = gaps[i][0]
+        chunk_end = gaps[i][1]
 
-        # Prüfe ob dieser Zeitraum schon vorhanden
-        chunk_start_ts = int(datetime.combine(current_start, datetime.min.time())
-                            .replace(tzinfo=UTC_TZ).timestamp())
-        chunk_end_ts = int(datetime.combine(current_end, datetime.max.time())
-                          .replace(tzinfo=UTC_TZ).timestamp())
+        # Kombiniere aufeinanderfolgende Lücken bis max_chunk_days
+        while i + 1 < len(gaps):
+            next_gap = gaps[i + 1]
+            # Prüfe ob nächste Lücke direkt anschließt und noch in Chunk passt
+            if (next_gap[0] - chunk_end).days <= 1:
+                potential_end = next_gap[1]
+                if (potential_end - chunk_start).days <= max_chunk_days:
+                    chunk_end = potential_end
+                    i += 1
+                else:
+                    break
+            else:
+                break
 
-        if existing_start and existing_end:
-            if chunk_start_ts >= existing_start and chunk_end_ts <= existing_end:
-                logger.debug(f"Wetterdaten vorhanden für {current_start} - {current_end}")
-                current_start = current_end + timedelta(days=1)
-                continue
-
-        logger.info(f"Lade Wetterdaten: {current_start} bis {current_end}")
+        logger.info(f"Lade Wetterdaten: {chunk_start} bis {chunk_end}")
         try:
-            df = fetch_historical(lat, lon, current_start, current_end)
+            df = fetch_historical(lat, lon, chunk_start, chunk_end)
             loaded = save_weather_to_db(df, db)
             total_loaded += loaded
         except WeatherAPIError as e:
             logger.error(f"Fehler beim Laden: {e}")
 
-        current_start = current_end + timedelta(days=1)
+        i += 1
 
     return total_loaded
