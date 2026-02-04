@@ -1,6 +1,6 @@
 # PV-Forecast – Projektstatus
 
-> Letzte Aktualisierung: 2026-02-04 21:05
+> Letzte Aktualisierung: 2026-02-04 21:25
 
 ## 🎯 Aktueller Stand: Phase 2 abgeschlossen ✅
 
@@ -21,16 +21,22 @@ MVP + alle geplanten Verbesserungen implementiert.
 | #10 | Config-Validierung | #13 | ✅ |
 | #11 | Bulk Insert Performance | #14 | ✅ |
 | #12 | Retry 429 + Jitter | #17 | ✅ |
+| #18 | Hyperparameter-Tuning | #30 | ✅ |
 
 ## 🔓 Offene Issues
 
 | # | Titel | Prio | Phase |
 |---|-------|------|-------|
-| #18 | Hyperparameter-Tuning | 🟢 Niedrig | 3 |
 | #20 | README aktualisieren | 🟡 Mittel | 2 |
 | #21 | Integration Tests (E2E) | 🟡 Mittel | 2 |
 | #22 | Input-Validierung | 🟢 Niedrig | 2 |
 | #23 | Automatische tägliche Prognose | 🟢 Niedrig | 3 |
+| #24 | Startup-Check für libomp | 🟡 Mittel | 2 |
+| #25 | Erweiterte Wetter-Features | 🟡 Mittel | 3 |
+| #26 | Feature Engineering | 🟡 Mittel | 3 |
+| #27 | Separate Modelle pro Saison | 🟢 Niedrig | 3 |
+| #28 | Ensemble RF+XGB | 🟢 Niedrig | 3 |
+| #29 | Optuna Tuning | 🟢 Niedrig | 3 |
 
 ---
 
@@ -71,6 +77,11 @@ pvforecast predict --days 3   # 3 Tage
 # Training
 pvforecast train              # RandomForest (default)
 pvforecast train --model xgb  # XGBoost
+
+# Hyperparameter-Tuning
+pvforecast tune               # XGBoost Tuning (default)
+pvforecast tune --model rf    # RandomForest Tuning
+pvforecast tune --trials 100  # Mehr Iterationen
 
 # Verwaltung
 pvforecast status             # DB-Status
