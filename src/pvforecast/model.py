@@ -1,0 +1,322 @@
+"""ML-Modell für PV-Ertragsprognose."""
+
+from __future__ import annotations
+
+import logging
+import pickle
+from dataclasses import dataclass
+from datetime import datetime
+from math import asin, cos, radians, sin
+from pathlib import Path
+from zoneinfo import ZoneInfo
+
+import pandas as pd
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.metrics import mean_absolute_error, mean_absolute_percentage_error
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import StandardScaler
+
+from pvforecast.db import Database
+
+logger = logging.getLogger(__name__)
+
+UTC_TZ = ZoneInfo("UTC")
+
+
+class ModelNotFoundError(Exception):
+    """Kein trainiertes Modell vorhanden."""
+
+    pass
+
+
+@dataclass
+class HourlyForecast:
+    """Einzelner Stundenwert der Prognose."""
+
+    timestamp: datetime
+    production_w: int
+    ghi_wm2: float
+    cloud_cover_pct: int
+
+
+@dataclass
+class Forecast:
+    """Komplette Prognose."""
+
+    hourly: list[HourlyForecast]
+    total_kwh: float
+    generated_at: datetime
+    model_version: str = "rf-v1"
+
+
+def calculate_sun_elevation(timestamp: int, lat: float, lon: float) -> float:
+    """
+    Berechnet die Sonnenhöhe (Elevation) für einen Zeitpunkt.
+
+    Vereinfachte Formel, ausreichend für ML-Features.
+
+    Args:
+        timestamp: Unix timestamp (UTC)
+        lat: Breitengrad
+        lon: Längengrad
+
+    Returns:
+        Sonnenhöhe in Grad (-90 bis 90, negativ = unter Horizont)
+    """
+    dt = datetime.fromtimestamp(timestamp, UTC_TZ)
+
+    # Tag des Jahres
+    day_of_year = dt.timetuple().tm_yday
+
+    # Deklination der Sonne (vereinfacht)
+    declination = -23.45 * cos(radians(360 / 365 * (day_of_year + 10)))
+
+    # Stundenwinkel
+    hour = dt.hour + dt.minute / 60
+    solar_time = hour + lon / 15  # Grobe Annäherung
+    hour_angle = 15 * (solar_time - 12)
+
+    # Sonnenhöhe
+    lat_rad = radians(lat)
+    dec_rad = radians(declination)
+    ha_rad = radians(hour_angle)
+
+    sin_elevation = sin(lat_rad) * sin(dec_rad) + cos(lat_rad) * cos(dec_rad) * cos(ha_rad)
+
+    # Clamp to [-1, 1] to avoid math domain errors
+    sin_elevation = max(-1, min(1, sin_elevation))
+
+    elevation = asin(sin_elevation) * 180 / 3.14159
+
+    return elevation
+
+
+def prepare_features(df: pd.DataFrame, lat: float, lon: float) -> pd.DataFrame:
+    """
+    Erstellt Feature-DataFrame für ML-Modell.
+
+    Args:
+        df: DataFrame mit timestamp, ghi_wm2, cloud_cover_pct, temperature_c
+        lat: Breitengrad (für Sonnenhöhe)
+        lon: Längengrad
+
+    Returns:
+        DataFrame mit Features: hour, month, day_of_year, ghi, cloud_cover, 
+                               temperature, sun_elevation
+    """
+    features = pd.DataFrame()
+
+    # Zeitbasierte Features
+    timestamps = pd.to_datetime(df["timestamp"], unit="s", utc=True)
+    features["hour"] = timestamps.dt.hour
+    features["month"] = timestamps.dt.month
+    features["day_of_year"] = timestamps.dt.dayofyear
+
+    # Wetter-Features
+    features["ghi"] = df["ghi_wm2"]
+    features["cloud_cover"] = df["cloud_cover_pct"]
+    features["temperature"] = df["temperature_c"]
+
+    # Sonnenhöhe berechnen
+    features["sun_elevation"] = df["timestamp"].apply(
+        lambda ts: calculate_sun_elevation(int(ts), lat, lon)
+    )
+
+    return features
+
+
+def train(db: Database, lat: float, lon: float) -> tuple[Pipeline, dict]:
+    """
+    Trainiert Modell auf allen Daten in der Datenbank.
+
+    Args:
+        db: Database-Instanz
+        lat: Breitengrad
+        lon: Längengrad
+
+    Returns:
+        (sklearn Pipeline, metrics dict mit 'mape', 'mae', 'n_samples')
+    """
+    logger.info("Lade Trainingsdaten aus Datenbank...")
+
+    with db.connect() as conn:
+        # Join PV und Wetter-Daten
+        query = """
+            SELECT 
+                p.timestamp,
+                p.production_w,
+                w.ghi_wm2,
+                w.cloud_cover_pct,
+                w.temperature_c
+            FROM pv_readings p
+            INNER JOIN weather_history w ON p.timestamp = w.timestamp
+            WHERE p.curtailed = 0  -- Keine abgeregelten Daten
+              AND p.production_w >= 0
+              AND w.ghi_wm2 IS NOT NULL
+        """
+        df = pd.read_sql_query(query, conn)
+
+    if len(df) < 100:
+        raise ValueError(f"Zu wenig Trainingsdaten: {len(df)} (mindestens 100 benötigt)")
+
+    logger.info(f"Trainingsdaten: {len(df)} Datensätze")
+
+    # Features erstellen
+    X = prepare_features(df, lat, lon)
+    y = df["production_w"]
+
+    # Zeitbasierter Split (80% Training, 20% Test)
+    split_idx = int(len(df) * 0.8)
+    X_train, X_test = X.iloc[:split_idx], X.iloc[split_idx:]
+    y_train, y_test = y.iloc[:split_idx], y.iloc[split_idx:]
+
+    logger.info(f"Training: {len(X_train)}, Test: {len(X_test)}")
+
+    # Pipeline erstellen
+    pipeline = Pipeline(
+        [
+            ("scaler", StandardScaler()),
+            (
+                "model",
+                RandomForestRegressor(
+                    n_estimators=100,
+                    max_depth=15,
+                    min_samples_leaf=5,
+                    random_state=42,
+                    n_jobs=-1,
+                ),
+            ),
+        ]
+    )
+
+    # Training
+    logger.info("Trainiere Modell...")
+    pipeline.fit(X_train, y_train)
+
+    # Evaluation
+    y_pred = pipeline.predict(X_test)
+
+    # MAPE nur für Stunden mit relevanter Produktion (>100W)
+    # Bei niedrigen Werten verzerrt MAPE stark (10W real vs 20W pred = 100% Fehler)
+    mape_threshold = 100  # Watt
+    mask = y_test > mape_threshold
+    if mask.sum() > 0:
+        mape = mean_absolute_percentage_error(y_test[mask], y_pred[mask]) * 100
+    else:
+        mape = 0.0
+
+    mae = mean_absolute_error(y_test, y_pred)
+
+    metrics = {
+        "mape": round(mape, 2),
+        "mae": round(mae, 2),
+        "n_samples": len(df),
+        "n_train": len(X_train),
+        "n_test": len(X_test),
+    }
+
+    logger.info(f"Training abgeschlossen. MAPE: {mape:.1f}%, MAE: {mae:.0f}W")
+
+    return pipeline, metrics
+
+
+def save_model(model: Pipeline, path: Path, metrics: dict | None = None) -> None:
+    """Speichert Modell und optional Metriken."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+
+    data = {
+        "model": model,
+        "metrics": metrics,
+        "version": "rf-v1",
+        "created_at": datetime.now(UTC_TZ).isoformat(),
+    }
+
+    with open(path, "wb") as f:
+        pickle.dump(data, f)
+
+    logger.info(f"Modell gespeichert: {path}")
+
+
+def load_model(path: Path) -> tuple[Pipeline, dict | None]:
+    """
+    Lädt gespeichertes Modell.
+
+    Returns:
+        (Pipeline, metrics dict oder None)
+
+    Raises:
+        ModelNotFoundError: Wenn Modell nicht existiert
+    """
+    if not path.exists():
+        raise ModelNotFoundError(f"Kein Modell gefunden: {path}")
+
+    with open(path, "rb") as f:
+        data = pickle.load(f)
+
+    if isinstance(data, dict):
+        return data["model"], data.get("metrics")
+    else:
+        # Altes Format (nur Pipeline)
+        return data, None
+
+
+def predict(
+    model: Pipeline,
+    weather_df: pd.DataFrame,
+    lat: float,
+    lon: float,
+) -> Forecast:
+    """
+    Erstellt Prognose basierend auf Wettervorhersage.
+
+    Args:
+        model: Trainierte sklearn Pipeline
+        weather_df: DataFrame mit timestamp, ghi_wm2, cloud_cover_pct, temperature_c
+        lat: Breitengrad
+        lon: Längengrad
+
+    Returns:
+        Forecast-Objekt mit Stundenwerten und Summe
+    """
+    if len(weather_df) == 0:
+        return Forecast(
+            hourly=[],
+            total_kwh=0.0,
+            generated_at=datetime.now(UTC_TZ),
+        )
+
+    # Features erstellen
+    X = prepare_features(weather_df, lat, lon)
+
+    # Vorhersage
+    predictions = model.predict(X)
+
+    # Negative Werte auf 0 setzen
+    predictions = [max(0, int(p)) for p in predictions]
+
+    # Nacht-Stunden auf 0 setzen (Sonnenhöhe < 0)
+    for i, row in enumerate(X.itertuples()):
+        if row.sun_elevation < 0:
+            predictions[i] = 0
+
+    # Hourly Forecasts erstellen
+    hourly = []
+    for i, row in weather_df.iterrows():
+        hourly.append(
+            HourlyForecast(
+                timestamp=datetime.fromtimestamp(int(row["timestamp"]), UTC_TZ),
+                production_w=predictions[len(hourly)],
+                ghi_wm2=float(row["ghi_wm2"]),
+                cloud_cover_pct=int(row["cloud_cover_pct"]),
+            )
+        )
+
+    # Summe berechnen (Wh → kWh)
+    total_wh = sum(predictions)
+    total_kwh = total_wh / 1000
+
+    return Forecast(
+        hourly=hourly,
+        total_kwh=round(total_kwh, 2),
+        generated_at=datetime.now(UTC_TZ),
+    )
