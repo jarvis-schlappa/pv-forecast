@@ -228,7 +228,7 @@ def _parse_weather_response(data: dict) -> pd.DataFrame:
 
 def save_weather_to_db(df: pd.DataFrame, db: Database) -> int:
     """
-    Speichert Wetterdaten in Datenbank.
+    Speichert Wetterdaten in Datenbank (Bulk Insert).
 
     Args:
         df: DataFrame von fetch_historical/fetch_forecast
@@ -237,27 +237,32 @@ def save_weather_to_db(df: pd.DataFrame, db: Database) -> int:
     Returns:
         Anzahl eingefügter Zeilen
     """
-    inserted = 0
-    with db.connect() as conn:
-        for _, row in df.iterrows():
-            try:
-                conn.execute(
-                    """INSERT OR REPLACE INTO weather_history
-                       (timestamp, ghi_wm2, cloud_cover_pct, temperature_c)
-                       VALUES (?, ?, ?, ?)""",
-                    (
-                        int(row["timestamp"]),
-                        float(row["ghi_wm2"]),
-                        int(row["cloud_cover_pct"]),
-                        float(row["temperature_c"]),
-                    ),
-                )
-                inserted += 1
-            except Exception as e:
-                logger.warning(f"Fehler bei {row['timestamp']}: {e}")
+    if df.empty:
+        logger.info("Keine Wetterdaten zu speichern")
+        return 0
 
-    logger.info(f"Wetterdaten gespeichert: {inserted} Datensätze")
-    return inserted
+    # Daten für Bulk Insert vorbereiten
+    records = [
+        (
+            int(row["timestamp"]),
+            float(row["ghi_wm2"]),
+            int(row["cloud_cover_pct"]),
+            float(row["temperature_c"]),
+        )
+        for _, row in df.iterrows()
+    ]
+
+    # Bulk Insert in einer Transaktion
+    with db.connect() as conn:
+        conn.executemany(
+            """INSERT OR REPLACE INTO weather_history
+               (timestamp, ghi_wm2, cloud_cover_pct, temperature_c)
+               VALUES (?, ?, ?, ?)""",
+            records,
+        )
+
+    logger.info(f"Wetterdaten gespeichert: {len(records)} Datensätze")
+    return len(records)
 
 
 def find_weather_gaps(
