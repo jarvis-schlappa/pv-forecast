@@ -205,3 +205,35 @@ class TestHourlyForecast:
         assert forecast.production_w == 1500
         assert forecast.ghi_wm2 == 400.0
         assert forecast.cloud_cover_pct == 30
+
+
+class TestXGBoostIntegration:
+    """Tests für XGBoost-Integration."""
+
+    def test_xgboost_available_constant_exists(self):
+        """Test: XGBOOST_AVAILABLE Konstante existiert."""
+        from pvforecast.model import XGBOOST_AVAILABLE
+
+        assert isinstance(XGBOOST_AVAILABLE, bool)
+
+    def test_create_rf_pipeline(self):
+        """Test: RandomForest Pipeline kann erstellt werden."""
+        from pvforecast.model import _create_pipeline
+
+        pipeline = _create_pipeline("rf")
+        assert pipeline is not None
+        assert "scaler" in pipeline.named_steps
+        assert "model" in pipeline.named_steps
+
+    def test_create_xgb_pipeline_without_xgboost(self):
+        """Test: XGBoost Pipeline wirft Fehler wenn nicht installiert."""
+        from pvforecast.model import XGBOOST_AVAILABLE, _create_pipeline
+
+        if not XGBOOST_AVAILABLE:
+            with pytest.raises(ValueError) as exc_info:
+                _create_pipeline("xgb")
+            assert "XGBoost nicht installiert" in str(exc_info.value)
+        else:
+            # Wenn XGBoost verfügbar, sollte Pipeline erstellt werden
+            pipeline = _create_pipeline("xgb")
+            assert pipeline is not None
