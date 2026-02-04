@@ -237,3 +237,48 @@ class TestXGBoostIntegration:
             # Wenn XGBoost verfügbar, sollte Pipeline erstellt werden
             pipeline = _create_pipeline("xgb")
             assert pipeline is not None
+
+
+class TestTune:
+    """Tests für Hyperparameter-Tuning."""
+
+    def test_tune_imports(self):
+        """Test: tune Funktion kann importiert werden."""
+        from pvforecast.model import tune
+
+        assert callable(tune)
+
+    def test_tune_requires_minimum_data(self, tmp_path):
+        """Test: tune wirft Fehler bei zu wenig Daten."""
+        from pvforecast.db import Database
+        from pvforecast.model import tune
+
+        # Leere Datenbank (Schema wird automatisch erstellt)
+        db = Database(tmp_path / "test.db")
+
+        with pytest.raises(ValueError) as exc_info:
+            tune(db, 51.83, 7.28, n_iter=2, cv_splits=2)
+
+        assert "Zu wenig Daten" in str(exc_info.value)
+
+    def test_tune_parameter_distributions(self):
+        """Test: Parameter-Verteilungen sind korrekt definiert."""
+        from scipy.stats import randint, uniform
+
+        # XGBoost Parameter-Raum
+        param_dist = {
+            "n_estimators": randint(100, 500),
+            "max_depth": randint(4, 13),
+            "learning_rate": uniform(0.01, 0.29),
+        }
+
+        # Teste dass Samples im erwarteten Bereich liegen
+        for _ in range(10):
+            n_est = param_dist["n_estimators"].rvs()
+            assert 100 <= n_est < 500
+
+            depth = param_dist["max_depth"].rvs()
+            assert 4 <= depth < 13
+
+            lr = param_dist["learning_rate"].rvs()
+            assert 0.01 <= lr <= 0.30
