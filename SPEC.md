@@ -114,6 +114,9 @@ pvforecast import <csv-file> [csv-file2 ...]
 # Modell trainieren (lädt fehlende Wetterdaten automatisch)
 pvforecast train [--from 2019-01-01] [--to 2025-12-31]
 
+# Hyperparameter-Tuning (RandomizedSearchCV)
+pvforecast tune [--model rf|xgb] [--trials 50] [--cv 5]
+
 # Modell-Performance evaluieren
 pvforecast evaluate [--year 2025]
 
