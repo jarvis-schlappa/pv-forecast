@@ -12,12 +12,12 @@ from typing import Literal
 from zoneinfo import ZoneInfo
 
 import pandas as pd
+from scipy.stats import randint, uniform
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.metrics import mean_absolute_error, mean_absolute_percentage_error
 from sklearn.model_selection import RandomizedSearchCV, TimeSeriesSplit
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
-from scipy.stats import randint, uniform
 
 from pvforecast.db import Database
 
@@ -421,7 +421,7 @@ def tune(
         "best_cv_score": round(-search.best_score_, 2),  # MAE (negiert zurück)
     }
 
-    logger.info(f"Tuning abgeschlossen!")
+    logger.info("Tuning abgeschlossen!")
     logger.info(f"Beste Parameter: {best_params}")
     logger.info(f"CV-Score (MAE): {-search.best_score_:.0f}W")
     logger.info(f"Test-MAPE: {mape:.1f}%, Test-MAE: {mae:.0f}W")
