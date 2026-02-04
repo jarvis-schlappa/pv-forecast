@@ -1,12 +1,17 @@
 """Tests für weather.py."""
 
 from datetime import date, datetime
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 from zoneinfo import ZoneInfo
 
+import httpx
 import pytest
 
-from pvforecast.weather import find_weather_gaps
+from pvforecast.weather import (
+    WeatherAPIError,
+    _request_with_retry,
+    find_weather_gaps,
+)
 
 UTC_TZ = ZoneInfo("UTC")
 
@@ -154,3 +159,130 @@ def test_find_weather_gaps_respects_min_gap_hours():
     # Mit min_gap_hours=5: 10 fehlende Stunden >= 5, Lücke!
     gaps = find_weather_gaps(db, start_ts, end_ts, min_gap_hours=5)
     assert len(gaps) == 1
+
+
+# === Retry-Logic Tests ===
+
+
+class TestRequestWithRetry:
+    """Tests für _request_with_retry Funktion."""
+
+    def test_success_on_first_attempt(self):
+        """Test: Erfolg beim ersten Versuch."""
+        with patch("pvforecast.weather.httpx.Client") as mock_client:
+            mock_response = MagicMock()
+            mock_response.json.return_value = {"data": "test"}
+            mock_client.return_value.__enter__.return_value.get.return_value = (
+                mock_response
+            )
+
+            result = _request_with_retry(
+                "https://api.test.com", {"param": "value"}, max_retries=3
+            )
+
+            assert result == {"data": "test"}
+            # Nur ein Aufruf
+            assert mock_client.return_value.__enter__.return_value.get.call_count == 1
+
+    def test_retry_on_timeout(self):
+        """Test: Retry bei Timeout-Fehler."""
+        with patch("pvforecast.weather.httpx.Client") as mock_client:
+            mock_get = mock_client.return_value.__enter__.return_value.get
+
+            # Erster Versuch: Timeout, zweiter: Erfolg
+            mock_response = MagicMock()
+            mock_response.json.return_value = {"data": "success"}
+            mock_get.side_effect = [
+                httpx.TimeoutException("Timeout"),
+                mock_response,
+            ]
+
+            with patch("pvforecast.weather.time.sleep"):  # Skip delays
+                result = _request_with_retry(
+                    "https://api.test.com", {}, max_retries=3
+                )
+
+            assert result == {"data": "success"}
+            assert mock_get.call_count == 2
+
+    def test_retry_on_connect_error(self):
+        """Test: Retry bei Verbindungsfehler."""
+        with patch("pvforecast.weather.httpx.Client") as mock_client:
+            mock_get = mock_client.return_value.__enter__.return_value.get
+
+            # Zwei Verbindungsfehler, dann Erfolg
+            mock_response = MagicMock()
+            mock_response.json.return_value = {"data": "success"}
+            mock_get.side_effect = [
+                httpx.ConnectError("Connection refused"),
+                httpx.ConnectError("Connection refused"),
+                mock_response,
+            ]
+
+            with patch("pvforecast.weather.time.sleep"):
+                result = _request_with_retry(
+                    "https://api.test.com", {}, max_retries=3
+                )
+
+            assert result == {"data": "success"}
+            assert mock_get.call_count == 3
+
+    def test_fail_after_max_retries(self):
+        """Test: Fehlschlag nach allen Retries."""
+        with patch("pvforecast.weather.httpx.Client") as mock_client:
+            mock_get = mock_client.return_value.__enter__.return_value.get
+            mock_get.side_effect = httpx.TimeoutException("Timeout")
+
+            with patch("pvforecast.weather.time.sleep"):
+                with pytest.raises(WeatherAPIError) as exc_info:
+                    _request_with_retry(
+                        "https://api.test.com", {}, max_retries=3
+                    )
+
+            assert "Fehlgeschlagen nach 3 Versuchen" in str(exc_info.value)
+            assert mock_get.call_count == 3
+
+    def test_no_retry_on_client_error(self):
+        """Test: Kein Retry bei HTTP 4xx Fehlern."""
+        with patch("pvforecast.weather.httpx.Client") as mock_client:
+            mock_get = mock_client.return_value.__enter__.return_value.get
+
+            # 404 Fehler - sollte nicht wiederholt werden
+            mock_response = MagicMock()
+            mock_response.status_code = 404
+            error = httpx.HTTPStatusError(
+                "Not Found", request=MagicMock(), response=mock_response
+            )
+            mock_get.side_effect = error
+
+            with pytest.raises(WeatherAPIError) as exc_info:
+                _request_with_retry("https://api.test.com", {}, max_retries=3)
+
+            assert "API-Fehler: 404" in str(exc_info.value)
+            # Nur ein Versuch bei Client-Fehlern
+            assert mock_get.call_count == 1
+
+    def test_retry_on_server_error(self):
+        """Test: Retry bei HTTP 5xx Fehlern."""
+        with patch("pvforecast.weather.httpx.Client") as mock_client:
+            mock_get = mock_client.return_value.__enter__.return_value.get
+
+            # 503 Fehler, dann Erfolg
+            mock_error_response = MagicMock()
+            mock_error_response.status_code = 503
+            error = httpx.HTTPStatusError(
+                "Service Unavailable", request=MagicMock(), response=mock_error_response
+            )
+
+            mock_success_response = MagicMock()
+            mock_success_response.json.return_value = {"data": "success"}
+
+            mock_get.side_effect = [error, mock_success_response]
+
+            with patch("pvforecast.weather.time.sleep"):
+                result = _request_with_retry(
+                    "https://api.test.com", {}, max_retries=3
+                )
+
+            assert result == {"data": "success"}
+            assert mock_get.call_count == 2
