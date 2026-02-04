@@ -21,6 +21,7 @@ from pvforecast.model import (
     predict,
     save_model,
     train,
+    tune,
 )
 from pvforecast.weather import (
     WeatherAPIError,
@@ -346,6 +347,87 @@ def cmd_train(args: argparse.Namespace, config: Config) -> int:
     return 0
 
 
+def cmd_tune(args: argparse.Namespace, config: Config) -> int:
+    """Hyperparameter-Tuning mit RandomizedSearchCV."""
+    db = Database(config.db_path)
+
+    # Prüfe ob genug Daten vorhanden
+    pv_count = db.get_pv_count()
+    if pv_count < 500:
+        print(f"❌ Zu wenig PV-Daten: {pv_count} (mindestens 500 empfohlen)", file=sys.stderr)
+        return 1
+
+    print(f"📊 PV-Datensätze: {pv_count}")
+
+    # Zeitbereich der PV-Daten
+    pv_start, pv_end = db.get_pv_date_range()
+    if not pv_start or not pv_end:
+        print("❌ Keine PV-Daten gefunden.", file=sys.stderr)
+        return 1
+
+    # Wetterdaten sicherstellen
+    print("🌤️  Prüfe Wetterdaten...")
+    try:
+        loaded = ensure_weather_history(
+            db, config.latitude, config.longitude, pv_start, pv_end
+        )
+        if loaded > 0:
+            print(f"   {loaded} neue Wetterdatensätze geladen")
+    except WeatherAPIError as e:
+        print(f"⚠️  Wetter-API Fehler: {e}", file=sys.stderr)
+
+    # Parameter aus args
+    model_type = getattr(args, "model", "xgb")
+    n_iter = getattr(args, "trials", 50)
+    cv_splits = getattr(args, "cv", 5)
+    model_name = "XGBoost" if model_type == "xgb" else "RandomForest"
+
+    print()
+    print(f"🔧 Hyperparameter-Tuning für {model_name}")
+    print(f"   Iterationen: {n_iter}")
+    print(f"   CV-Splits: {cv_splits}")
+    print()
+    print("⏳ Das kann einige Minuten dauern...")
+    print()
+
+    try:
+        best_model, metrics, best_params = tune(
+            db,
+            config.latitude,
+            config.longitude,
+            model_type=model_type,
+            n_iter=n_iter,
+            cv_splits=cv_splits,
+        )
+    except ValueError as e:
+        print(f"❌ Tuning fehlgeschlagen: {e}", file=sys.stderr)
+        return 1
+
+    # Modell speichern
+    save_model(best_model, config.model_path, metrics)
+
+    print()
+    print("=" * 50)
+    print("✅ Tuning abgeschlossen!")
+    print("=" * 50)
+    print()
+    print("📊 Performance:")
+    print(f"   MAPE: {metrics['mape']:.1f}%")
+    print(f"   MAE:  {metrics['mae']:.0f} W")
+    print(f"   CV-Score (MAE): {metrics['best_cv_score']:.0f} W")
+    print()
+    print("🎯 Beste Parameter:")
+    for param, value in best_params.items():
+        if isinstance(value, float):
+            print(f"   {param}: {value:.4f}")
+        else:
+            print(f"   {param}: {value}")
+    print()
+    print(f"💾 Modell gespeichert: {config.model_path}")
+
+    return 0
+
+
 def cmd_status(args: argparse.Namespace, config: Config) -> int:
     """Zeigt Status der Datenbank und des Modells."""
     print("PV-Forecast Status")
@@ -653,6 +735,27 @@ def create_parser() -> argparse.ArgumentParser:
         help="Modell-Typ: rf=RandomForest (default), xgb=XGBoost",
     )
 
+    # tune
+    p_tune = subparsers.add_parser("tune", help="Hyperparameter-Tuning")
+    p_tune.add_argument(
+        "--model",
+        choices=["rf", "xgb"],
+        default="xgb",
+        help="Modell-Typ: rf=RandomForest, xgb=XGBoost (default)",
+    )
+    p_tune.add_argument(
+        "--trials",
+        type=int,
+        default=50,
+        help="Anzahl Iterationen (default: 50)",
+    )
+    p_tune.add_argument(
+        "--cv",
+        type=int,
+        default=5,
+        help="Anzahl CV-Splits (default: 5)",
+    )
+
     # status
     subparsers.add_parser("status", help="Zeigt Status an")
 
@@ -716,6 +819,7 @@ def main() -> int:
         "today": cmd_today,
         "import": cmd_import,
         "train": cmd_train,
+        "tune": cmd_tune,
         "status": cmd_status,
         "evaluate": cmd_evaluate,
         "config": cmd_config,

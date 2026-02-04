@@ -14,8 +14,10 @@ from zoneinfo import ZoneInfo
 import pandas as pd
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.metrics import mean_absolute_error, mean_absolute_percentage_error
+from sklearn.model_selection import RandomizedSearchCV, TimeSeriesSplit
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
+from scipy.stats import randint, uniform
 
 from pvforecast.db import Database
 
@@ -283,6 +285,148 @@ def train(
     logger.info(f"{model_name} Training abgeschlossen. MAPE: {mape:.1f}%, MAE: {mae:.0f}W")
 
     return pipeline, metrics
+
+
+def tune(
+    db: Database,
+    lat: float,
+    lon: float,
+    model_type: ModelType = "xgb",
+    n_iter: int = 50,
+    cv_splits: int = 5,
+) -> tuple[Pipeline, dict, dict]:
+    """
+    Hyperparameter-Tuning mit RandomizedSearchCV.
+
+    Args:
+        db: Database-Instanz
+        lat: Breitengrad
+        lon: Längengrad
+        model_type: 'rf' für RandomForest, 'xgb' für XGBoost
+        n_iter: Anzahl der Kombinationen (default: 50)
+        cv_splits: Anzahl der CV-Splits (default: 5)
+
+    Returns:
+        (beste Pipeline, metrics dict, beste Parameter dict)
+    """
+    logger.info(f"Starte Hyperparameter-Tuning ({n_iter} Iterationen, {cv_splits}-fold CV)...")
+
+    # Daten laden (gleiche Query wie train())
+    with db.connect() as conn:
+        query = """
+            SELECT
+                p.timestamp,
+                p.production_w,
+                w.ghi_wm2,
+                w.cloud_cover_pct,
+                w.temperature_c
+            FROM pv_readings p
+            INNER JOIN weather_history w ON p.timestamp = w.timestamp
+            WHERE p.curtailed = 0
+              AND p.production_w >= 0
+              AND w.ghi_wm2 IS NOT NULL
+        """
+        df = pd.read_sql_query(query, conn)
+
+    if len(df) < 500:
+        raise ValueError(f"Zu wenig Daten für Tuning: {len(df)} (mindestens 500 empfohlen)")
+
+    logger.info(f"Tuning-Daten: {len(df)} Datensätze")
+
+    # Features erstellen
+    X = prepare_features(df, lat, lon)
+    y = df["production_w"]
+
+    # Parameter-Suchraum definieren
+    if model_type == "xgb":
+        if not XGBOOST_AVAILABLE:
+            raise ValueError(
+                "XGBoost nicht installiert. "
+                "Installiere mit: pip install pvforecast[xgb]"
+            )
+        param_dist = {
+            "model__n_estimators": randint(100, 500),
+            "model__max_depth": randint(4, 13),  # 4-12
+            "model__learning_rate": uniform(0.01, 0.29),  # 0.01-0.3
+            "model__min_child_weight": randint(1, 11),  # 1-10
+            "model__subsample": uniform(0.6, 0.4),  # 0.6-1.0
+            "model__colsample_bytree": uniform(0.6, 0.4),  # 0.6-1.0
+        }
+        model_name = "XGBoost"
+    else:
+        param_dist = {
+            "model__n_estimators": randint(100, 500),
+            "model__max_depth": randint(5, 25),  # 5-24
+            "model__min_samples_split": randint(2, 20),
+            "model__min_samples_leaf": randint(1, 15),
+        }
+        model_name = "RandomForest"
+
+    # Pipeline erstellen
+    pipeline = _create_pipeline(model_type)
+
+    # TimeSeriesSplit für zeitliche Daten
+    cv = TimeSeriesSplit(n_splits=cv_splits)
+
+    # RandomizedSearchCV
+    logger.info(f"Starte RandomizedSearchCV für {model_name}...")
+    search = RandomizedSearchCV(
+        pipeline,
+        param_distributions=param_dist,
+        n_iter=n_iter,
+        cv=cv,
+        scoring="neg_mean_absolute_error",
+        n_jobs=-1,
+        verbose=1,
+        random_state=42,
+    )
+
+    search.fit(X, y)
+
+    # Beste Pipeline
+    best_pipeline = search.best_estimator_
+
+    # Evaluation auf den letzten 20% (wie bei train())
+    split_idx = int(len(df) * 0.8)
+    X_test = X.iloc[split_idx:]
+    y_test = y.iloc[split_idx:]
+
+    y_pred = best_pipeline.predict(X_test)
+
+    # MAPE für relevante Produktion (>100W)
+    mape_threshold = 100
+    mask = y_test > mape_threshold
+    if mask.sum() > 0:
+        mape = mean_absolute_percentage_error(y_test[mask], y_pred[mask]) * 100
+    else:
+        mape = 0.0
+
+    mae = mean_absolute_error(y_test, y_pred)
+
+    # Beste Parameter extrahieren (ohne "model__" Prefix)
+    best_params = {
+        k.replace("model__", ""): v
+        for k, v in search.best_params_.items()
+    }
+
+    metrics = {
+        "mape": round(mape, 2),
+        "mae": round(mae, 2),
+        "n_samples": len(df),
+        "n_test": len(X_test),
+        "model_type": model_type,
+        "tuned": True,
+        "n_iter": n_iter,
+        "cv_splits": cv_splits,
+        "best_cv_score": round(-search.best_score_, 2),  # MAE (negiert zurück)
+    }
+
+    logger.info(f"Tuning abgeschlossen!")
+    logger.info(f"Beste Parameter: {best_params}")
+    logger.info(f"CV-Score (MAE): {-search.best_score_:.0f}W")
+    logger.info(f"Test-MAPE: {mape:.1f}%, Test-MAE: {mae:.0f}W")
+
+    return best_pipeline, metrics, best_params
 
 
 def save_model(model: Pipeline, path: Path, metrics: dict | None = None) -> None:
