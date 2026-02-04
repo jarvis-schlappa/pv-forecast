@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import time
 from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
@@ -20,6 +21,10 @@ FORECAST_API = "https://api.open-meteo.com/v1/forecast"
 # Parameter die wir abfragen
 WEATHER_PARAMS = "shortwave_radiation,cloud_cover,temperature_2m"
 
+# Retry-Konfiguration
+DEFAULT_MAX_RETRIES = 3
+DEFAULT_RETRY_DELAY = 2.0  # Sekunden, wird exponentiell erhöht
+
 UTC_TZ = ZoneInfo("UTC")
 
 
@@ -29,12 +34,81 @@ class WeatherAPIError(Exception):
     pass
 
 
+def _request_with_retry(
+    url: str,
+    params: dict,
+    timeout: float = 30.0,
+    max_retries: int = DEFAULT_MAX_RETRIES,
+    retry_delay: float = DEFAULT_RETRY_DELAY,
+) -> dict:
+    """
+    Führt HTTP GET Request mit Retry-Logic aus.
+
+    Args:
+        url: API URL
+        params: Query-Parameter
+        timeout: Request timeout in Sekunden
+        max_retries: Maximale Anzahl Versuche
+        retry_delay: Basis-Delay zwischen Versuchen (wird exponentiell erhöht)
+
+    Returns:
+        JSON Response als dict
+
+    Raises:
+        WeatherAPIError: Nach allen fehlgeschlagenen Versuchen
+    """
+    last_error = None
+
+    for attempt in range(max_retries):
+        try:
+            with httpx.Client(timeout=timeout) as client:
+                response = client.get(url, params=params)
+                response.raise_for_status()
+                return response.json()
+
+        except httpx.HTTPStatusError as e:
+            # HTTP-Fehler (4xx, 5xx) - nicht wiederholen bei Client-Fehlern
+            if e.response.status_code < 500:
+                raise WeatherAPIError(f"API-Fehler: {e.response.status_code}") from e
+            last_error = e
+            logger.warning(
+                f"Server-Fehler {e.response.status_code}, "
+                f"Versuch {attempt + 1}/{max_retries}"
+            )
+
+        except (httpx.TimeoutException, httpx.ConnectError) as e:
+            # Timeout oder Verbindungsfehler - wiederholen
+            last_error = e
+            logger.warning(
+                f"Verbindungsfehler: {type(e).__name__}, "
+                f"Versuch {attempt + 1}/{max_retries}"
+            )
+
+        except httpx.RequestError as e:
+            # Andere Request-Fehler
+            last_error = e
+            logger.warning(
+                f"Request-Fehler: {e}, "
+                f"Versuch {attempt + 1}/{max_retries}"
+            )
+
+        # Warte vor nächstem Versuch (exponential backoff)
+        if attempt < max_retries - 1:
+            delay = retry_delay * (2 ** attempt)
+            logger.info(f"Warte {delay:.1f}s vor nächstem Versuch...")
+            time.sleep(delay)
+
+    # Alle Versuche fehlgeschlagen
+    raise WeatherAPIError(f"Fehlgeschlagen nach {max_retries} Versuchen: {last_error}")
+
+
 def fetch_historical(
     lat: float,
     lon: float,
     start: date,
     end: date,
-    timeout: float = 30.0,
+    timeout: float = 60.0,
+    max_retries: int = DEFAULT_MAX_RETRIES,
 ) -> pd.DataFrame:
     """
     Holt historische Wetterdaten von Open-Meteo Archive API.
@@ -44,7 +118,8 @@ def fetch_historical(
         lon: Längengrad
         start: Startdatum
         end: Enddatum
-        timeout: Request timeout in Sekunden
+        timeout: Request timeout in Sekunden (default: 60)
+        max_retries: Maximale Anzahl Versuche bei Fehlern (default: 3)
 
     Returns:
         DataFrame mit Spalten:
@@ -54,7 +129,7 @@ def fetch_historical(
         - temperature_c: Temperatur
 
     Raises:
-        WeatherAPIError: Bei API-Fehlern
+        WeatherAPIError: Bei API-Fehlern nach allen Retries
     """
     logger.info(f"Lade historische Wetterdaten: {start} bis {end}")
 
@@ -67,15 +142,9 @@ def fetch_historical(
         "timezone": "UTC",
     }
 
-    try:
-        with httpx.Client(timeout=timeout) as client:
-            response = client.get(HISTORICAL_API, params=params)
-            response.raise_for_status()
-            data = response.json()
-    except httpx.HTTPStatusError as e:
-        raise WeatherAPIError(f"API-Fehler: {e.response.status_code}") from e
-    except httpx.RequestError as e:
-        raise WeatherAPIError(f"Verbindungsfehler: {e}") from e
+    data = _request_with_retry(
+        HISTORICAL_API, params, timeout=timeout, max_retries=max_retries
+    )
 
     if "hourly" not in data:
         raise WeatherAPIError(f"Unerwartete API-Antwort: {data}")
@@ -88,6 +157,7 @@ def fetch_forecast(
     lon: float,
     hours: int = 48,
     timeout: float = 30.0,
+    max_retries: int = DEFAULT_MAX_RETRIES,
 ) -> pd.DataFrame:
     """
     Holt Wettervorhersage von Open-Meteo Forecast API.
@@ -97,12 +167,13 @@ def fetch_forecast(
         lon: Längengrad
         hours: Anzahl Stunden (max 384 = 16 Tage)
         timeout: Request timeout in Sekunden
+        max_retries: Maximale Anzahl Versuche bei Fehlern (default: 3)
 
     Returns:
         DataFrame mit gleichem Schema wie fetch_historical()
 
     Raises:
-        WeatherAPIError: Bei API-Fehlern
+        WeatherAPIError: Bei API-Fehlern nach allen Retries
     """
     logger.info(f"Lade Wettervorhersage: {hours} Stunden")
 
@@ -115,15 +186,9 @@ def fetch_forecast(
         "forecast_hours": min(hours, 384),
     }
 
-    try:
-        with httpx.Client(timeout=timeout) as client:
-            response = client.get(FORECAST_API, params=params)
-            response.raise_for_status()
-            data = response.json()
-    except httpx.HTTPStatusError as e:
-        raise WeatherAPIError(f"API-Fehler: {e.response.status_code}") from e
-    except httpx.RequestError as e:
-        raise WeatherAPIError(f"Verbindungsfehler: {e}") from e
+    data = _request_with_retry(
+        FORECAST_API, params, timeout=timeout, max_retries=max_retries
+    )
 
     if "hourly" not in data:
         raise WeatherAPIError(f"Unerwartete API-Antwort: {data}")
