@@ -5,6 +5,7 @@ from unittest.mock import MagicMock, patch
 from zoneinfo import ZoneInfo
 
 import httpx
+import pandas as pd
 import pytest
 
 from pvforecast.weather import (
@@ -286,3 +287,104 @@ class TestRequestWithRetry:
 
             assert result == {"data": "success"}
             assert mock_get.call_count == 2
+
+
+# === Bulk Insert Tests ===
+
+
+class TestSaveWeatherToDb:
+    """Tests für save_weather_to_db()."""
+
+    def test_save_empty_dataframe(self, tmp_path):
+        """Test: Leerer DataFrame gibt 0 zurück."""
+        from pvforecast.db import Database
+        from pvforecast.weather import save_weather_to_db
+
+        db = Database(tmp_path / "test.db")
+
+
+        df = pd.DataFrame(columns=["timestamp", "ghi_wm2", "cloud_cover_pct", "temperature_c"])
+        result = save_weather_to_db(df, db)
+
+        assert result == 0
+
+    def test_save_single_record(self, tmp_path):
+        """Test: Einzelner Datensatz wird gespeichert."""
+        from pvforecast.db import Database
+        from pvforecast.weather import save_weather_to_db
+
+        db = Database(tmp_path / "test.db")
+
+
+        df = pd.DataFrame([{
+            "timestamp": 1704067200,  # 2024-01-01 00:00 UTC
+            "ghi_wm2": 100.0,
+            "cloud_cover_pct": 50,
+            "temperature_c": 10.0,
+        }])
+        result = save_weather_to_db(df, db)
+
+        assert result == 1
+        assert db.get_weather_count() == 1
+
+    def test_save_multiple_records(self, tmp_path):
+        """Test: Mehrere Datensätze werden in einem Bulk gespeichert."""
+        from pvforecast.db import Database
+        from pvforecast.weather import save_weather_to_db
+
+        db = Database(tmp_path / "test.db")
+
+
+        # 100 Datensätze
+        records = [
+            {
+                "timestamp": 1704067200 + i * 3600,
+                "ghi_wm2": float(i * 10),
+                "cloud_cover_pct": i % 100,
+                "temperature_c": 10.0 + i * 0.1,
+            }
+            for i in range(100)
+        ]
+        df = pd.DataFrame(records)
+        result = save_weather_to_db(df, db)
+
+        assert result == 100
+        assert db.get_weather_count() == 100
+
+    def test_save_replaces_existing(self, tmp_path):
+        """Test: Bestehende Datensätze werden ersetzt (REPLACE)."""
+        from pvforecast.db import Database
+        from pvforecast.weather import save_weather_to_db
+
+        db = Database(tmp_path / "test.db")
+
+
+        # Erster Insert
+        df1 = pd.DataFrame([{
+            "timestamp": 1704067200,
+            "ghi_wm2": 100.0,
+            "cloud_cover_pct": 50,
+            "temperature_c": 10.0,
+        }])
+        save_weather_to_db(df1, db)
+
+        # Zweiter Insert mit gleichem Timestamp, anderen Werten
+        df2 = pd.DataFrame([{
+            "timestamp": 1704067200,
+            "ghi_wm2": 200.0,  # Geändert
+            "cloud_cover_pct": 75,  # Geändert
+            "temperature_c": 15.0,  # Geändert
+        }])
+        save_weather_to_db(df2, db)
+
+        # Sollte immer noch nur 1 Datensatz sein (ersetzt, nicht doppelt)
+        assert db.get_weather_count() == 1
+
+        # Werte sollten die neuen sein
+        with db.connect() as conn:
+            row = conn.execute(
+                "SELECT ghi_wm2, cloud_cover_pct FROM weather_history WHERE timestamp = ?",
+                (1704067200,)
+            ).fetchone()
+            assert row[0] == 200.0
+            assert row[1] == 75
