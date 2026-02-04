@@ -288,6 +288,32 @@ class TestRequestWithRetry:
             assert result == {"data": "success"}
             assert mock_get.call_count == 2
 
+    def test_retry_on_rate_limit_429(self):
+        """Test: Retry bei HTTP 429 (Rate Limit)."""
+        with patch("pvforecast.weather.httpx.Client") as mock_client:
+            mock_get = mock_client.return_value.__enter__.return_value.get
+
+            # 429 Rate Limit, dann Erfolg
+            mock_error_response = MagicMock()
+            mock_error_response.status_code = 429
+            error = httpx.HTTPStatusError(
+                "Too Many Requests", request=MagicMock(), response=mock_error_response
+            )
+
+            mock_success_response = MagicMock()
+            mock_success_response.json.return_value = {"data": "success"}
+
+            mock_get.side_effect = [error, mock_success_response]
+
+            with patch("pvforecast.weather.time.sleep"):
+                with patch("pvforecast.weather.random.random", return_value=0.5):
+                    result = _request_with_retry(
+                        "https://api.test.com", {}, max_retries=3
+                    )
+
+            assert result == {"data": "success"}
+            assert mock_get.call_count == 2
+
 
 # === Bulk Insert Tests ===
 
