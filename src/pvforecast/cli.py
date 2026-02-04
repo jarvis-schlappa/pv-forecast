@@ -11,7 +11,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from pvforecast import __version__
-from pvforecast.config import DEFAULT_CONFIG, Config
+from pvforecast.config import DEFAULT_CONFIG, Config, get_config_path, load_config
 from pvforecast.data_loader import DataImportError, import_csv_files
 from pvforecast.db import Database
 from pvforecast.model import (
@@ -401,6 +401,50 @@ def cmd_evaluate(args: argparse.Namespace, config: Config) -> int:
     return 0
 
 
+def cmd_config(args: argparse.Namespace, config: Config) -> int:
+    """Verwaltet die Konfiguration."""
+    config_path = get_config_path()
+
+    if args.path:
+        print(config_path)
+        return 0
+
+    if args.init:
+        if config_path.exists():
+            print(f"⚠️  Config existiert bereits: {config_path}")
+            print("   Lösche die Datei manuell um neu zu erstellen.")
+            return 1
+        config.save(config_path)
+        print(f"✅ Config erstellt: {config_path}")
+        return 0
+
+    # Default: --show
+    print("PV-Forecast Konfiguration")
+    print("=" * 50)
+    print()
+    print(f"📄 Config-Datei: {config_path}")
+    if config_path.exists():
+        print("   Status: ✅ vorhanden")
+    else:
+        print("   Status: ❌ nicht vorhanden (nutze Defaults)")
+        print("   Tipp: 'pvforecast config --init' zum Erstellen")
+    print()
+    print("📍 Standort:")
+    print(f"   Latitude:  {config.latitude}")
+    print(f"   Longitude: {config.longitude}")
+    print(f"   Timezone:  {config.timezone}")
+    print()
+    print("⚡ Anlage:")
+    print(f"   Name:      {config.system_name}")
+    print(f"   Peak:      {config.peak_kwp} kWp")
+    print()
+    print("💾 Pfade:")
+    print(f"   Datenbank: {config.db_path}")
+    print(f"   Modell:    {config.model_path}")
+
+    return 0
+
+
 def create_parser() -> argparse.ArgumentParser:
     """Erstellt den Argument-Parser."""
     parser = argparse.ArgumentParser(
@@ -473,6 +517,24 @@ def create_parser() -> argparse.ArgumentParser:
         help="Jahr für Evaluation",
     )
 
+    # config
+    p_config = subparsers.add_parser("config", help="Konfiguration verwalten")
+    p_config.add_argument(
+        "--show",
+        action="store_true",
+        help="Aktuelle Konfiguration anzeigen",
+    )
+    p_config.add_argument(
+        "--init",
+        action="store_true",
+        help="Config-Datei mit Defaults erstellen",
+    )
+    p_config.add_argument(
+        "--path",
+        action="store_true",
+        help="Pfad zur Config-Datei anzeigen",
+    )
+
     return parser
 
 
@@ -488,8 +550,10 @@ def main() -> int:
         format="%(message)s" if not args.verbose else "%(levelname)s: %(message)s",
     )
 
-    # Config erstellen
-    config = Config()
+    # Config aus Datei laden (falls vorhanden)
+    config = load_config()
+
+    # CLI-Argumente überschreiben Config-Datei
     if args.db:
         config.db_path = args.db
     if args.lat:
@@ -507,6 +571,7 @@ def main() -> int:
         "train": cmd_train,
         "status": cmd_status,
         "evaluate": cmd_evaluate,
+        "config": cmd_config,
     }
 
     cmd_func = commands.get(args.command)
