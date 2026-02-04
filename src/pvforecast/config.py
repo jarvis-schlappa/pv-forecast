@@ -23,6 +23,12 @@ def _default_config_path() -> Path:
     return Path.home() / ".config" / "pvforecast" / "config.yaml"
 
 
+class ConfigValidationError(ValueError):
+    """Fehler bei Config-Validierung."""
+
+    pass
+
+
 @dataclass
 class Config:
     """Konfiguration für pvforecast."""
@@ -42,6 +48,23 @@ class Config:
 
     # API
     weather_provider: str = "open-meteo"
+
+    def __post_init__(self) -> None:
+        """Validiert Config nach Erstellung."""
+        if not -90 <= self.latitude <= 90:
+            raise ConfigValidationError(
+                f"latitude muss zwischen -90 und 90 liegen, ist: {self.latitude}"
+            )
+        if not -180 <= self.longitude <= 180:
+            raise ConfigValidationError(
+                f"longitude muss zwischen -180 und 180 liegen, ist: {self.longitude}"
+            )
+        if self.peak_kwp <= 0:
+            raise ConfigValidationError(
+                f"peak_kwp muss positiv sein, ist: {self.peak_kwp}"
+            )
+        if not self.system_name or not self.system_name.strip():
+            raise ConfigValidationError("system_name darf nicht leer sein")
 
     def ensure_dirs(self) -> None:
         """Erstellt notwendige Verzeichnisse."""
@@ -69,6 +92,56 @@ class Config:
             },
         }
 
+    @classmethod
+    def from_dict(cls, data: dict) -> Config:
+        """
+        Erstellt Config aus Dictionary.
+
+        Args:
+            data: Dictionary im gleichen Format wie to_dict()
+
+        Returns:
+            Config-Instanz
+
+        Raises:
+            ConfigValidationError: Bei ungültigen Werten
+        """
+        kwargs = {}
+
+        # Location
+        if "location" in data:
+            loc = data["location"]
+            if "latitude" in loc:
+                kwargs["latitude"] = float(loc["latitude"])
+            if "longitude" in loc:
+                kwargs["longitude"] = float(loc["longitude"])
+            if "timezone" in loc:
+                kwargs["timezone"] = str(loc["timezone"])
+
+        # System
+        if "system" in data:
+            sys = data["system"]
+            if "peak_kwp" in sys:
+                kwargs["peak_kwp"] = float(sys["peak_kwp"])
+            if "name" in sys:
+                kwargs["system_name"] = str(sys["name"])
+
+        # Data paths
+        if "data" in data:
+            d = data["data"]
+            if "db_path" in d:
+                kwargs["db_path"] = Path(d["db_path"]).expanduser()
+            if "model_path" in d:
+                kwargs["model_path"] = Path(d["model_path"]).expanduser()
+
+        # API
+        if "api" in data:
+            api = data["api"]
+            if "weather_provider" in api:
+                kwargs["weather_provider"] = str(api["weather_provider"])
+
+        return cls(**kwargs)
+
     def save(self, path: Path | None = None) -> None:
         """Speichert Config als YAML-Datei."""
         if path is None:
@@ -88,6 +161,9 @@ def load_config(path: Path | None = None) -> Config:
 
     Returns:
         Config-Objekt mit Werten aus Datei, oder Defaults wenn nicht vorhanden
+
+    Raises:
+        ConfigValidationError: Bei ungültigen Werten in der Config-Datei
     """
     if path is None:
         path = _default_config_path()
@@ -105,42 +181,7 @@ def load_config(path: Path | None = None) -> Config:
         logger.warning(f"Fehler beim Lesen der Config: {e}")
         return Config()
 
-    # Config aus YAML-Daten erstellen
-    config = Config()
-
-    # Location
-    if "location" in data:
-        loc = data["location"]
-        if "latitude" in loc:
-            config.latitude = float(loc["latitude"])
-        if "longitude" in loc:
-            config.longitude = float(loc["longitude"])
-        if "timezone" in loc:
-            config.timezone = str(loc["timezone"])
-
-    # System
-    if "system" in data:
-        sys = data["system"]
-        if "peak_kwp" in sys:
-            config.peak_kwp = float(sys["peak_kwp"])
-        if "name" in sys:
-            config.system_name = str(sys["name"])
-
-    # Data paths
-    if "data" in data:
-        d = data["data"]
-        if "db_path" in d:
-            config.db_path = Path(d["db_path"]).expanduser()
-        if "model_path" in d:
-            config.model_path = Path(d["model_path"]).expanduser()
-
-    # API
-    if "api" in data:
-        api = data["api"]
-        if "weather_provider" in api:
-            config.weather_provider = str(api["weather_provider"])
-
-    return config
+    return Config.from_dict(data)
 
 
 def get_config_path() -> Path:
