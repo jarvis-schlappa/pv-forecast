@@ -20,7 +20,6 @@ class TestImportTrainPredictWorkflow:
 
     def test_full_workflow_with_mocked_weather(self, tmp_path):
         """Test: Kompletter Workflow mit gemockten Wetterdaten."""
-        from pvforecast.data_loader import import_csv_files
         from pvforecast.model import load_model, predict, save_model, train
 
         # Setup
@@ -29,58 +28,63 @@ class TestImportTrainPredictWorkflow:
         db = Database(db_path)
         lat, lon = 51.83, 7.28
 
-        # 1. Generiere genug Testdaten (min. 100 für Training)
-        # Erstelle CSV mit 150 Stunden Daten (~ 6 Tage)
-        csv_path = tmp_path / "large_test.csv"
-        header = (
-            '"Zeitstempel";"Ladezustand [%]";"Solarproduktion [W]";'
-            '"Batterie Laden [W]";"Batterie Entladen [W]";"Netzeinspeisung [W]";'
-            '"Netzbezug [W]";"Hausverbrauch [W]";"Abregelungsgrenze [W]"'
-        )
-        lines = [header]
-        base_time = datetime(2024, 6, 1, 0, 0, 0)
+        # 1. Generiere genug Testdaten direkt in DB (min. 100 für Training)
+        # Robuster als CSV-Import (vermeidet Locale/Parsing-Probleme)
+        base_time = datetime(2024, 6, 1, 0, 0, 0, tzinfo=UTC_TZ)
+        pv_data = []
+        weather_data = []
+
         for i in range(150):
             ts = base_time + timedelta(hours=i)
+            timestamp = int(ts.timestamp())
             hour = ts.hour
+
             # Simuliere Tagesverlauf
             if 6 <= hour <= 20:
                 production = int(500 + 3000 * (1 - abs(hour - 13) / 7))
+                ghi = 800.0
             else:
                 production = 0
-            line = f'{ts.strftime("%d.%m.%Y %H:%M:%S")};50;{production};0;0;0;0;500;5000'
-            lines.append(line)
-        csv_path.write_text("\n".join(lines))
+                ghi = 0.0
 
-        # Import CSV
-        imported = import_csv_files([csv_path], db)
-        assert imported >= 100, f"Zu wenig Daten importiert: {imported}"
-
-        # 2. Mock Wetterdaten für Training
-        pv_start, pv_end = db.get_pv_date_range()
-        assert pv_start is not None
-
-        # Wetterdaten direkt in DB einfügen
-        weather_data = []
-        for ts in range(pv_start, pv_end + 3600, 3600):
-            hour = datetime.fromtimestamp(ts, UTC_TZ).hour
-            ghi = 800 if 6 <= hour <= 20 else 0
+            pv_data.append({
+                "timestamp": timestamp,
+                "production_w": production,
+                "curtailed": 0,
+                "soc_pct": 50,
+                "grid_feed_w": 0,
+                "grid_draw_w": 0,
+                "consumption_w": 500,
+            })
             weather_data.append({
-                "timestamp": ts,
-                "ghi_wm2": float(ghi),
+                "timestamp": timestamp,
+                "ghi_wm2": ghi,
                 "cloud_cover_pct": 30,
                 "temperature_c": 20.0,
             })
 
+        # Daten in DB einfügen
         with db.connect() as conn:
             conn.executemany(
-                """INSERT OR REPLACE INTO weather_history
+                """INSERT INTO pv_readings
+                   (timestamp, production_w, curtailed, soc_pct,
+                    grid_feed_w, grid_draw_w, consumption_w)
+                   VALUES (:timestamp, :production_w, :curtailed, :soc_pct,
+                           :grid_feed_w, :grid_draw_w, :consumption_w)""",
+                pv_data,
+            )
+            conn.executemany(
+                """INSERT INTO weather_history
                    (timestamp, ghi_wm2, cloud_cover_pct, temperature_c)
                    VALUES (:timestamp, :ghi_wm2, :cloud_cover_pct, :temperature_c)""",
                 weather_data,
             )
             conn.commit()
 
-        # 3. Training
+        pv_count = db.get_pv_count()
+        assert pv_count >= 100, f"Zu wenig Daten: {pv_count}"
+
+        # 2. Training
         model, metrics = train(db, lat, lon, model_type="rf")
         assert model is not None
         assert "mape" in metrics
