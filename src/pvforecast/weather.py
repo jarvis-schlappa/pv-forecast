@@ -129,11 +129,11 @@ def fetch_forecast(
         raise WeatherAPIError(f"Unerwartete API-Antwort: {data}")
 
     df = _parse_weather_response(data)
-    
+
     # Nur zukünftige Stunden (ab jetzt)
     now_ts = int(datetime.now(UTC_TZ).timestamp())
     df = df[df["timestamp"] >= now_ts].head(hours)
-    
+
     return df
 
 
@@ -177,7 +177,7 @@ def save_weather_to_db(df: pd.DataFrame, db: Database) -> int:
         for _, row in df.iterrows():
             try:
                 conn.execute(
-                    """INSERT OR REPLACE INTO weather_history 
+                    """INSERT OR REPLACE INTO weather_history
                        (timestamp, ghi_wm2, cloud_cover_pct, temperature_c)
                        VALUES (?, ?, ?, ?)""",
                     (

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -91,7 +90,7 @@ def load_e3dc_csv(csv_path: Path) -> pd.DataFrame:
         .dt.tz_localize(LOCAL_TZ, ambiguous="NaT", nonexistent="NaT")
         .dt.tz_convert(UTC_TZ)
     )
-    
+
     # Zeilen mit NaT timestamps entfernen (Zeitumstellungs-Probleme)
     before_count = len(df)
     df = df.dropna(subset=["timestamp"])
@@ -135,12 +134,12 @@ def import_to_db(df: pd.DataFrame, db: Database) -> int:
     Returns:
         Anzahl neu eingefügter Zeilen
     """
-    columns = ["timestamp", "production_w", "curtailed", "soc_pct", 
+    columns = ["timestamp", "production_w", "curtailed", "soc_pct",
                "grid_feed_w", "grid_draw_w", "consumption_w"]
-    
+
     # Nur vorhandene Spalten
     columns = [c for c in columns if c in df.columns]
-    
+
     placeholders = ", ".join(["?"] * len(columns))
     column_names = ", ".join(columns)
 

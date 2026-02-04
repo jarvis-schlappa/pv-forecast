@@ -13,10 +13,10 @@ def temp_db():
     """Erstellt eine temporäre Datenbank."""
     with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
         db_path = Path(f.name)
-    
+
     db = Database(db_path)
     yield db
-    
+
     # Cleanup
     if db_path.exists():
         db_path.unlink()
@@ -25,7 +25,12 @@ def temp_db():
 @pytest.fixture
 def sample_csv(tmp_path):
     """Erstellt eine Test-CSV im E3DC Format."""
-    csv_content = '''"Zeitstempel";"Ladezustand [%]";"Solarproduktion [W]";"Batterie Laden [W]";"Batterie Entladen [W]";"Netzeinspeisung [W]";"Netzbezug [W]";"Hausverbrauch [W]";"Abregelungsgrenze [W]"
+    header = (
+        '"Zeitstempel";"Ladezustand [%]";"Solarproduktion [W]";'
+        '"Batterie Laden [W]";"Batterie Entladen [W]";"Netzeinspeisung [W]";'
+        '"Netzbezug [W]";"Hausverbrauch [W]";"Abregelungsgrenze [W]"'
+    )
+    csv_content = f'''{header}
 01.06.2024 06:00:00;50;100;0;0;0;300;400;5000
 01.06.2024 07:00:00;50;500;200;0;0;100;400;5000
 01.06.2024 08:00:00;55;1200;800;0;50;50;400;5000

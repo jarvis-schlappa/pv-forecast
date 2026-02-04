@@ -12,7 +12,7 @@ from zoneinfo import ZoneInfo
 
 from pvforecast import __version__
 from pvforecast.config import DEFAULT_CONFIG, Config
-from pvforecast.data_loader import DataImportError, import_csv_files, load_e3dc_csv
+from pvforecast.data_loader import DataImportError, import_csv_files
 from pvforecast.db import Database
 from pvforecast.model import (
     Forecast,
@@ -113,7 +113,6 @@ def format_forecast_json(forecast: Forecast) -> str:
 
 def cmd_predict(args: argparse.Namespace, config: Config) -> int:
     """Führt Prognose aus."""
-    db = Database(config.db_path)
     tz = ZoneInfo(config.timezone)
 
     # Modell laden
@@ -127,7 +126,7 @@ def cmd_predict(args: argparse.Namespace, config: Config) -> int:
     # Berechne Ziel-Tage (morgen, übermorgen, ...)
     today = datetime.now(tz).date()
     target_dates = [today + timedelta(days=i) for i in range(1, args.days + 1)]
-    
+
     # Genug Stunden holen um alle Ziel-Tage abzudecken
     hours_needed = (args.days + 1) * 24  # +1 Tag Puffer
 
@@ -175,8 +174,8 @@ def cmd_today(args: argparse.Namespace, config: Config) -> int:
     """Zeigt Prognose für heute (ganzer Tag)."""
     import httpx
     import pandas as pd
-    
-    db = Database(config.db_path)
+
+    Database(config.db_path)
     tz = ZoneInfo(config.timezone)
 
     # Modell laden
@@ -208,7 +207,7 @@ def cmd_today(args: argparse.Namespace, config: Config) -> int:
             response = client.get("https://api.open-meteo.com/v1/forecast", params=params)
             response.raise_for_status()
             data = response.json()
-        
+
         hourly = data["hourly"]
         weather_df = pd.DataFrame({
             "timestamp": pd.to_datetime(hourly["time"]).astype("int64") // 10**9,
@@ -219,7 +218,7 @@ def cmd_today(args: argparse.Namespace, config: Config) -> int:
         weather_df["ghi_wm2"] = weather_df["ghi_wm2"].fillna(0.0)
         weather_df["cloud_cover_pct"] = weather_df["cloud_cover_pct"].fillna(0).astype(int)
         weather_df["temperature_c"] = weather_df["temperature_c"].fillna(10.0)
-        
+
     except Exception as e:
         print(f"❌ Fehler bei Wetterabfrage: {e}", file=sys.stderr)
         return 1
@@ -250,7 +249,7 @@ def cmd_today(args: argparse.Namespace, config: Config) -> int:
     print()
     print("  Stundenwerte")
     print("  " + "─" * 35)
-    
+
     for h in forecast.hourly:
         local = h.timestamp.astimezone(tz)
         emoji = get_weather_emoji(h.cloud_cover_pct)
@@ -258,7 +257,7 @@ def cmd_today(args: argparse.Namespace, config: Config) -> int:
         marker = " ◄" if local.hour == now_hour else ""
         if h.production_w > 0 or 6 <= local.hour <= 20:
             print(f"  {local.strftime('%H:%M')}   {h.production_w:>5} W   {emoji}{marker}")
-    
+
     print()
     return 0
 
@@ -347,7 +346,7 @@ def cmd_train(args: argparse.Namespace, config: Config) -> int:
 
 def cmd_status(args: argparse.Namespace, config: Config) -> int:
     """Zeigt Status der Datenbank und des Modells."""
-    print(f"PV-Forecast Status")
+    print("PV-Forecast Status")
     print("=" * 40)
     print()
 
@@ -458,13 +457,13 @@ def create_parser() -> argparse.ArgumentParser:
     )
 
     # today
-    p_today = subparsers.add_parser("today", help="Prognose für heute")
+    subparsers.add_parser("today", help="Prognose für heute")
 
     # train
-    p_train = subparsers.add_parser("train", help="Trainiert das ML-Modell")
+    subparsers.add_parser("train", help="Trainiert das ML-Modell")
 
     # status
-    p_status = subparsers.add_parser("status", help="Zeigt Status an")
+    subparsers.add_parser("status", help="Zeigt Status an")
 
     # evaluate
     p_evaluate = subparsers.add_parser("evaluate", help="Evaluiert Modell-Performance")

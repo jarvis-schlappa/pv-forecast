@@ -101,7 +101,7 @@ def prepare_features(df: pd.DataFrame, lat: float, lon: float) -> pd.DataFrame:
         lon: Längengrad
 
     Returns:
-        DataFrame mit Features: hour, month, day_of_year, ghi, cloud_cover, 
+        DataFrame mit Features: hour, month, day_of_year, ghi, cloud_cover,
                                temperature, sun_elevation
     """
     features = pd.DataFrame()
@@ -142,7 +142,7 @@ def train(db: Database, lat: float, lon: float) -> tuple[Pipeline, dict]:
     with db.connect() as conn:
         # Join PV und Wetter-Daten
         query = """
-            SELECT 
+            SELECT
                 p.timestamp,
                 p.production_w,
                 w.ghi_wm2,
@@ -301,7 +301,7 @@ def predict(
 
     # Hourly Forecasts erstellen
     hourly = []
-    for i, row in weather_df.iterrows():
+    for _, row in weather_df.iterrows():
         hourly.append(
             HourlyForecast(
                 timestamp=datetime.fromtimestamp(int(row["timestamp"]), UTC_TZ),
