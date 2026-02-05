@@ -12,7 +12,7 @@
 
 **Erfolgskriterien:**
 - [x] Prognose für 48h mit Stundenwerten (W) und Tagesertrag (kWh)
-- [ ] Abweichung vom tatsächlichen Ertrag < 20% (MAPE) bei normalen Wetterbedingungen *(aktuell: 45.6%)*
+- [ ] Abweichung vom tatsächlichen Ertrag < 20% (MAPE) bei normalen Wetterbedingungen *(aktuell: 30.3% mit XGBoost)*
 - [x] CLI-Aufruf liefert Ergebnis in < 10 Sekunden
 - [x] Läuft auf macOS (Mac mini) und Linux (Raspberry Pi)
 

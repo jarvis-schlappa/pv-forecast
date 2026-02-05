@@ -15,7 +15,7 @@ pvforecast [GLOBALE OPTIONEN] <befehl> [BEFEHL-OPTIONEN]
 | `--db PATH` | Pfad zur SQLite-Datenbank | `~/.local/share/pvforecast/data.db` |
 | `--lat FLOAT` | Breitengrad | aus Config |
 | `--lon FLOAT` | Längengrad | aus Config |
-| `-v, --verbose` | Ausführliche Ausgabe | aus |
+| `-v, --verbose` | Ausführliche Ausgabe (inkl. HTTP-Requests, Debug-Logs) | aus |
 | `--version` | Version anzeigen | - |
 | `-h, --help` | Hilfe anzeigen | - |
 
@@ -91,6 +91,17 @@ pvforecast import E3DC-Export-*.csv
 pvforecast import ~/Downloads/E3DC-Export-2024-01.csv
 ```
 
+**Ausgabe (mit Progress und Timing):**
+
+```
+[1/3] E3DC-Export-2024.csv: 8782 neue Datensätze
+[2/3] E3DC-Export-2025.csv: 8758 neue Datensätze
+[3/3] E3DC-Export-2026.csv: 858 neue Datensätze
+✅ Import abgeschlossen in 1s: 18398 neue Datensätze
+   Datenbank: ~/.local/share/pvforecast/data.db
+   Gesamt in DB: 62212 PV-Datensätze
+```
+
 ---
 
 ### `pvforecast train`
@@ -149,7 +160,7 @@ pvforecast tune --trials 100
 pvforecast tune --trials 10 --cv 3
 ```
 
-**Ausgabe:**
+**Ausgabe (mit Timing):**
 
 ```
 🔧 Hyperparameter-Tuning für XGBoost
@@ -159,21 +170,21 @@ pvforecast tune --trials 10 --cv 3
 ⏳ Das kann einige Minuten dauern...
 
 ==================================================
-✅ Tuning abgeschlossen!
+✅ Tuning abgeschlossen in 4m 23s!
 ==================================================
 
 📊 Performance:
-   MAPE: 43.4%
-   MAE:  176 W
-   CV-Score (MAE): 215 W
+   MAPE: 30.3%
+   MAE:  111 W
+   CV-Score (MAE): 201 W
 
 🎯 Beste Parameter:
-   colsample_bytree: 0.7159
-   learning_rate: 0.0568
-   max_depth: 5
-   min_child_weight: 10
-   n_estimators: 144
-   subsample: 0.7183
+   colsample_bytree: 0.8782
+   learning_rate: 0.0504
+   max_depth: 10
+   min_child_weight: 4
+   n_estimators: 112
+   subsample: 0.6308
 
 💾 Modell gespeichert: ~/.local/share/pvforecast/model.pkl
 ```
@@ -228,15 +239,15 @@ PV-Forecast Status
    9.92 kWp
 
 📊 Datenbank:
-   PV-Datensätze: 61,354
-   Wetterdaten:   62,136
-   Zeitraum:      2019-01-01 bis 2025-12-31
+   PV-Datensätze: 62,212
+   Wetterdaten:   62,256
+   Zeitraum:      2019-01-01 bis 2026-02-05
 
 🧠 Modell:
    Typ:     XGBoost
-   MAPE:    43.4%
-   MAE:     176 W
-   Erstellt: 2026-02-04 21:25
+   MAPE:    30.3%
+   MAE:     111 W
+   Erstellt: 2026-02-05 17:30
 ```
 
 ---
