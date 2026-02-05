@@ -30,6 +30,7 @@ from pvforecast.model import (
     train,
     tune,
 )
+from pvforecast.setup import SetupWizard
 from pvforecast.validation import (
     DependencyError,
     ValidationError,
@@ -666,6 +667,24 @@ def cmd_evaluate(args: argparse.Namespace, config: Config) -> int:
     return 0
 
 
+def cmd_setup(args: argparse.Namespace, config: Config) -> int:
+    """Führt den interaktiven Setup-Wizard aus."""
+    config_path = get_config_path()
+
+    if config_path.exists() and not args.force:
+        print(f"⚠️  Config existiert bereits: {config_path}")
+        print("   Verwende --force um zu überschreiben.")
+        return 1
+
+    wizard = SetupWizard()
+    try:
+        wizard.run_interactive()
+        return 0
+    except KeyboardInterrupt:
+        print("\n⚠️  Setup abgebrochen.")
+        return 130
+
+
 def cmd_config(args: argparse.Namespace, config: Config) -> int:
     """Verwaltet die Konfiguration."""
     config_path = get_config_path()
@@ -826,6 +845,14 @@ def create_parser() -> argparse.ArgumentParser:
         help="Pfad zur Config-Datei anzeigen",
     )
 
+    # setup
+    p_setup = subparsers.add_parser("setup", help="Interaktiver Einrichtungs-Assistent")
+    p_setup.add_argument(
+        "--force",
+        action="store_true",
+        help="Überschreibe existierende Konfiguration",
+    )
+
     return parser
 
 
@@ -906,6 +933,7 @@ def _run_command(args: argparse.Namespace, parser: argparse.ArgumentParser) -> i
         "status": cmd_status,
         "evaluate": cmd_evaluate,
         "config": cmd_config,
+        "setup": cmd_setup,
     }
 
     cmd_func = commands.get(args.command)
