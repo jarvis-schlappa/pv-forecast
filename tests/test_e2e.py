@@ -63,6 +63,8 @@ class TestImportTrainPredictWorkflow:
 
     def test_train_with_xgboost(self, populated_db, tmp_path):
         """Test: Training mit XGBoost Modell."""
+        pytest.importorskip("xgboost", reason="XGBoost nicht installiert")
+
         from pvforecast.model import train
 
         lat, lon = 51.83, 7.28
