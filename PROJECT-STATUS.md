@@ -1,11 +1,11 @@
 # PV-Forecast – Projektstatus
 
-> Letzte Aktualisierung: 2026-02-04 22:50
+> Letzte Aktualisierung: 2026-02-05 17:55
 
-## 🎯 Aktueller Stand: Phase 3 begonnen ✅
+## 🎯 Aktueller Stand: Phase 2 abgeschlossen ✅
 
 MVP + alle geplanten Verbesserungen implementiert.
-Erweiterte Wetter-Features (Wind, Humidity, DHI) integriert.
+CLI-Output optimiert (Progress, Timing, weniger Verbose).
 
 ---
 
@@ -25,21 +25,27 @@ Erweiterte Wetter-Features (Wind, Humidity, DHI) integriert.
 | #18 | Hyperparameter-Tuning | #30 | ✅ |
 | #20 | Dokumentation (docs/) | #33 | ✅ |
 | #21 | E2E Integration Tests | #31 | ✅ |
+| #22 | Input-Validierung | #41 | ✅ |
+| #24 | libomp Startup-Check | #42 | ✅ |
 | #25 | Erweiterte Wetter-Features | #34 | ✅ |
+| #32 | E2E Tests Refactoring | #40 | ✅ |
+| #43 | CLI-Koordinaten-Validierung | #44 | ✅ |
+| #45 | CLI Output Cleanup | #48 | ✅ |
+| #46 | Progress-Anzeige | #49 | ✅ |
+| #47 | Timing bei Operationen | #49 | ✅ |
 
 ## 🔓 Offene Issues
 
-| # | Titel | Prio | Phase |
-|---|-------|------|-------|
-| #22 | Input-Validierung | 🟢 Niedrig | 3 |
-| #23 | Automatische tägliche Prognose | 🟢 Niedrig | 3 |
-| #24 | Startup-Check für libomp | 🟡 Mittel | 3 |
-| #26 | Feature Engineering | 🟡 Mittel | 3 |
-| #27 | Separate Modelle pro Saison | 🟢 Niedrig | 3 |
-| #28 | Ensemble RF+XGB | 🟢 Niedrig | 3 |
-| #29 | Optuna Tuning | 🟢 Niedrig | 3 |
-| #30 | RF-Tuning Geschwindigkeit | 🟢 Niedrig | 3 |
-| #32 | E2E Tests Refactoring | 🟢 Niedrig | 3 |
+| # | Titel | Prio | Beschreibung |
+|---|-------|------|--------------|
+| #23 | Automatische tägliche Prognose | 🟢 Niedrig | Cron-Integration |
+| #26 | Feature Engineering | 🟡 Mittel | Weitere ML-Features |
+| #27 | Separate Modelle pro Saison | 🟢 Niedrig | Sommer/Winter-Split |
+| #28 | Ensemble RF+XGB | 🟢 Niedrig | Modell-Kombination |
+| #29 | Optuna Tuning | 🟢 Niedrig | Besseres Hyperparameter-Tuning |
+| #36-39 | Home Assistant Integration | 🟡 Mittel | HA-Sensor |
+| #50 | Alternative Weather Provider | 🟡 Mittel | Solcast, Forecast.Solar |
+| #51 | Dokumentation aktualisieren | 🟢 Niedrig | Post-Phase-2 Cleanup |
 
 ---
 
@@ -47,8 +53,8 @@ Erweiterte Wetter-Features (Wind, Humidity, DHI) integriert.
 
 | Daten | Anzahl | Zeitraum |
 |-------|--------|----------|
-| PV-Readings | 61.354 | 2019-2025 |
-| Wetter | 61.392 | 2018-2025 |
+| PV-Readings | 62.212 | 2019-2026 |
+| Wetter | 62.256 | 2018-2026 |
 
 ### Wetter-Features
 
@@ -57,25 +63,25 @@ Erweiterte Wetter-Features (Wind, Humidity, DHI) integriert.
 | GHI | Globalstrahlung | Hauptindikator |
 | Cloud Cover | Bewölkung | Wolkenabschattung |
 | Temperature | Temperatur | Moduleffizienz |
-| **Wind Speed** | Windgeschwindigkeit | Modulkühlung |
-| **Humidity** | Luftfeuchtigkeit | Dunst-Erkennung |
-| **DHI** | Diffusstrahlung | Bewölkungs-Charakter |
+| Wind Speed | Windgeschwindigkeit | Modulkühlung |
+| Humidity | Luftfeuchtigkeit | Dunst-Erkennung |
+| DHI | Diffusstrahlung | Bewölkungs-Charakter |
 
 ## 🤖 Modell-Performance
 
 | Modell | MAE | MAPE | Anmerkung |
 |--------|-----|------|-----------|
-| XGBoost (tuned) | **117 W** | **29.4%** | ⭐ Empfohlen |
-| RandomForest | 183 W | 45.6% | Basis |
+| XGBoost (tuned) | **111 W** | **30.3%** | ⭐ Empfohlen |
+| RandomForest | 168 W | 46.0% | Basis |
 
-*Nach Integration der erweiterten Wetter-Features (Wind, Humidity, DHI) und Tuning.*
+*MAPE nur für Stunden >100W. Mit erweiterten Wetter-Features.*
 
 ---
 
 ## 🧪 Test-Abdeckung
 
-- **88 Tests** ✅ (Unit + E2E)
-- Module: data_loader, weather, model, config, db, cli
+- **158 Tests** ✅ (Unit + E2E)
+- Module: validation, data_loader, weather, model, config, db, cli
 - CI: GitHub Actions (Python 3.9-3.12)
 
 ---
@@ -107,6 +113,21 @@ pvforecast evaluate           # Modell evaluieren
 # Konfiguration
 pvforecast config --show      # Config anzeigen
 pvforecast config --init      # Config-Datei erstellen
+```
+
+### Beispiel-Output (neu mit Progress + Timing)
+
+```
+[1/3] E3DC-Export-2024.csv: 8782 neue Datensätze
+[2/3] E3DC-Export-2025.csv: 8758 neue Datensätze
+[3/3] E3DC-Export-2026.csv: 858 neue Datensätze
+✅ Import abgeschlossen in 1s: 18398 neue Datensätze
+
+🌤️  Lade historische Wetterdaten...
+   62256 neue Wetterdatensätze geladen in 1m 8s
+
+✅ Training abgeschlossen in 2s!
+✅ Tuning abgeschlossen in 4m 23s!
 ```
 
 ---
