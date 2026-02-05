@@ -13,6 +13,20 @@ Ertragsprognose für Photovoltaik-Anlagen auf Basis historischer Daten und Wette
 
 ## Installation
 
+### Quick Install (empfohlen)
+
+```bash
+curl -sSL https://raw.githubusercontent.com/jarvis-schlappa/pv-forecast/main/install.sh | bash
+```
+
+Das Script:
+- Prüft Abhängigkeiten (Python 3.9+, git, pip)
+- Installiert nach `~/pv-forecast`
+- Erstellt einen Wrapper für direkten `pvforecast`-Aufruf
+- Startet den interaktiven Setup-Wizard
+
+### Manuelle Installation
+
 ```bash
 # Repository klonen
 git clone https://github.com/jarvis-schlappa/pv-forecast.git
@@ -25,11 +39,26 @@ source .venv/bin/activate
 # Installation
 pip install -e .
 
-# Optional: XGBoost Support
+# Einrichtung
+pvforecast setup
+
+# Optional: XGBoost Support (bessere Genauigkeit)
 pip install -e ".[xgb]"
 ```
 
-**Voraussetzungen:** Python 3.9+
+### Windows
+
+Das Install-Script läuft nicht nativ auf Windows. Nutze WSL:
+
+```powershell
+# 1. WSL installieren (PowerShell als Admin)
+wsl --install
+
+# 2. Neu starten, dann in WSL-Terminal:
+curl -sSL https://raw.githubusercontent.com/jarvis-schlappa/pv-forecast/main/install.sh | bash
+```
+
+**Voraussetzungen:** Python 3.9+, git
 
 ## Quickstart
 
@@ -49,6 +78,7 @@ pvforecast predict    # Prognose für morgen + übermorgen
 
 | Befehl | Beschreibung |
 |--------|--------------|
+| `pvforecast setup` | **Interaktiver Einrichtungs-Assistent** |
 | `pvforecast today` | Prognose für heute |
 | `pvforecast predict` | Prognose für morgen + übermorgen |
 | `pvforecast import <csv>` | E3DC CSV importieren |
