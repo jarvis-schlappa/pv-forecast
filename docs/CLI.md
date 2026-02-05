@@ -23,6 +23,110 @@ pvforecast [GLOBALE OPTIONEN] <befehl> [BEFEHL-OPTIONEN]
 
 ## Befehle
 
+### `pvforecast setup`
+
+Interaktiver Einrichtungs-Assistent für die Erstkonfiguration.
+
+```bash
+pvforecast setup [OPTIONEN]
+```
+
+| Option | Beschreibung |
+|--------|--------------|
+| `--force` | Überschreibt existierende Konfiguration |
+
+**Ablauf:**
+
+```
+🔆 PV-Forecast Ersteinrichtung
+══════════════════════════════════════════════════
+
+1️⃣  Standort
+   Postleitzahl oder Ort: 48249
+   Suche...
+   → Dülmen, Nordrhein-Westfalen (51.85°N, 7.26°E)
+   Stimmt das? [J/n]: j
+   ✓
+
+2️⃣  Anlage
+   Peakleistung in kWp: 9.92
+   Name (optional) [Dülmen PV]: 
+   ✓
+
+3️⃣  XGBoost (bessere Prognose-Genauigkeit)
+   XGBoost installieren? [J/n]: j
+   Installiere XGBoost...
+   ✓ XGBoost installiert
+
+══════════════════════════════════════════════════
+✅ Einrichtung abgeschlossen!
+══════════════════════════════════════════════════
+
+   Config gespeichert: ~/.config/pvforecast/config.yaml
+
+   Nächste Schritte:
+   1. Daten importieren:  pvforecast import <csv-dateien>
+   2. Modell trainieren:  pvforecast train
+   3. Prognose erstellen: pvforecast today
+```
+
+**Features:**
+- Automatische Standort-Ermittlung via PLZ oder Ortsname (Geocoding)
+- Validierung aller Eingaben
+- Optional: XGBoost-Installation (mit macOS libomp-Hinweis)
+
+---
+
+### `pvforecast doctor`
+
+System-Diagnose und Healthcheck.
+
+```bash
+pvforecast doctor
+```
+
+**Keine Optionen.**
+
+**Ausgabe:**
+
+```
+🔍 PV-Forecast Systemcheck
+══════════════════════════════════════════════════
+
+ ✓ Python: 3.11.4
+ ✓ pvforecast: 0.1.0
+ ✓ Config: ~/.config/pvforecast/config.yaml
+ ✓ Standort: Dülmen PV (9.92 kWp)
+   └─ 51.85°N, 7.26°E
+ ✓ Datenbank: 62,212 PV / 62,256 Wetter
+   └─ Zeitraum: 2019-01-01 bis 2026-02-05
+ ✓ Modell: xgb (MAE: 111W)
+   └─ MAPE: 30.3%
+ ✓ XGBoost: 2.1.4
+ ✓ libomp: Installiert (Homebrew)
+ ✓ Netzwerk: Open-Meteo API erreichbar
+
+✅ Alles OK!
+```
+
+**Checks:**
+- Python-Version
+- pvforecast-Version
+- Config-Datei (Existenz & Validität)
+- Standort-Einstellungen
+- Datenbank (PV/Wetter-Datensätze, Zeitraum)
+- Modell (Typ, MAE, MAPE)
+- XGBoost-Installation
+- libomp (nur macOS)
+- Netzwerk-Konnektivität (Open-Meteo API)
+
+**Exit-Codes:**
+- `0`: Alles OK
+- `1`: Warnungen vorhanden
+- `2`: Fehler vorhanden
+
+---
+
 ### `pvforecast today`
 
 Prognose für den heutigen Tag (vergangene + kommende Stunden).

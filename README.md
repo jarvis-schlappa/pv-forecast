@@ -13,50 +13,53 @@ Ertragsprognose für Photovoltaik-Anlagen auf Basis historischer Daten und Wette
 
 ## Installation
 
-### Quick Install (empfohlen)
-
 ```bash
 curl -sSL https://raw.githubusercontent.com/jarvis-schlappa/pv-forecast/main/install.sh | bash
 ```
 
-Das Script:
-- Prüft Abhängigkeiten (Python 3.9+, git, pip)
-- Installiert nach `~/pv-forecast`
-- Erstellt einen Wrapper für direkten `pvforecast`-Aufruf
-- Startet den interaktiven Setup-Wizard
+Nach dem Download startet automatisch der **Setup-Wizard**:
 
-### Manuelle Installation
-
-```bash
-# Repository klonen
-git clone https://github.com/jarvis-schlappa/pv-forecast.git
-cd pv-forecast
-
-# Virtual Environment
-python3 -m venv .venv
-source .venv/bin/activate
-
-# Installation
-pip install -e .
-
-# Einrichtung
-pvforecast setup
-
-# Optional: XGBoost Support (bessere Genauigkeit)
-pip install -e ".[xgb]"
 ```
+🔆 PV-Forecast Ersteinrichtung
+══════════════════════════════════════
+
+1️⃣  Standort
+   Postleitzahl oder Ort: 48249
+   → Dülmen, NRW (51.85°N, 7.26°E) ✓
+
+2️⃣  Anlage
+   Peakleistung in kWp: 9.92 ✓
+
+3️⃣  XGBoost installieren? [J/n]: j ✓
+
+✅ Einrichtung abgeschlossen!
+```
+
+Fertig! `pvforecast` ist jetzt einsatzbereit.
 
 ### Windows
 
-Das Install-Script läuft nicht nativ auf Windows. Nutze WSL:
-
 ```powershell
-# 1. WSL installieren (PowerShell als Admin)
+# 1. WSL installieren (einmalig, PowerShell als Admin)
 wsl --install
 
 # 2. Neu starten, dann in WSL-Terminal:
 curl -sSL https://raw.githubusercontent.com/jarvis-schlappa/pv-forecast/main/install.sh | bash
 ```
+
+<details>
+<summary><b>Manuelle Installation</b> (für Entwickler)</summary>
+
+```bash
+git clone https://github.com/jarvis-schlappa/pv-forecast.git
+cd pv-forecast
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -e ".[xgb]"
+pvforecast setup
+```
+
+</details>
 
 **Voraussetzungen:** Python 3.9+, git
 
@@ -79,6 +82,7 @@ pvforecast predict    # Prognose für morgen + übermorgen
 | Befehl | Beschreibung |
 |--------|--------------|
 | `pvforecast setup` | **Interaktiver Einrichtungs-Assistent** |
+| `pvforecast doctor` | **System-Diagnose und Healthcheck** |
 | `pvforecast today` | Prognose für heute |
 | `pvforecast predict` | Prognose für morgen + übermorgen |
 | `pvforecast import <csv>` | E3DC CSV importieren |
@@ -140,7 +144,7 @@ Stundenwerte
 # Dev-Dependencies
 pip install -e ".[dev]"
 
-# Tests (158 Tests)
+# Tests (222 Tests)
 pytest
 
 # Linting
