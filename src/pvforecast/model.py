@@ -482,7 +482,7 @@ def tune(
     }
 
     logger.info("Tuning abgeschlossen!")
-    logger.info(f"Beste Parameter: {best_params}")
+    logger.debug(f"Beste Parameter (raw): {best_params}")
     logger.info(f"CV-Score (MAE): {-search.best_score_:.0f}W")
     logger.info(f"Test-MAPE: {mape:.1f}%, Test-MAE: {mae:.0f}W")
 

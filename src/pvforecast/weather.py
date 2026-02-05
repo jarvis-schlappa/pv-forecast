@@ -433,7 +433,7 @@ def ensure_weather_history(
             else:
                 break
 
-        logger.info(f"Lade Wetterdaten: {chunk_start} bis {chunk_end}")
+        logger.debug(f"Lade Wetterdaten: {chunk_start} bis {chunk_end}")
         try:
             df = fetch_historical(lat, lon, chunk_start, chunk_end)
             loaded = save_weather_to_db(df, db)
