@@ -347,11 +347,19 @@ def cmd_train(args: argparse.Namespace, config: Config) -> int:
 
     # Training
     model_type = getattr(args, "model", "rf")
+    since_year = getattr(args, "since", None)
     model_name = "XGBoost" if model_type == "xgb" else "RandomForest"
-    print(f"🧠 Trainiere {model_name} Modell...")
+
+    if since_year:
+        print(f"🧠 Trainiere {model_name} Modell (Daten ab {since_year})...")
+    else:
+        print(f"🧠 Trainiere {model_name} Modell...")
+
     train_start = time.perf_counter()
     try:
-        model, metrics = train(db, config.latitude, config.longitude, model_type)
+        model, metrics = train(
+            db, config.latitude, config.longitude, model_type, since_year=since_year
+        )
     except ValueError as e:
         print(f"❌ Training fehlgeschlagen: {e}", file=sys.stderr)
         return 1
@@ -366,6 +374,8 @@ def cmd_train(args: argparse.Namespace, config: Config) -> int:
     print(f"   MAE:  {metrics['mae']:.0f} W")
     print(f"   Trainingsdaten: {metrics['n_train']}")
     print(f"   Testdaten: {metrics['n_test']}")
+    if since_year:
+        print(f"   Daten ab: {since_year}")
     print(f"   Modell: {config.model_path}")
 
     return 0
@@ -407,6 +417,7 @@ def cmd_tune(args: argparse.Namespace, config: Config) -> int:
     n_iter = getattr(args, "trials", 50)
     cv_splits = getattr(args, "cv", 5)
     timeout = getattr(args, "timeout", None)
+    since_year = getattr(args, "since", None)
     model_name = "XGBoost" if model_type == "xgb" else "RandomForest"
     method_name = "Optuna" if method == "optuna" else "RandomizedSearchCV"
 
@@ -417,6 +428,8 @@ def cmd_tune(args: argparse.Namespace, config: Config) -> int:
     print(f"   CV-Splits: {cv_splits}")
     if timeout and method == "optuna":
         print(f"   Timeout: {timeout}s")
+    if since_year:
+        print(f"   Daten ab: {since_year}")
     print()
     print("⏳ Das kann einige Minuten dauern...")
     print()
@@ -433,6 +446,7 @@ def cmd_tune(args: argparse.Namespace, config: Config) -> int:
                 cv_splits=cv_splits,
                 timeout=timeout,
                 show_progress=True,
+                since_year=since_year,
             )
         else:
             best_model, metrics, best_params = tune(
@@ -442,6 +456,7 @@ def cmd_tune(args: argparse.Namespace, config: Config) -> int:
                 model_type=model_type,
                 n_iter=n_iter,
                 cv_splits=cv_splits,
+                since_year=since_year,
             )
     except DependencyError as e:
         print(f"❌ {e}", file=sys.stderr)
@@ -831,6 +846,13 @@ def create_parser() -> argparse.ArgumentParser:
         default="rf",
         help="Modell-Typ: rf=RandomForest (default), xgb=XGBoost",
     )
+    p_train.add_argument(
+        "--since",
+        type=int,
+        default=None,
+        metavar="YEAR",
+        help="Nur Daten ab diesem Jahr verwenden (z.B. --since 2022)",
+    )
 
     # tune
     p_tune = subparsers.add_parser("tune", help="Hyperparameter-Tuning")
@@ -863,6 +885,13 @@ def create_parser() -> argparse.ArgumentParser:
         type=int,
         default=None,
         help="Maximale Laufzeit in Sekunden (nur für Optuna)",
+    )
+    p_tune.add_argument(
+        "--since",
+        type=int,
+        default=None,
+        metavar="YEAR",
+        help="Nur Daten ab diesem Jahr verwenden (z.B. --since 2022)",
     )
 
     # status
