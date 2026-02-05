@@ -446,14 +446,35 @@ def tune(
 
     search.fit(X, y)
 
-    # Beste Pipeline
-    best_pipeline = search.best_estimator_
+    # Beste Parameter extrahieren (ohne "model__" Prefix)
+    best_params = {k.replace("model__", ""): v for k, v in search.best_params_.items()}
 
-    # Evaluation auf den letzten 20% (wie bei train())
+    logger.info("Trainiere finales Modell mit besten Parametern...")
+
+    # Neue Pipeline mit besten Parametern erstellen
+    # (search.best_estimator_ ist auf ALLEN Daten trainiert - Data Leakage!)
+    if model_type == "xgb":
+        best_pipeline = Pipeline([
+            ("scaler", StandardScaler()),
+            ("model", XGBRegressor(**best_params, random_state=42, n_jobs=-1, verbosity=0)),
+        ])
+    else:
+        best_pipeline = Pipeline([
+            ("scaler", StandardScaler()),
+            ("model", RandomForestRegressor(**best_params, random_state=42, n_jobs=-1)),
+        ])
+
+    # Split für Training/Test (80/20)
     split_idx = int(len(df) * 0.8)
+    X_train = X.iloc[:split_idx]
+    y_train = y.iloc[:split_idx]
     X_test = X.iloc[split_idx:]
     y_test = y.iloc[split_idx:]
 
+    # Nur auf 80% trainieren
+    best_pipeline.fit(X_train, y_train)
+
+    # Evaluation auf echten Test-Daten (nicht im Training gesehen)
     y_pred = best_pipeline.predict(X_test)
 
     # MAPE für relevante Produktion (>100W)
@@ -466,16 +487,15 @@ def tune(
 
     mae = mean_absolute_error(y_test, y_pred)
 
-    # Beste Parameter extrahieren (ohne "model__" Prefix)
-    best_params = {k.replace("model__", ""): v for k, v in search.best_params_.items()}
-
     metrics = {
         "mape": round(mape, 2),
         "mae": round(mae, 2),
         "n_samples": len(df),
+        "n_train": len(X_train),
         "n_test": len(X_test),
         "model_type": model_type,
         "tuned": True,
+        "method": "random",
         "n_iter": n_iter,
         "cv_splits": cv_splits,
         "best_cv_score": round(-search.best_score_, 2),  # MAE (negiert zurück)
