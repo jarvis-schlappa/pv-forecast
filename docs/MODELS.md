@@ -80,17 +80,37 @@ pvforecast train --model xgb
 
 Für bessere Ergebnisse können die Modell-Parameter optimiert werden.
 
+### Tuning-Methoden
+
+| Methode | Flag | Strategie | Besonderheit |
+|---------|------|-----------|--------------|
+| **RandomizedSearchCV** | `--method random` | Zufällig | Standard, schnell |
+| **Optuna** | `--method optuna` | Bayesian | Lernt, Pruning |
+
 ### Ausführen
 
 ```bash
-# XGBoost Tuning (empfohlen)
+# XGBoost Tuning mit RandomizedSearchCV (Standard)
 pvforecast tune
 
-# RandomForest Tuning (dauert länger)
+# Optuna mit Bayesian Optimization (empfohlen für beste Ergebnisse)
+pvforecast tune --method optuna
+
+# Optuna mit Timeout (max 10 Minuten)
+pvforecast tune --method optuna --trials 100 --timeout 600
+
+# RandomForest Tuning
 pvforecast tune --model rf
 
 # Mehr Iterationen für bessere Ergebnisse
 pvforecast tune --trials 100 --cv 10
+```
+
+### Installation (für Optuna)
+
+```bash
+pip install pvforecast[tune]
+# oder: pip install optuna
 ```
 
 ### Parameter
@@ -98,8 +118,24 @@ pvforecast tune --trials 100 --cv 10
 | Option | Beschreibung | Default |
 |--------|--------------|---------|
 | `--model` | `rf` oder `xgb` | `xgb` |
-| `--trials` | Anzahl Kombinationen | 50 |
+| `--method` | `random` oder `optuna` | `random` |
+| `--trials` | Anzahl Trials/Kombinationen | 50 |
 | `--cv` | Cross-Validation Splits | 5 |
+| `--timeout` | Max. Sekunden (nur Optuna) | - |
+
+### Optuna vs RandomizedSearchCV
+
+| Aspekt | RandomizedSearchCV | Optuna |
+|--------|-------------------|--------|
+| **Suchstrategie** | Zufällig | Bayesian (lernt aus Trials) |
+| **Pruning** | Nein | Ja (bricht schlechte Trials ab) |
+| **Effizienz** | Alle Trials vollständig | 30-50% Trials gepruned |
+| **Konvergenz** | Zufallsabhängig | Gerichtet |
+| **Dependency** | Inkludiert (sklearn) | `optuna>=3.0` |
+
+**Empfehlung:** 
+- **Schnelle Tests:** `--method random` (Standard)
+- **Beste Ergebnisse:** `--method optuna`
 
 ### Suchraum
 
@@ -125,10 +161,21 @@ pvforecast tune --trials 100 --cv 10
 
 ### Dauer
 
+**RandomizedSearchCV:**
+
 | Modell | 50 Trials | 100 Trials |
 |--------|-----------|------------|
-| XGBoost | ~2-5 Min | ~5-10 Min |
+| XGBoost | ~30 Sek | ~1 Min |
 | RandomForest | ~10-15 Min | ~20-30 Min |
+
+**Optuna:**
+
+| Modell | 50 Trials | 100 Trials |
+|--------|-----------|------------|
+| XGBoost | ~2 Min | ~4 Min |
+| RandomForest | ~5-10 Min | ~10-20 Min |
+
+*Hinweis: Optuna braucht pro Trial länger, aber Pruning spart 30-50% der Trials.*
 
 ---
 
@@ -157,10 +204,13 @@ pvforecast evaluate --year 2024
 
 *Mit erweiterten Wetter-Features (Wind, Humidity, DHI) und Tuning:*
 
-| Modell | MAE | MAPE | Anmerkung |
-|--------|-----|------|-----------|
-| **XGBoost (tuned)** | **111 W** | **30.3%** | ⭐ Empfohlen |
-| RandomForest | 168 W | ~46% | Basis |
+| Modell | Methode | CV-Score (MAE) | Anmerkung |
+|--------|---------|----------------|-----------|
+| **XGBoost (tuned)** | Optuna | **199 W** | ⭐ Empfohlen |
+| XGBoost (tuned) | RandomizedSearchCV | 201 W | Schneller |
+| RandomForest | - | ~250 W | Basis |
+
+**Hinweis:** Der CV-Score (Cross-Validation) ist die zuverlässigste Metrik, da er auf ungesehenen Daten gemessen wird.
 
 *Stand: 2026-02-05, 62k Datensätze (2019-2026)*
 
