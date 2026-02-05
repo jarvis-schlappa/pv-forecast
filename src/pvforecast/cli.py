@@ -333,7 +333,8 @@ def cmd_train(args: argparse.Namespace, config: Config) -> int:
         loaded = ensure_weather_history(db, config.latitude, config.longitude, pv_start, pv_end)
         weather_elapsed = time.perf_counter() - weather_start
         if loaded > 0:
-            print(f"   {loaded} neue Wetterdatensätze geladen in {format_duration(weather_elapsed)}")
+            duration = format_duration(weather_elapsed)
+            print(f"   {loaded} neue Wetterdatensätze geladen in {duration}")
     except WeatherAPIError as e:
         print(f"⚠️  Wetter-API Fehler: {e}", file=sys.stderr)
         print("   Versuche Training mit vorhandenen Daten...", file=sys.stderr)
@@ -392,7 +393,8 @@ def cmd_tune(args: argparse.Namespace, config: Config) -> int:
         loaded = ensure_weather_history(db, config.latitude, config.longitude, pv_start, pv_end)
         weather_elapsed = time.perf_counter() - weather_start
         if loaded > 0:
-            print(f"   {loaded} neue Wetterdatensätze geladen in {format_duration(weather_elapsed)}")
+            duration = format_duration(weather_elapsed)
+            print(f"   {loaded} neue Wetterdatensätze geladen in {duration}")
     except WeatherAPIError as e:
         print(f"⚠️  Wetter-API Fehler: {e}", file=sys.stderr)
 
