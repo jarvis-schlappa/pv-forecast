@@ -416,9 +416,15 @@ def cmd_tune(args: argparse.Namespace, config: Config) -> int:
     print()
     print("🎯 Beste Parameter:")
     for param, value in best_params.items():
-        if isinstance(value, float):
-            print(f"   {param}: {value:.4f}")
-        else:
+        # np.float64 und andere float-artige Typen erkennen
+        try:
+            float_val = float(value)
+            # Prüfen ob es wirklich ein Float ist (nicht int als float)
+            if float_val != int(float_val):
+                print(f"   {param}: {float_val:.4f}")
+            else:
+                print(f"   {param}: {int(float_val)}")
+        except (TypeError, ValueError):
             print(f"   {param}: {value}")
     print()
     print(f"💾 Modell gespeichert: {config.model_path}")
@@ -808,6 +814,11 @@ def main() -> int:
         level=level,
         format="%(message)s" if not args.verbose else "%(levelname)s: %(message)s",
     )
+
+    # HTTP-Logs nur bei --verbose anzeigen
+    if not args.verbose:
+        logging.getLogger("httpx").setLevel(logging.WARNING)
+        logging.getLogger("httpcore").setLevel(logging.WARNING)
 
     try:
         return _run_command(args, parser)
