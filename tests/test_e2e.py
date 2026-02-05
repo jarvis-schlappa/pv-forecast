@@ -403,3 +403,63 @@ class TestDataIntegrity:
             assert min_prod >= 0  # Keine negativen Werte
             assert max_prod <= 15000  # Max ~15kW (plausibel für Hausanlage)
             assert avg_prod > 0  # Durchschnitt sollte positiv sein
+
+
+class TestCLIValidation:
+    """Tests für CLI-Argument-Validierung."""
+
+    def test_cli_invalid_latitude_rejected(self):
+        """Test: Ungültiger Breitengrad wird abgelehnt."""
+        result = subprocess.run(
+            [sys.executable, "-m", "pvforecast", "--lat", "999", "status"],
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 1
+        assert "Breitengrad" in result.stderr
+        assert "-90" in result.stderr or "90" in result.stderr
+
+    def test_cli_invalid_longitude_rejected(self):
+        """Test: Ungültiger Längengrad wird abgelehnt."""
+        result = subprocess.run(
+            [sys.executable, "-m", "pvforecast", "--lon", "999", "status"],
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 1
+        assert "Längengrad" in result.stderr
+        assert "-180" in result.stderr or "180" in result.stderr
+
+    def test_cli_valid_coordinates_accepted(self, tmp_path):
+        """Test: Gültige Koordinaten werden akzeptiert."""
+        result = subprocess.run(
+            [sys.executable, "-m", "pvforecast", "--lat", "51.8", "--lon", "7.3", "status"],
+            capture_output=True,
+            text=True,
+        )
+        # status sollte durchlaufen (Exit 0) oder scheitern wegen fehlender DB,
+        # aber NICHT wegen Koordinaten-Validierung
+        assert "Breitengrad" not in result.stderr
+        assert "Längengrad" not in result.stderr
+
+    def test_cli_boundary_latitude_accepted(self):
+        """Test: Grenzwerte für Breitengrad werden akzeptiert."""
+        # -90 und 90 sind gültig
+        for lat in ["-90", "90", "0"]:
+            result = subprocess.run(
+                [sys.executable, "-m", "pvforecast", "--lat", lat, "status"],
+                capture_output=True,
+                text=True,
+            )
+            assert "Breitengrad" not in result.stderr
+
+    def test_cli_boundary_longitude_accepted(self):
+        """Test: Grenzwerte für Längengrad werden akzeptiert."""
+        # -180 und 180 sind gültig
+        for lon in ["-180", "180", "0"]:
+            result = subprocess.run(
+                [sys.executable, "-m", "pvforecast", "--lon", lon, "status"],
+                capture_output=True,
+                text=True,
+            )
+            assert "Längengrad" not in result.stderr
