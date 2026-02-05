@@ -6,6 +6,7 @@ import argparse
 import json
 import logging
 import sys
+import time
 from datetime import datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -43,6 +44,18 @@ from pvforecast.weather import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def format_duration(seconds: float) -> str:
+    """Formatiert Sekunden als lesbare Dauer."""
+    if seconds < 60:
+        return f"{seconds:.0f}s"
+    minutes = int(seconds // 60)
+    secs = int(seconds % 60)
+    if secs == 0:
+        return f"{minutes}m"
+    return f"{minutes}m {secs}s"
+
 
 # Wetter-Emojis für Ausgabe
 WEATHER_EMOJI = {
@@ -281,8 +294,11 @@ def cmd_import(args: argparse.Namespace, config: Config) -> int:
     # Validiere CSV-Dateien (existieren, lesbar, .csv Endung)
     csv_paths = validate_csv_files(args.files)
 
+    start_time = time.perf_counter()
     total = import_csv_files(csv_paths, db)
-    print(f"✅ Import abgeschlossen: {total} neue Datensätze")
+    elapsed = time.perf_counter() - start_time
+
+    print(f"✅ Import abgeschlossen in {format_duration(elapsed)}: {total} neue Datensätze")
     print(f"   Datenbank: {config.db_path}")
     print(f"   Gesamt in DB: {db.get_pv_count()} PV-Datensätze")
 
@@ -312,10 +328,13 @@ def cmd_train(args: argparse.Namespace, config: Config) -> int:
 
     # Historische Wetterdaten laden
     print("🌤️  Lade historische Wetterdaten...")
+    weather_start = time.perf_counter()
     try:
         loaded = ensure_weather_history(db, config.latitude, config.longitude, pv_start, pv_end)
+        weather_elapsed = time.perf_counter() - weather_start
         if loaded > 0:
-            print(f"   {loaded} neue Wetterdatensätze geladen")
+            duration = format_duration(weather_elapsed)
+            print(f"   {loaded} neue Wetterdatensätze geladen in {duration}")
     except WeatherAPIError as e:
         print(f"⚠️  Wetter-API Fehler: {e}", file=sys.stderr)
         print("   Versuche Training mit vorhandenen Daten...", file=sys.stderr)
@@ -327,17 +346,19 @@ def cmd_train(args: argparse.Namespace, config: Config) -> int:
     model_type = getattr(args, "model", "rf")
     model_name = "XGBoost" if model_type == "xgb" else "RandomForest"
     print(f"🧠 Trainiere {model_name} Modell...")
+    train_start = time.perf_counter()
     try:
         model, metrics = train(db, config.latitude, config.longitude, model_type)
     except ValueError as e:
         print(f"❌ Training fehlgeschlagen: {e}", file=sys.stderr)
         return 1
+    train_elapsed = time.perf_counter() - train_start
 
     # Modell speichern
     save_model(model, config.model_path, metrics)
 
     print("")
-    print("✅ Training abgeschlossen!")
+    print(f"✅ Training abgeschlossen in {format_duration(train_elapsed)}!")
     print(f"   MAPE: {metrics['mape']:.1f}%")
     print(f"   MAE:  {metrics['mae']:.0f} W")
     print(f"   Trainingsdaten: {metrics['n_train']}")
@@ -367,10 +388,13 @@ def cmd_tune(args: argparse.Namespace, config: Config) -> int:
 
     # Wetterdaten sicherstellen
     print("🌤️  Prüfe Wetterdaten...")
+    weather_start = time.perf_counter()
     try:
         loaded = ensure_weather_history(db, config.latitude, config.longitude, pv_start, pv_end)
+        weather_elapsed = time.perf_counter() - weather_start
         if loaded > 0:
-            print(f"   {loaded} neue Wetterdatensätze geladen")
+            duration = format_duration(weather_elapsed)
+            print(f"   {loaded} neue Wetterdatensätze geladen in {duration}")
     except WeatherAPIError as e:
         print(f"⚠️  Wetter-API Fehler: {e}", file=sys.stderr)
 
@@ -388,6 +412,7 @@ def cmd_tune(args: argparse.Namespace, config: Config) -> int:
     print("⏳ Das kann einige Minuten dauern...")
     print()
 
+    tune_start = time.perf_counter()
     try:
         best_model, metrics, best_params = tune(
             db,
@@ -400,13 +425,14 @@ def cmd_tune(args: argparse.Namespace, config: Config) -> int:
     except ValueError as e:
         print(f"❌ Tuning fehlgeschlagen: {e}", file=sys.stderr)
         return 1
+    tune_elapsed = time.perf_counter() - tune_start
 
     # Modell speichern
     save_model(best_model, config.model_path, metrics)
 
     print()
     print("=" * 50)
-    print("✅ Tuning abgeschlossen!")
+    print(f"✅ Tuning abgeschlossen in {format_duration(tune_elapsed)}!")
     print("=" * 50)
     print()
     print("📊 Performance:")

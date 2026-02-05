@@ -181,12 +181,13 @@ def import_csv_files(csv_paths: list[Path], db: Database) -> int:
         Gesamtzahl neu eingefügter Zeilen
     """
     total = 0
-    for path in csv_paths:
+    n_files = len(csv_paths)
+    for i, path in enumerate(csv_paths, 1):
         try:
             df = load_e3dc_csv(path)
             count = import_to_db(df, db)
             total += count
-            logger.info(f"{path.name}: {count} neue Datensätze")
+            logger.info(f"[{i}/{n_files}] {path.name}: {count} neue Datensätze")
         except DataImportError as e:
-            logger.error(f"Fehler bei {path}: {e}")
+            logger.error(f"[{i}/{n_files}] Fehler bei {path}: {e}")
     return total
