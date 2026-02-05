@@ -172,7 +172,7 @@ def load_config(path: Path | None = None) -> Config:
         logger.debug(f"Keine Config-Datei gefunden: {path}")
         return Config()
 
-    logger.info(f"Lade Config: {path}")
+    logger.debug(f"Lade Config: {path}")
 
     try:
         with open(path) as f:
