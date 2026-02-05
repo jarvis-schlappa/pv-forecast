@@ -176,7 +176,7 @@ Je mehr historische Daten, desto besser:
 
 ### Datenqualität
 
-- Abregelungsdaten werden automatisch ausgeschlossen (`curtailed=1`)
+- Abregelungsdaten werden automatisch ausgeschlossen (`curtailed=1`) – siehe [DATA.md](DATA.md#was-passiert-beim-import)
 - Negative Werte werden ignoriert
 - Fehlende Wetterdaten werden automatisch nachgeladen
 

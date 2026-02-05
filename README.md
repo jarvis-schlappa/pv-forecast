@@ -2,7 +2,7 @@
 
 Ertragsprognose für Photovoltaik-Anlagen auf Basis historischer Daten und Wettervorhersagen.
 
-## Features
+## Funktionen
 
 - 📊 **Prognosen** für heute, morgen und beliebig viele Tage
 - 🌤️ **Wetterintegration** via Open-Meteo API (kostenlos)
@@ -19,7 +19,7 @@ curl -sSL https://raw.githubusercontent.com/jarvis-schlappa/pv-forecast/main/ins
 
 Nach dem Download startet automatisch der **Setup-Wizard**:
 
-```
+```text
 🔆 PV-Forecast Ersteinrichtung
 ══════════════════════════════════════
 
@@ -63,7 +63,7 @@ pvforecast setup
 
 **Voraussetzungen:** Python 3.9+, git
 
-## Quickstart
+## Schnellstart
 
 ```bash
 # 1. Historische PV-Daten importieren
@@ -96,7 +96,7 @@ pvforecast predict    # Prognose für morgen + übermorgen
 
 ## Beispiel-Output
 
-```
+```text
 PV-Ertragsprognose für Dülmen PV (9.92 kWp)
 Erstellt: 04.02.2026 21:00
 
@@ -131,12 +131,12 @@ Stundenwerte
 
 ## Performance
 
-| Modell | MAE | MAPE* |
-|--------|-----|-------|
-| **XGBoost (tuned)** | **111 W** | **30.3%** |
-| RandomForest | 168 W | ~46% |
+| Modell | MAE | MAPE |
+|--------|-----|------|
+| **XGBoost (tuned)** | ~110 W | ~30% |
+| RandomForest | ~170 W | ~45% |
 
-*MAPE nur für Stunden >100W. Mit erweiterten Wetter-Features (Wind, Humidity, DHI).*
+👉 **Aktuelle Benchmarks:** [docs/MODELS.md](docs/MODELS.md#aktuelle-performance)
 
 ## Entwicklung
 
@@ -144,7 +144,7 @@ Stundenwerte
 # Dev-Dependencies
 pip install -e ".[dev]"
 
-# Tests (222 Tests)
+# Tests
 pytest
 
 # Linting
@@ -155,6 +155,6 @@ ruff check src/
 
 MIT
 
-## Credits
+## Datenquellen
 
 - Wetterdaten: [Open-Meteo](https://open-meteo.com/)

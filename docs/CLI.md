@@ -2,6 +2,23 @@
 
 Vollständige Dokumentation aller `pvforecast`-Befehle.
 
+## Befehlsübersicht
+
+| Befehl | Beschreibung |
+|--------|--------------|
+| [`setup`](#pvforecast-setup) | Interaktiver Einrichtungs-Assistent |
+| [`doctor`](#pvforecast-doctor) | System-Diagnose und Healthcheck |
+| [`today`](#pvforecast-today) | Prognose für heute |
+| [`predict`](#pvforecast-predict) | Prognose für kommende Tage |
+| [`import`](#pvforecast-import) | E3DC CSV importieren |
+| [`train`](#pvforecast-train) | Modell trainieren |
+| [`tune`](#pvforecast-tune) | Hyperparameter-Tuning |
+| [`evaluate`](#pvforecast-evaluate) | Modell evaluieren |
+| [`status`](#pvforecast-status) | Status anzeigen |
+| [`config`](#pvforecast-config) | Konfiguration verwalten |
+
+---
+
 ## Globale Optionen
 
 Diese Optionen gelten für alle Befehle:
@@ -37,7 +54,7 @@ pvforecast setup [OPTIONEN]
 
 **Ablauf:**
 
-```
+```text
 🔆 PV-Forecast Ersteinrichtung
 ══════════════════════════════════════════════════
 
@@ -89,7 +106,7 @@ pvforecast doctor
 
 **Ausgabe:**
 
-```
+```text
 🔍 PV-Forecast Systemcheck
 ══════════════════════════════════════════════════
 
@@ -197,7 +214,7 @@ pvforecast import ~/Downloads/E3DC-Export-2024-01.csv
 
 **Ausgabe (mit Progress und Timing):**
 
-```
+```text
 [1/3] E3DC-Export-2024.csv: 8782 neue Datensätze
 [2/3] E3DC-Export-2025.csv: 8758 neue Datensätze
 [3/3] E3DC-Export-2026.csv: 858 neue Datensätze
@@ -266,7 +283,7 @@ pvforecast tune --trials 10 --cv 3
 
 **Ausgabe (mit Timing):**
 
-```
+```text
 🔧 Hyperparameter-Tuning für XGBoost
    Iterationen: 50
    CV-Splits: 5
@@ -333,7 +350,7 @@ pvforecast status
 
 **Ausgabe:**
 
-```
+```text
 PV-Forecast Status
 ========================================
 

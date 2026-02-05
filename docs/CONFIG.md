@@ -14,7 +14,7 @@ PV-Forecast kann über CLI-Optionen oder eine YAML-Konfigurationsdatei konfiguri
 
 ### Pfad
 
-```
+```text
 ~/.config/pvforecast/config.yaml
 ```
 

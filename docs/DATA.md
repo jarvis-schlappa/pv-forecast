@@ -100,7 +100,7 @@ CREATE TABLE weather_history (
 
 ### Pfad
 
-```
+```text
 ~/.local/share/pvforecast/data.db
 ```
 
@@ -124,7 +124,7 @@ sqlite> SELECT date(timestamp, 'unixepoch') as day,
 
 ## Wetterdaten
 
-Wetterdaten werden automatisch von [Open-Meteo](https://open-meteo.com/) geladen:
+Wetterdaten werden automatisch von [Open-Meteo](https://open-meteo.com/) für den konfigurierten Standort geladen (siehe [CONFIG.md](CONFIG.md#standort)):
 
 - **Historisch:** Archive API (ERA5-Reanalyse)
 - **Vorhersage:** Forecast API (bis 16 Tage)
@@ -144,7 +144,7 @@ Wetterdaten werden automatisch von [Open-Meteo](https://open-meteo.com/) geladen
 
 Beim Training werden fehlende historische Wetterdaten automatisch nachgeladen:
 
-```
+```text
 🌤️  Lade historische Wetterdaten...
    1.234 neue Wetterdatensätze geladen
 ```
