@@ -338,3 +338,87 @@ class TestExtendedFeatures:
         assert features["wind_speed"].iloc[0] == 0.0
         assert features["humidity"].iloc[0] == 50
         assert features["dhi"].iloc[0] == 0.0
+
+
+class TestOptunaIntegration:
+    """Tests für Optuna-Integration."""
+
+    def test_optuna_available_constant_exists(self):
+        """Test: OPTUNA_AVAILABLE Konstante existiert."""
+        from pvforecast.model import OPTUNA_AVAILABLE
+
+        assert isinstance(OPTUNA_AVAILABLE, bool)
+
+    def test_tune_optuna_imports(self):
+        """Test: tune_optuna Funktion kann importiert werden."""
+        from pvforecast.model import tune_optuna
+
+        assert callable(tune_optuna)
+
+    def test_check_optuna_available(self):
+        """Test: _check_optuna_available gibt hilfreiche Fehlermeldung."""
+        from pvforecast.model import OPTUNA_AVAILABLE, _check_optuna_available
+        from pvforecast.validation import DependencyError
+
+        if not OPTUNA_AVAILABLE:
+            with pytest.raises(DependencyError) as exc_info:
+                _check_optuna_available()
+            assert "install" in str(exc_info.value).lower()
+            assert "optuna" in str(exc_info.value).lower()
+        else:
+            # Sollte ohne Fehler durchlaufen
+            _check_optuna_available()
+
+    def test_tune_optuna_requires_minimum_data(self, tmp_path):
+        """Test: tune_optuna wirft Fehler bei zu wenig Daten."""
+        from pvforecast.model import OPTUNA_AVAILABLE, tune_optuna
+
+        if not OPTUNA_AVAILABLE:
+            pytest.skip("Optuna nicht installiert")
+
+        from pvforecast.db import Database
+
+        # Leere Datenbank
+        db = Database(tmp_path / "test.db")
+
+        with pytest.raises(ValueError) as exc_info:
+            tune_optuna(db, 51.83, 7.28, n_trials=2, cv_splits=2)
+
+        assert "Zu wenig Daten" in str(exc_info.value)
+
+    def test_tune_optuna_without_optuna_raises_dependency_error(self, tmp_path, monkeypatch):
+        """Test: tune_optuna ohne Optuna wirft DependencyError."""
+        from pvforecast import model
+        from pvforecast.db import Database
+        from pvforecast.validation import DependencyError
+
+        # OPTUNA_AVAILABLE auf False setzen
+        monkeypatch.setattr(model, "OPTUNA_AVAILABLE", False)
+
+        db = Database(tmp_path / "test.db")
+
+        with pytest.raises(DependencyError) as exc_info:
+            model.tune_optuna(db, 51.83, 7.28, n_trials=2)
+
+        assert "optuna" in str(exc_info.value).lower()
+
+    def test_tune_optuna_xgb_without_xgboost_raises_dependency_error(self, tmp_path, monkeypatch):
+        """Test: tune_optuna mit XGBoost ohne XGBoost wirft DependencyError."""
+        from pvforecast import model
+        from pvforecast.db import Database
+        from pvforecast.validation import DependencyError
+
+        # XGBoost deaktivieren, Optuna aktivieren
+        monkeypatch.setattr(model, "XGBOOST_AVAILABLE", False)
+        monkeypatch.setattr(model, "XGBOOST_ERROR", "not_installed")
+
+        # Optuna muss verfügbar sein für diesen Test
+        if not model.OPTUNA_AVAILABLE:
+            pytest.skip("Optuna nicht installiert")
+
+        db = Database(tmp_path / "test.db")
+
+        with pytest.raises(DependencyError) as exc_info:
+            model.tune_optuna(db, 51.83, 7.28, model_type="xgb", n_trials=2)
+
+        assert "xgboost" in str(exc_info.value).lower()
