@@ -489,6 +489,250 @@ def tune(
     return best_pipeline, metrics, best_params
 
 
+# Optuna ist optional
+OPTUNA_AVAILABLE = False
+try:
+    import optuna
+
+    OPTUNA_AVAILABLE = True
+except ImportError:
+    optuna = None  # type: ignore
+
+
+def _check_optuna_available() -> None:
+    """
+    Prüft ob Optuna verfügbar ist.
+
+    Raises:
+        DependencyError: Wenn Optuna nicht installiert ist
+    """
+    from pvforecast.validation import DependencyError
+
+    if not OPTUNA_AVAILABLE:
+        raise DependencyError(
+            "Optuna ist nicht installiert.\n"
+            "Installation: pip install pvforecast[tune]\n"
+            "Oder: pip install optuna"
+        )
+
+
+def tune_optuna(
+    db: Database,
+    lat: float,
+    lon: float,
+    model_type: ModelType = "xgb",
+    n_trials: int = 50,
+    cv_splits: int = 5,
+    timeout: int | None = None,
+    show_progress: bool = True,
+) -> tuple[Pipeline, dict, dict]:
+    """
+    Hyperparameter-Tuning mit Optuna (Bayesian Optimization).
+
+    Vorteile gegenüber RandomizedSearchCV:
+    - Lernt aus vorherigen Trials (Bayesian Optimization)
+    - Pruning bricht aussichtslose Trials früh ab
+    - Bessere Konvergenz bei weniger Trials
+
+    Args:
+        db: Database-Instanz
+        lat: Breitengrad
+        lon: Längengrad
+        model_type: 'rf' für RandomForest, 'xgb' für XGBoost
+        n_trials: Anzahl der Trials (default: 50)
+        cv_splits: Anzahl der CV-Splits (default: 5)
+        timeout: Maximale Laufzeit in Sekunden (optional)
+        show_progress: Progress-Bar anzeigen (default: True)
+
+    Returns:
+        (beste Pipeline, metrics dict, beste Parameter dict)
+    """
+    import numpy as np
+
+    _check_optuna_available()
+    if model_type == "xgb":
+        _check_xgboost_available()
+
+    logger.info(f"Starte Optuna-Tuning ({n_trials} Trials, {cv_splits}-fold CV)...")
+
+    # Daten laden
+    with db.connect() as conn:
+        query = """
+            SELECT
+                p.timestamp,
+                p.production_w,
+                w.ghi_wm2,
+                w.cloud_cover_pct,
+                w.temperature_c,
+                w.wind_speed_ms,
+                w.humidity_pct,
+                w.dhi_wm2
+            FROM pv_readings p
+            INNER JOIN weather_history w ON p.timestamp = w.timestamp
+            WHERE p.curtailed = 0
+              AND p.production_w >= 0
+              AND w.ghi_wm2 IS NOT NULL
+        """
+        df = pd.read_sql_query(query, conn)
+
+    if len(df) < 500:
+        raise ValueError(f"Zu wenig Daten für Tuning: {len(df)} (mindestens 500 empfohlen)")
+
+    logger.info(f"Tuning-Daten: {len(df)} Datensätze")
+
+    # Features erstellen
+    X = prepare_features(df, lat, lon)
+    y = df["production_w"].values
+
+    # TimeSeriesSplit für CV
+    cv = TimeSeriesSplit(n_splits=cv_splits)
+
+    # Objective-Funktion definieren
+    def objective(trial: optuna.Trial) -> float:
+        # Parameter-Sampling je nach Modell-Typ
+        if model_type == "xgb":
+            params = {
+                "n_estimators": trial.suggest_int("n_estimators", 100, 500),
+                "max_depth": trial.suggest_int("max_depth", 4, 12),
+                "learning_rate": trial.suggest_float("learning_rate", 0.01, 0.3, log=True),
+                "min_child_weight": trial.suggest_int("min_child_weight", 1, 10),
+                "subsample": trial.suggest_float("subsample", 0.6, 1.0),
+                "colsample_bytree": trial.suggest_float("colsample_bytree", 0.6, 1.0),
+            }
+        else:  # rf
+            params = {
+                "n_estimators": trial.suggest_int("n_estimators", 100, 500),
+                "max_depth": trial.suggest_int("max_depth", 5, 24),
+                "min_samples_split": trial.suggest_int("min_samples_split", 2, 20),
+                "min_samples_leaf": trial.suggest_int("min_samples_leaf", 1, 15),
+            }
+
+        # Cross-Validation mit Pruning
+        fold_scores = []
+        for step, (train_idx, val_idx) in enumerate(cv.split(X)):
+            X_train, X_val = X.iloc[train_idx], X.iloc[val_idx]
+            y_train, y_val = y[train_idx], y[val_idx]
+
+            # Scaler fitten
+            scaler = StandardScaler()
+            X_train_scaled = scaler.fit_transform(X_train)
+            X_val_scaled = scaler.transform(X_val)
+
+            # Modell erstellen und trainieren
+            if model_type == "xgb":
+                model = XGBRegressor(
+                    **params,
+                    random_state=42,
+                    n_jobs=-1,
+                    verbosity=0,
+                )
+            else:
+                model = RandomForestRegressor(
+                    **params,
+                    random_state=42,
+                    n_jobs=-1,
+                )
+
+            model.fit(X_train_scaled, y_train)
+
+            # Evaluieren
+            y_pred = model.predict(X_val_scaled)
+            mae = mean_absolute_error(y_val, y_pred)
+            fold_scores.append(mae)
+
+            # Pruning: Intermediate Value reporten
+            trial.report(np.mean(fold_scores), step)
+
+            # Sollte dieser Trial abgebrochen werden?
+            if trial.should_prune():
+                raise optuna.TrialPruned()
+
+        return np.mean(fold_scores)
+
+    # Optuna Study erstellen
+    # Logging-Level reduzieren (vermischt sich sonst mit Progress-Bar)
+    optuna.logging.set_verbosity(optuna.logging.WARNING)
+
+    study = optuna.create_study(
+        direction="minimize",  # MAE minimieren
+        pruner=optuna.pruners.MedianPruner(n_warmup_steps=2),
+    )
+
+    # Optimierung starten
+    study.optimize(
+        objective,
+        n_trials=n_trials,
+        timeout=timeout,
+        show_progress_bar=show_progress,
+    )
+
+    # Beste Parameter
+    best_params = study.best_params
+    logger.info(f"Beste Parameter: {best_params}")
+    logger.info(f"Bester CV-Score (MAE): {study.best_value:.0f}W")
+
+    # Statistiken
+    n_pruned = len([t for t in study.trials if t.state == optuna.trial.TrialState.PRUNED])
+    n_complete = len([t for t in study.trials if t.state == optuna.trial.TrialState.COMPLETE])
+    logger.info(f"Trials: {n_complete} abgeschlossen, {n_pruned} gepruned")
+
+    # Finale Pipeline mit besten Parametern trainieren
+    logger.info("Trainiere finales Modell mit besten Parametern...")
+
+    pipeline = Pipeline([
+        ("scaler", StandardScaler()),
+        (
+            "model",
+            XGBRegressor(**best_params, random_state=42, n_jobs=-1, verbosity=0)
+            if model_type == "xgb"
+            else RandomForestRegressor(**best_params, random_state=42, n_jobs=-1),
+        ),
+    ])
+
+    # Auf allen Daten trainieren (für finales Modell)
+    # Aber Test-Evaluation auf den letzten 20%
+    split_idx = int(len(df) * 0.8)
+    X_train_full = X.iloc[:split_idx]
+    y_train_full = y[:split_idx]
+    X_test = X.iloc[split_idx:]
+    y_test = y[split_idx:]
+
+    pipeline.fit(X_train_full, y_train_full)
+
+    # Evaluation
+    y_pred = pipeline.predict(X_test)
+
+    # MAPE für relevante Produktion (>100W)
+    mape_threshold = 100
+    mask = y_test > mape_threshold
+    if mask.sum() > 0:
+        mape = mean_absolute_percentage_error(y_test[mask], y_pred[mask]) * 100
+    else:
+        mape = 0.0
+
+    mae = mean_absolute_error(y_test, y_pred)
+
+    metrics = {
+        "mape": round(mape, 2),
+        "mae": round(mae, 2),
+        "n_samples": len(df),
+        "n_test": len(X_test),
+        "model_type": model_type,
+        "tuned": True,
+        "method": "optuna",
+        "n_trials": n_trials,
+        "n_trials_complete": n_complete,
+        "n_trials_pruned": n_pruned,
+        "cv_splits": cv_splits,
+        "best_cv_score": round(study.best_value, 2),
+    }
+
+    logger.info("Optuna-Tuning abgeschlossen!")
+    logger.info(f"Test-MAPE: {mape:.1f}%, Test-MAE: {mae:.0f}W")
+
+    return pipeline, metrics, best_params
+
+
 def save_model(model: Pipeline, path: Path, metrics: dict | None = None) -> None:
     """Speichert Modell und optional Metriken."""
     path.parent.mkdir(parents=True, exist_ok=True)

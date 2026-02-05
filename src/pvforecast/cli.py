@@ -30,6 +30,7 @@ from pvforecast.model import (
     save_model,
     train,
     tune,
+    tune_optuna,
 )
 from pvforecast.setup import SetupWizard
 from pvforecast.validation import (
@@ -371,7 +372,7 @@ def cmd_train(args: argparse.Namespace, config: Config) -> int:
 
 
 def cmd_tune(args: argparse.Namespace, config: Config) -> int:
-    """Hyperparameter-Tuning mit RandomizedSearchCV."""
+    """Hyperparameter-Tuning mit RandomizedSearchCV oder Optuna."""
     db = Database(config.db_path)
 
     # Prüfe ob genug Daten vorhanden
@@ -402,28 +403,49 @@ def cmd_tune(args: argparse.Namespace, config: Config) -> int:
 
     # Parameter aus args
     model_type = getattr(args, "model", "xgb")
+    method = getattr(args, "method", "random")
     n_iter = getattr(args, "trials", 50)
     cv_splits = getattr(args, "cv", 5)
+    timeout = getattr(args, "timeout", None)
     model_name = "XGBoost" if model_type == "xgb" else "RandomForest"
+    method_name = "Optuna" if method == "optuna" else "RandomizedSearchCV"
 
     print()
     print(f"🔧 Hyperparameter-Tuning für {model_name}")
-    print(f"   Iterationen: {n_iter}")
+    print(f"   Methode: {method_name}")
+    print(f"   Trials: {n_iter}")
     print(f"   CV-Splits: {cv_splits}")
+    if timeout and method == "optuna":
+        print(f"   Timeout: {timeout}s")
     print()
     print("⏳ Das kann einige Minuten dauern...")
     print()
 
     tune_start = time.perf_counter()
     try:
-        best_model, metrics, best_params = tune(
-            db,
-            config.latitude,
-            config.longitude,
-            model_type=model_type,
-            n_iter=n_iter,
-            cv_splits=cv_splits,
-        )
+        if method == "optuna":
+            best_model, metrics, best_params = tune_optuna(
+                db,
+                config.latitude,
+                config.longitude,
+                model_type=model_type,
+                n_trials=n_iter,
+                cv_splits=cv_splits,
+                timeout=timeout,
+                show_progress=True,
+            )
+        else:
+            best_model, metrics, best_params = tune(
+                db,
+                config.latitude,
+                config.longitude,
+                model_type=model_type,
+                n_iter=n_iter,
+                cv_splits=cv_splits,
+            )
+    except DependencyError as e:
+        print(f"❌ {e}", file=sys.stderr)
+        return 1
     except ValueError as e:
         print(f"❌ Tuning fehlgeschlagen: {e}", file=sys.stderr)
         return 1
@@ -441,6 +463,14 @@ def cmd_tune(args: argparse.Namespace, config: Config) -> int:
     print(f"   MAPE: {metrics['mape']:.1f}%")
     print(f"   MAE:  {metrics['mae']:.0f} W")
     print(f"   CV-Score (MAE): {metrics['best_cv_score']:.0f} W")
+
+    # Optuna-spezifische Stats
+    if method == "optuna":
+        print()
+        print("📈 Optuna-Statistiken:")
+        print(f"   Trials abgeschlossen: {metrics.get('n_trials_complete', 'N/A')}")
+        print(f"   Trials gepruned: {metrics.get('n_trials_pruned', 'N/A')}")
+
     print()
     print("🎯 Beste Parameter:")
     for param, value in best_params.items():
@@ -811,16 +841,28 @@ def create_parser() -> argparse.ArgumentParser:
         help="Modell-Typ: rf=RandomForest, xgb=XGBoost (default)",
     )
     p_tune.add_argument(
+        "--method",
+        choices=["random", "optuna"],
+        default="random",
+        help="Tuning-Methode: random=RandomizedSearchCV (default), optuna=Bayesian Optimization",
+    )
+    p_tune.add_argument(
         "--trials",
         type=int,
         default=50,
-        help="Anzahl Iterationen (default: 50)",
+        help="Anzahl Iterationen/Trials (default: 50)",
     )
     p_tune.add_argument(
         "--cv",
         type=int,
         default=5,
         help="Anzahl CV-Splits (default: 5)",
+    )
+    p_tune.add_argument(
+        "--timeout",
+        type=int,
+        default=None,
+        help="Maximale Laufzeit in Sekunden (nur für Optuna)",
     )
 
     # status

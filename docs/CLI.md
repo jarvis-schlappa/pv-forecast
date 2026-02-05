@@ -253,7 +253,7 @@ pvforecast train --model xgb
 
 ### `pvforecast tune`
 
-Hyperparameter-Tuning mit RandomizedSearchCV.
+Hyperparameter-Tuning mit RandomizedSearchCV oder Optuna.
 
 ```bash
 pvforecast tune [OPTIONEN]
@@ -262,57 +262,90 @@ pvforecast tune [OPTIONEN]
 | Option | Beschreibung | Default |
 |--------|--------------|---------|
 | `--model MODEL` | Modell-Typ: `rf` oder `xgb` | `xgb` |
-| `--trials N` | Anzahl der Kombinationen | 50 |
+| `--method METHOD` | Tuning-Methode: `random` oder `optuna` | `random` |
+| `--trials N` | Anzahl der Trials/Iterationen | 50 |
 | `--cv N` | Anzahl der Cross-Validation Splits | 5 |
+| `--timeout SECS` | Maximale Laufzeit in Sekunden (nur Optuna) | - |
+
+#### Tuning-Methoden
+
+**RandomizedSearchCV** (`--method random`, Default):
+- Zufällige Suche im Parameter-Raum
+- Schnell, einfach, gut für erste Experimente
+- Alle Trials werden vollständig ausgeführt
+
+**Optuna** (`--method optuna`):
+- Bayesian Optimization (lernt aus vorherigen Trials)
+- Pruning: Bricht aussichtslose Trials früh ab
+- Bessere Konvergenz bei gleicher Trial-Anzahl
+- Benötigt: `pip install pvforecast[tune]`
 
 **Beispiele:**
 
 ```bash
-# XGBoost Tuning (Standard)
+# Standard: RandomizedSearchCV mit XGBoost
 pvforecast tune
 
-# RandomForest Tuning (dauert länger!)
-pvforecast tune --model rf
+# Optuna mit Bayesian Optimization
+pvforecast tune --method optuna
 
-# Mehr Iterationen für bessere Ergebnisse
-pvforecast tune --trials 100
+# Optuna mit Timeout (max 10 Minuten)
+pvforecast tune --method optuna --trials 100 --timeout 600
+
+# RandomForest Tuning
+pvforecast tune --model rf
 
 # Schneller Test
 pvforecast tune --trials 10 --cv 3
 ```
 
-**Ausgabe (mit Timing):**
+**Ausgabe (Optuna):**
 
 ```text
 🔧 Hyperparameter-Tuning für XGBoost
-   Iterationen: 50
+   Methode: Optuna
+   Trials: 50
    CV-Splits: 5
 
 ⏳ Das kann einige Minuten dauern...
 
 ==================================================
-✅ Tuning abgeschlossen in 4m 23s!
+✅ Tuning abgeschlossen in 1m 54s!
 ==================================================
 
 📊 Performance:
-   MAPE: 30.3%
-   MAE:  111 W
-   CV-Score (MAE): 201 W
+   MAPE: 45.9%
+   MAE:  169 W
+   CV-Score (MAE): 199 W
+
+📈 Optuna-Statistiken:
+   Trials abgeschlossen: 24
+   Trials gepruned: 26
 
 🎯 Beste Parameter:
-   colsample_bytree: 0.8782
-   learning_rate: 0.0504
-   max_depth: 10
+   n_estimators: 355
+   max_depth: 7
+   learning_rate: 0.0176
    min_child_weight: 4
-   n_estimators: 112
-   subsample: 0.6308
+   subsample: 0.7903
+   colsample_bytree: 0.9033
 
 💾 Modell gespeichert: ~/.local/share/pvforecast/model.pkl
 ```
 
-**Dauer:**
-- XGBoost: ~2-5 Minuten (50 Trials)
-- RandomForest: ~10-15 Minuten (50 Trials)
+#### Vergleich der Methoden
+
+| Kriterium | RandomizedSearchCV | Optuna |
+|-----------|-------------------|--------|
+| Strategie | Zufällig | Bayesian (lernt) |
+| Pruning | Nein | Ja |
+| Typische Zeitersparnis | - | 30-50% |
+| Installation | Inkludiert | `pip install pvforecast[tune]` |
+| Empfohlen für | Schnelle Tests | Beste Ergebnisse |
+
+**Dauer (50 Trials, 62k Datensätze):**
+- RandomizedSearchCV: ~30 Sekunden
+- Optuna: ~2 Minuten (aber 50% Trials gepruned)
 
 ---
 
