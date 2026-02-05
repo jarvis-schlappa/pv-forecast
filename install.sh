@@ -208,7 +208,11 @@ create_venv() {
 install_package() {
     print_step "Installiere pvforecast..."
     cd "$INSTALL_DIR"
-    # Activate venv and install
+    
+    # Upgrade pip first (required for PEP 517 editable installs)
+    .venv/bin/pip install --quiet --upgrade pip 2>/dev/null
+    
+    # Install package
     if .venv/bin/pip install --quiet -e . 2>/dev/null; then
         print_success "pip install"
     else
