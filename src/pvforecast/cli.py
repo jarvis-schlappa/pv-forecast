@@ -21,6 +21,7 @@ from pvforecast.config import (
 )
 from pvforecast.data_loader import DataImportError, import_csv_files
 from pvforecast.db import Database
+from pvforecast.doctor import Doctor
 from pvforecast.model import (
     Forecast,
     ModelNotFoundError,
@@ -685,6 +686,12 @@ def cmd_setup(args: argparse.Namespace, config: Config) -> int:
         return 130
 
 
+def cmd_doctor(args: argparse.Namespace, config: Config) -> int:
+    """Führt Diagnose-Checks aus."""
+    doctor = Doctor()
+    return doctor.run()
+
+
 def cmd_config(args: argparse.Namespace, config: Config) -> int:
     """Verwaltet die Konfiguration."""
     config_path = get_config_path()
@@ -853,6 +860,9 @@ def create_parser() -> argparse.ArgumentParser:
         help="Überschreibe existierende Konfiguration",
     )
 
+    # doctor
+    subparsers.add_parser("doctor", help="Diagnose und Systemcheck")
+
     return parser
 
 
@@ -934,6 +944,7 @@ def _run_command(args: argparse.Namespace, parser: argparse.ArgumentParser) -> i
         "evaluate": cmd_evaluate,
         "config": cmd_config,
         "setup": cmd_setup,
+        "doctor": cmd_doctor,
     }
 
     cmd_func = commands.get(args.command)
