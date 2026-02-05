@@ -25,17 +25,31 @@ logger = logging.getLogger(__name__)
 
 UTC_TZ = ZoneInfo("UTC")
 
-# XGBoost ist optional
+# XGBoost ist optional - mit detaillierter Fehlererkennung
+XGBOOST_AVAILABLE = False
+XGBOOST_ERROR: str | None = None
+XGBRegressor = None  # type: ignore
+
 try:
     from xgboost import XGBRegressor
 
     XGBOOST_AVAILABLE = True
-except (ImportError, OSError, Exception) as e:
-    # ImportError: nicht installiert
-    # OSError/Exception: installiert aber kaputt (z.B. fehlende libomp auf macOS)
-    XGBOOST_AVAILABLE = False
-    XGBRegressor = None  # type: ignore
-    logger.debug(f"XGBoost nicht verfügbar: {e}")
+except ImportError:
+    # Nicht installiert
+    XGBOOST_ERROR = "not_installed"
+    logger.debug("XGBoost nicht installiert")
+except OSError as e:
+    # Installiert aber Library-Fehler (z.B. libomp fehlt)
+    error_str = str(e).lower()
+    if "libomp" in error_str or "openmp" in error_str or "omp" in error_str:
+        XGBOOST_ERROR = "libomp_missing"
+        logger.debug(f"XGBoost: libomp fehlt - {e}")
+    else:
+        XGBOOST_ERROR = f"os_error: {e}"
+        logger.debug(f"XGBoost OS-Fehler: {e}")
+except Exception as e:
+    XGBOOST_ERROR = f"unknown: {e}"
+    logger.debug(f"XGBoost unbekannter Fehler: {e}")
 
 # Verfügbare Modell-Typen
 ModelType = Literal["rf", "xgb"]
@@ -155,6 +169,42 @@ def prepare_features(df: pd.DataFrame, lat: float, lon: float) -> pd.DataFrame:
     return features
 
 
+def _check_xgboost_available() -> None:
+    """
+    Prüft ob XGBoost verfügbar ist und gibt hilfreiche Fehlermeldungen.
+
+    Raises:
+        DependencyError: Mit spezifischer Fehlermeldung und Lösungshinweis
+    """
+    from pvforecast.validation import DependencyError
+
+    if XGBOOST_AVAILABLE:
+        return
+
+    if XGBOOST_ERROR == "not_installed":
+        raise DependencyError(
+            "XGBoost ist nicht installiert.\n"
+            "Installation: pip install pvforecast[xgb]\n"
+            "Oder: pip install xgboost"
+        )
+    elif XGBOOST_ERROR == "libomp_missing":
+        raise DependencyError(
+            "XGBoost benötigt OpenMP (libomp), das auf diesem System fehlt.\n"
+            "\n"
+            "Installation:\n"
+            "  macOS:  brew install libomp\n"
+            "  Ubuntu: sudo apt install libgomp1\n"
+            "  Fedora: sudo dnf install libgomp\n"
+            "\n"
+            "Nach der Installation pvforecast neu starten."
+        )
+    else:
+        raise DependencyError(
+            f"XGBoost konnte nicht geladen werden: {XGBOOST_ERROR}\n"
+            "Versuche: pip install --force-reinstall xgboost"
+        )
+
+
 def _create_pipeline(model_type: ModelType) -> Pipeline:
     """
     Erstellt ML-Pipeline für den angegebenen Modelltyp.
@@ -166,14 +216,10 @@ def _create_pipeline(model_type: ModelType) -> Pipeline:
         sklearn Pipeline mit Scaler und Modell
 
     Raises:
-        ValueError: Wenn XGBoost nicht installiert ist
+        DependencyError: Wenn XGBoost nicht verfügbar ist
     """
     if model_type == "xgb":
-        if not XGBOOST_AVAILABLE:
-            raise ValueError(
-                "XGBoost nicht installiert. "
-                "Installiere mit: pip install pvforecast[xgb]"
-            )
+        _check_xgboost_available()
         return Pipeline(
             [
                 ("scaler", StandardScaler()),
@@ -359,8 +405,7 @@ def tune(
     if model_type == "xgb":
         if not XGBOOST_AVAILABLE:
             raise ValueError(
-                "XGBoost nicht installiert. "
-                "Installiere mit: pip install pvforecast[xgb]"
+                "XGBoost nicht installiert. Installiere mit: pip install pvforecast[xgb]"
             )
         param_dist = {
             "model__n_estimators": randint(100, 500),
@@ -422,10 +467,7 @@ def tune(
     mae = mean_absolute_error(y_test, y_pred)
 
     # Beste Parameter extrahieren (ohne "model__" Prefix)
-    best_params = {
-        k.replace("model__", ""): v
-        for k, v in search.best_params_.items()
-    }
+    best_params = {k.replace("model__", ""): v for k, v in search.best_params_.items()}
 
     metrics = {
         "mape": round(mape, 2),

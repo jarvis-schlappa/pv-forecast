@@ -29,7 +29,7 @@ from pvforecast.model import (
     train,
     tune,
 )
-from pvforecast.validation import ValidationError, validate_csv_files
+from pvforecast.validation import DependencyError, ValidationError, validate_csv_files
 from pvforecast.weather import (
     WeatherAPIError,
     ensure_weather_history,
@@ -811,6 +811,9 @@ def main() -> int:
         return 1
     except ConfigValidationError as e:
         print(f"❌ Konfigurationsfehler: {e}", file=sys.stderr)
+        return 1
+    except DependencyError as e:
+        print(f"❌ Fehlende Abhängigkeit:\n{e}", file=sys.stderr)
         return 1
     except DataImportError as e:
         print(f"❌ Importfehler: {e}", file=sys.stderr)
