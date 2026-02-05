@@ -280,29 +280,8 @@ run_setup() {
     
     # Run setup wizard with stdin from terminal (not from pipe)
     # This is required when running via: curl ... | bash
+    # The wizard shows its own completion message, so we don't need print_completion
     "$INSTALL_DIR/.venv/bin/python" -m pvforecast setup < /dev/tty
-}
-
-print_completion() {
-    echo ""
-    echo "════════════════════════════════════"
-    echo -e "${GREEN}✅ Installation abgeschlossen!${NC}"
-    echo "════════════════════════════════════"
-    echo ""
-    echo "   Nächste Schritte:"
-    echo ""
-    echo "   1. Daten importieren:"
-    echo "      pvforecast import ~/Downloads/E3DC-*.csv"
-    echo ""
-    echo "   2. Modell trainieren:"
-    echo "      pvforecast train"
-    echo ""
-    echo "   3. Prognose erstellen:"
-    echo "      pvforecast today"
-    echo ""
-    echo "   Hilfe: pvforecast --help"
-    echo "   Doku:  https://github.com/jarvis-schlappa/pv-forecast"
-    echo ""
 }
 
 #######################################
@@ -319,7 +298,6 @@ main() {
     create_wrapper
     check_path
     run_setup
-    print_completion
 }
 
 # Run main
