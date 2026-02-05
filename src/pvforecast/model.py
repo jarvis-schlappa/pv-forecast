@@ -260,6 +260,7 @@ def train(
     lat: float,
     lon: float,
     model_type: ModelType = "rf",
+    since_year: int | None = None,
 ) -> tuple[Pipeline, dict]:
     """
     Trainiert Modell auf allen Daten in der Datenbank.
@@ -269,11 +270,15 @@ def train(
         lat: Breitengrad
         lon: Längengrad
         model_type: 'rf' für RandomForest (default), 'xgb' für XGBoost
+        since_year: Nur Daten ab diesem Jahr verwenden (optional)
 
     Returns:
         (sklearn Pipeline, metrics dict mit 'mape', 'mae', 'n_samples', 'model_type')
     """
-    logger.info("Lade Trainingsdaten aus Datenbank...")
+    if since_year:
+        logger.info(f"Lade Trainingsdaten ab {since_year}...")
+    else:
+        logger.info("Lade Trainingsdaten aus Datenbank...")
 
     with db.connect() as conn:
         # Join PV und Wetter-Daten
@@ -293,6 +298,8 @@ def train(
               AND p.production_w >= 0
               AND w.ghi_wm2 IS NOT NULL
         """
+        if since_year:
+            query += f" AND p.timestamp >= strftime('%s', '{since_year}-01-01')"
         df = pd.read_sql_query(query, conn)
 
     if len(df) < 100:
@@ -341,6 +348,7 @@ def train(
         "n_train": len(X_train),
         "n_test": len(X_test),
         "model_type": model_type,
+        "since_year": since_year,
     }
 
     logger.info(f"{model_name} Training abgeschlossen. MAPE: {mape:.1f}%, MAE: {mae:.0f}W")
@@ -355,6 +363,7 @@ def tune(
     model_type: ModelType = "xgb",
     n_iter: int = 50,
     cv_splits: int = 5,
+    since_year: int | None = None,
 ) -> tuple[Pipeline, dict, dict]:
     """
     Hyperparameter-Tuning mit RandomizedSearchCV.
@@ -366,6 +375,7 @@ def tune(
         model_type: 'rf' für RandomForest, 'xgb' für XGBoost
         n_iter: Anzahl der Kombinationen (default: 50)
         cv_splits: Anzahl der CV-Splits (default: 5)
+        since_year: Nur Daten ab diesem Jahr verwenden (optional)
 
     Returns:
         (beste Pipeline, metrics dict, beste Parameter dict)
@@ -390,6 +400,8 @@ def tune(
               AND p.production_w >= 0
               AND w.ghi_wm2 IS NOT NULL
         """
+        if since_year:
+            query += f" AND p.timestamp >= strftime('%s', '{since_year}-01-01')"
         df = pd.read_sql_query(query, conn)
 
     if len(df) < 500:
@@ -499,6 +511,7 @@ def tune(
         "n_iter": n_iter,
         "cv_splits": cv_splits,
         "best_cv_score": round(-search.best_score_, 2),  # MAE (negiert zurück)
+        "since_year": since_year,
     }
 
     logger.info("Tuning abgeschlossen!")
@@ -545,6 +558,7 @@ def tune_optuna(
     cv_splits: int = 5,
     timeout: int | None = None,
     show_progress: bool = True,
+    since_year: int | None = None,
 ) -> tuple[Pipeline, dict, dict]:
     """
     Hyperparameter-Tuning mit Optuna (Bayesian Optimization).
@@ -563,6 +577,7 @@ def tune_optuna(
         cv_splits: Anzahl der CV-Splits (default: 5)
         timeout: Maximale Laufzeit in Sekunden (optional)
         show_progress: Progress-Bar anzeigen (default: True)
+        since_year: Nur Daten ab diesem Jahr verwenden (optional)
 
     Returns:
         (beste Pipeline, metrics dict, beste Parameter dict)
@@ -593,6 +608,8 @@ def tune_optuna(
               AND p.production_w >= 0
               AND w.ghi_wm2 IS NOT NULL
         """
+        if since_year:
+            query += f" AND p.timestamp >= strftime('%s', '{since_year}-01-01')"
         df = pd.read_sql_query(query, conn)
 
     if len(df) < 500:
@@ -745,6 +762,7 @@ def tune_optuna(
         "n_trials_pruned": n_pruned,
         "cv_splits": cv_splits,
         "best_cv_score": round(study.best_value, 2),
+        "since_year": since_year,
     }
 
     logger.info("Optuna-Tuning abgeschlossen!")
