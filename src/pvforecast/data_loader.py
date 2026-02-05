@@ -56,7 +56,7 @@ def load_e3dc_csv(csv_path: Path) -> pd.DataFrame:
     if not csv_path.exists():
         raise DataImportError(f"CSV nicht gefunden: {csv_path}")
 
-    logger.info(f"Lade CSV: {csv_path}")
+    logger.debug(f"Lade CSV: {csv_path}")
 
     try:
         df = pd.read_csv(
@@ -119,7 +119,7 @@ def load_e3dc_csv(csv_path: Path) -> pd.DataFrame:
         if col in df.columns:
             df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0).astype(int)
 
-    logger.info(f"Geladen: {len(df)} Datensätze")
+    logger.debug(f"Geladen: {len(df)} Datensätze")
     return df
 
 
@@ -165,7 +165,7 @@ def import_to_db(df: pd.DataFrame, db: Database) -> int:
             except Exception as e:
                 logger.warning(f"Fehler bei Zeile {row.get('timestamp')}: {e}")
 
-    logger.info(f"Importiert: {inserted} neue Datensätze")
+    logger.debug(f"Importiert: {inserted} neue Datensätze")
     return inserted
 
 
