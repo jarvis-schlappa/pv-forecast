@@ -11,7 +11,13 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from pvforecast import __version__
-from pvforecast.config import DEFAULT_CONFIG, Config, get_config_path, load_config
+from pvforecast.config import (
+    DEFAULT_CONFIG,
+    Config,
+    ConfigValidationError,
+    get_config_path,
+    load_config,
+)
 from pvforecast.data_loader import DataImportError, import_csv_files
 from pvforecast.db import Database
 from pvforecast.model import (
@@ -23,6 +29,7 @@ from pvforecast.model import (
     train,
     tune,
 )
+from pvforecast.validation import ValidationError, validate_csv_files
 from pvforecast.weather import (
     WeatherAPIError,
     ensure_weather_history,
@@ -33,11 +40,11 @@ logger = logging.getLogger(__name__)
 
 # Wetter-Emojis für Ausgabe
 WEATHER_EMOJI = {
-    (0, 10): "☀️",      # klar
-    (10, 30): "🌤️",    # leicht bewölkt
-    (30, 60): "⛅",     # teilweise bewölkt
-    (60, 85): "🌥️",    # überwiegend bewölkt
-    (85, 101): "☁️",   # bedeckt
+    (0, 10): "☀️",  # klar
+    (10, 30): "🌤️",  # leicht bewölkt
+    (30, 60): "⛅",  # teilweise bewölkt
+    (60, 85): "🌥️",  # überwiegend bewölkt
+    (85, 101): "☁️",  # bedeckt
 }
 
 
@@ -133,9 +140,7 @@ def cmd_predict(args: argparse.Namespace, config: Config) -> int:
 
     # Wettervorhersage holen
     try:
-        weather_df = fetch_forecast(
-            config.latitude, config.longitude, hours=hours_needed
-        )
+        weather_df = fetch_forecast(config.latitude, config.longitude, hours=hours_needed)
     except WeatherAPIError as e:
         print(f"❌ Fehler bei Wetterabfrage: {e}", file=sys.stderr)
         return 1
@@ -210,12 +215,14 @@ def cmd_today(args: argparse.Namespace, config: Config) -> int:
             data = response.json()
 
         hourly = data["hourly"]
-        weather_df = pd.DataFrame({
-            "timestamp": pd.to_datetime(hourly["time"]).astype("int64") // 10**9,
-            "ghi_wm2": hourly["shortwave_radiation"],
-            "cloud_cover_pct": hourly["cloud_cover"],
-            "temperature_c": hourly["temperature_2m"],
-        })
+        weather_df = pd.DataFrame(
+            {
+                "timestamp": pd.to_datetime(hourly["time"]).astype("int64") // 10**9,
+                "ghi_wm2": hourly["shortwave_radiation"],
+                "cloud_cover_pct": hourly["cloud_cover"],
+                "temperature_c": hourly["temperature_2m"],
+            }
+        )
         weather_df["ghi_wm2"] = weather_df["ghi_wm2"].fillna(0.0)
         weather_df["cloud_cover_pct"] = weather_df["cloud_cover_pct"].fillna(0).astype(int)
         weather_df["temperature_c"] = weather_df["temperature_c"].fillna(10.0)
@@ -226,9 +233,7 @@ def cmd_today(args: argparse.Namespace, config: Config) -> int:
 
     # Filtere auf heute
     weather_df = weather_df[
-        weather_df["timestamp"].apply(
-            lambda ts: datetime.fromtimestamp(ts, tz).date() == today
-        )
+        weather_df["timestamp"].apply(lambda ts: datetime.fromtimestamp(ts, tz).date() == today)
     ]
 
     if len(weather_df) == 0:
@@ -267,22 +272,13 @@ def cmd_import(args: argparse.Namespace, config: Config) -> int:
     """Importiert CSV-Dateien."""
     db = Database(config.db_path)
 
-    csv_paths = [Path(p) for p in args.files]
+    # Validiere CSV-Dateien (existieren, lesbar, .csv Endung)
+    csv_paths = validate_csv_files(args.files)
 
-    # Prüfe ob Dateien existieren
-    for path in csv_paths:
-        if not path.exists():
-            print(f"❌ Datei nicht gefunden: {path}", file=sys.stderr)
-            return 1
-
-    try:
-        total = import_csv_files(csv_paths, db)
-        print(f"✅ Import abgeschlossen: {total} neue Datensätze")
-        print(f"   Datenbank: {config.db_path}")
-        print(f"   Gesamt in DB: {db.get_pv_count()} PV-Datensätze")
-    except DataImportError as e:
-        print(f"❌ Import-Fehler: {e}", file=sys.stderr)
-        return 1
+    total = import_csv_files(csv_paths, db)
+    print(f"✅ Import abgeschlossen: {total} neue Datensätze")
+    print(f"   Datenbank: {config.db_path}")
+    print(f"   Gesamt in DB: {db.get_pv_count()} PV-Datensätze")
 
     return 0
 
@@ -311,9 +307,7 @@ def cmd_train(args: argparse.Namespace, config: Config) -> int:
     # Historische Wetterdaten laden
     print("🌤️  Lade historische Wetterdaten...")
     try:
-        loaded = ensure_weather_history(
-            db, config.latitude, config.longitude, pv_start, pv_end
-        )
+        loaded = ensure_weather_history(db, config.latitude, config.longitude, pv_start, pv_end)
         if loaded > 0:
             print(f"   {loaded} neue Wetterdatensätze geladen")
     except WeatherAPIError as e:
@@ -368,9 +362,7 @@ def cmd_tune(args: argparse.Namespace, config: Config) -> int:
     # Wetterdaten sicherstellen
     print("🌤️  Prüfe Wetterdaten...")
     try:
-        loaded = ensure_weather_history(
-            db, config.latitude, config.longitude, pv_start, pv_end
-        )
+        loaded = ensure_weather_history(db, config.latitude, config.longitude, pv_start, pv_end)
         if loaded > 0:
             print(f"   {loaded} neue Wetterdatensätze geladen")
     except WeatherAPIError as e:
@@ -453,8 +445,10 @@ def cmd_status(args: argparse.Namespace, config: Config) -> int:
 
         pv_start, pv_end = db.get_pv_date_range()
         if pv_start and pv_end:
-            print(f"   PV-Zeitraum: {datetime.fromtimestamp(pv_start).date()} "
-                  f"bis {datetime.fromtimestamp(pv_end).date()}")
+            print(
+                f"   PV-Zeitraum: {datetime.fromtimestamp(pv_start).date()} "
+                f"bis {datetime.fromtimestamp(pv_end).date()}"
+            )
     else:
         print("   ❌ Nicht vorhanden")
     print()
@@ -608,8 +602,18 @@ def cmd_evaluate(args: argparse.Namespace, config: Config) -> int:
     # Monatsübersicht
     print("📅 Monatliche Abweichung:")
     month_names = [
-        "Jan", "Feb", "Mär", "Apr", "Mai", "Jun",
-        "Jul", "Aug", "Sep", "Okt", "Nov", "Dez",
+        "Jan",
+        "Feb",
+        "Mär",
+        "Apr",
+        "Mai",
+        "Jun",
+        "Jul",
+        "Aug",
+        "Sep",
+        "Okt",
+        "Nov",
+        "Dez",
     ]
     for month in range(1, 13):
         if month in monthly.index:
@@ -617,9 +621,9 @@ def cmd_evaluate(args: argparse.Namespace, config: Config) -> int:
             err = row["error_pct"]
             bar = "█" * min(10, int(abs(err) / 2))
             sign = "+" if err > 0 else "-" if err < 0 else " "
-            print(f"   {month_names[month-1]}: {sign}{abs(err):5.1f}% {bar}")
+            print(f"   {month_names[month - 1]}: {sign}{abs(err):5.1f}% {bar}")
         else:
-            print(f"   {month_names[month-1]}: keine Daten")
+            print(f"   {month_names[month - 1]}: keine Daten")
 
     return 0
 
@@ -674,9 +678,7 @@ def create_parser() -> argparse.ArgumentParser:
         prog="pvforecast",
         description="PV-Ertragsprognose auf Basis historischer Daten und Wettervorhersage",
     )
-    parser.add_argument(
-        "--version", action="version", version=f"%(prog)s {__version__}"
-    )
+    parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     parser.add_argument(
         "--db",
         type=Path,
@@ -693,7 +695,8 @@ def create_parser() -> argparse.ArgumentParser:
         help=f"Längengrad (default: {DEFAULT_CONFIG.longitude})",
     )
     parser.add_argument(
-        "-v", "--verbose",
+        "-v",
+        "--verbose",
         action="store_true",
         help="Ausführliche Ausgabe",
     )
@@ -800,6 +803,32 @@ def main() -> int:
         format="%(message)s" if not args.verbose else "%(levelname)s: %(message)s",
     )
 
+    try:
+        return _run_command(args, parser)
+    except ValidationError as e:
+        # Benutzerfreundliche Fehlermeldung ohne Stacktrace
+        print(f"❌ Fehler: {e}", file=sys.stderr)
+        return 1
+    except ConfigValidationError as e:
+        print(f"❌ Konfigurationsfehler: {e}", file=sys.stderr)
+        return 1
+    except DataImportError as e:
+        print(f"❌ Importfehler: {e}", file=sys.stderr)
+        return 1
+    except WeatherAPIError as e:
+        print(f"❌ Wetter-API-Fehler: {e}", file=sys.stderr)
+        return 1
+    except ModelNotFoundError as e:
+        print(f"❌ {e}", file=sys.stderr)
+        print("   Tipp: Führe erst 'pvforecast train' aus.", file=sys.stderr)
+        return 1
+    except KeyboardInterrupt:
+        print("\n⚠️  Abgebrochen.", file=sys.stderr)
+        return 130
+
+
+def _run_command(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
+    """Führt den Befehl aus (innere Funktion für Fehlerbehandlung)."""
     # Config aus Datei laden (falls vorhanden)
     config = load_config()
 
