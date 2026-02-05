@@ -278,8 +278,9 @@ run_setup() {
     print_step "Starte Einrichtung..."
     echo ""
     
-    # Run setup wizard
-    "$INSTALL_DIR/.venv/bin/python" -m pvforecast setup
+    # Run setup wizard with stdin from terminal (not from pipe)
+    # This is required when running via: curl ... | bash
+    "$INSTALL_DIR/.venv/bin/python" -m pvforecast setup < /dev/tty
 }
 
 print_completion() {
