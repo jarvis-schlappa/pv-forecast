@@ -29,7 +29,13 @@ from pvforecast.model import (
     train,
     tune,
 )
-from pvforecast.validation import DependencyError, ValidationError, validate_csv_files
+from pvforecast.validation import (
+    DependencyError,
+    ValidationError,
+    validate_csv_files,
+    validate_latitude,
+    validate_longitude,
+)
 from pvforecast.weather import (
     WeatherAPIError,
     ensure_weather_history,
@@ -839,9 +845,17 @@ def _run_command(args: argparse.Namespace, parser: argparse.ArgumentParser) -> i
     if args.db:
         config.db_path = args.db
     if args.lat:
-        config.latitude = args.lat
+        try:
+            config.latitude = validate_latitude(args.lat)
+        except ValidationError as e:
+            print(f"❌ Ungültiger Breitengrad: {e}", file=sys.stderr)
+            sys.exit(1)
     if args.lon:
-        config.longitude = args.lon
+        try:
+            config.longitude = validate_longitude(args.lon)
+        except ValidationError as e:
+            print(f"❌ Ungültiger Längengrad: {e}", file=sys.stderr)
+            sys.exit(1)
 
     config.ensure_dirs()
 
