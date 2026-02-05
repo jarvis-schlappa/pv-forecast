@@ -99,8 +99,8 @@ Stundenwerte
 
 | Modell | MAE | MAPE* |
 |--------|-----|-------|
-| **XGBoost (tuned)** | **117 W** | **29.4%** |
-| RandomForest | 183 W | ~45% |
+| **XGBoost (tuned)** | **111 W** | **30.3%** |
+| RandomForest | 168 W | ~46% |
 
 *MAPE nur für Stunden >100W. Mit erweiterten Wetter-Features (Wind, Humidity, DHI).*
 
@@ -110,7 +110,7 @@ Stundenwerte
 # Dev-Dependencies
 pip install -e ".[dev]"
 
-# Tests (88 Tests)
+# Tests (158 Tests)
 pytest
 
 # Linting
