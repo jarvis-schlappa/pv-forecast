@@ -96,10 +96,12 @@ class TestPrepareFeatures:
     def test_hour_feature_correct(self):
         """Test: Stunden-Feature ist korrekt."""
         # 2024-01-01 00:00 UTC and 12:00 UTC
-        df = pd.DataFrame([
-            {"timestamp": 1704067200, "ghi_wm2": 0, "cloud_cover_pct": 0, "temperature_c": 0},
-            {"timestamp": 1704110400, "ghi_wm2": 0, "cloud_cover_pct": 0, "temperature_c": 0},
-        ])
+        df = pd.DataFrame(
+            [
+                {"timestamp": 1704067200, "ghi_wm2": 0, "cloud_cover_pct": 0, "temperature_c": 0},
+                {"timestamp": 1704110400, "ghi_wm2": 0, "cloud_cover_pct": 0, "temperature_c": 0},
+            ]
+        )
 
         features = prepare_features(df, 51.83, 7.28)
 
@@ -109,10 +111,12 @@ class TestPrepareFeatures:
     def test_month_feature_correct(self):
         """Test: Monat-Feature ist korrekt."""
         # January and July 2024
-        df = pd.DataFrame([
-            {"timestamp": 1704067200, "ghi_wm2": 0, "cloud_cover_pct": 0, "temperature_c": 0},
-            {"timestamp": 1719792000, "ghi_wm2": 0, "cloud_cover_pct": 0, "temperature_c": 0},
-        ])
+        df = pd.DataFrame(
+            [
+                {"timestamp": 1704067200, "ghi_wm2": 0, "cloud_cover_pct": 0, "temperature_c": 0},
+                {"timestamp": 1719792000, "ghi_wm2": 0, "cloud_cover_pct": 0, "temperature_c": 0},
+            ]
+        )
 
         features = prepare_features(df, 51.83, 7.28)
 
@@ -226,13 +230,15 @@ class TestXGBoostIntegration:
         assert "model" in pipeline.named_steps
 
     def test_create_xgb_pipeline_without_xgboost(self):
-        """Test: XGBoost Pipeline wirft Fehler wenn nicht installiert."""
+        """Test: XGBoost Pipeline wirft DependencyError wenn nicht installiert."""
         from pvforecast.model import XGBOOST_AVAILABLE, _create_pipeline
+        from pvforecast.validation import DependencyError
 
         if not XGBOOST_AVAILABLE:
-            with pytest.raises(ValueError) as exc_info:
+            with pytest.raises(DependencyError) as exc_info:
                 _create_pipeline("xgb")
-            assert "XGBoost nicht installiert" in str(exc_info.value)
+            # Prüfe dass hilfreiche Fehlermeldung vorhanden
+            assert "install" in str(exc_info.value).lower()
         else:
             # Wenn XGBoost verfügbar, sollte Pipeline erstellt werden
             pipeline = _create_pipeline("xgb")
@@ -291,15 +297,17 @@ class TestExtendedFeatures:
         """Test: prepare_features nutzt erweiterte Wetter-Features."""
         from pvforecast.model import prepare_features
 
-        df = pd.DataFrame({
-            "timestamp": [1704067200, 1704070800],  # 2 Stunden
-            "ghi_wm2": [500.0, 600.0],
-            "cloud_cover_pct": [30, 40],
-            "temperature_c": [15.0, 16.0],
-            "wind_speed_ms": [5.5, 6.0],
-            "humidity_pct": [65, 70],
-            "dhi_wm2": [150.0, 180.0],
-        })
+        df = pd.DataFrame(
+            {
+                "timestamp": [1704067200, 1704070800],  # 2 Stunden
+                "ghi_wm2": [500.0, 600.0],
+                "cloud_cover_pct": [30, 40],
+                "temperature_c": [15.0, 16.0],
+                "wind_speed_ms": [5.5, 6.0],
+                "humidity_pct": [65, 70],
+                "dhi_wm2": [150.0, 180.0],
+            }
+        )
 
         features = prepare_features(df, 51.83, 7.28)
 
@@ -315,12 +323,14 @@ class TestExtendedFeatures:
         from pvforecast.model import prepare_features
 
         # Nur Basis-Features (wie alte Daten)
-        df = pd.DataFrame({
-            "timestamp": [1704067200],
-            "ghi_wm2": [500.0],
-            "cloud_cover_pct": [30],
-            "temperature_c": [15.0],
-        })
+        df = pd.DataFrame(
+            {
+                "timestamp": [1704067200],
+                "ghi_wm2": [500.0],
+                "cloud_cover_pct": [30],
+                "temperature_c": [15.0],
+            }
+        )
 
         features = prepare_features(df, 51.83, 7.28)
 

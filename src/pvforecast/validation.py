@@ -20,6 +20,16 @@ class ValidationError(ValueError):
     pass
 
 
+class DependencyError(RuntimeError):
+    """Fehlende System-Dependency.
+
+    Wird verwendet wenn eine optionale Abhängigkeit fehlt
+    oder nicht korrekt installiert ist.
+    """
+
+    pass
+
+
 def validate_latitude(value: float) -> float:
     """Validiert Breitengrad.
 
