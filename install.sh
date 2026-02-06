@@ -281,7 +281,14 @@ run_setup() {
     # Run setup wizard with stdin from terminal (not from pipe)
     # This is required when running via: curl ... | bash
     # The wizard shows its own completion message, so we don't need print_completion
-    "$INSTALL_DIR/.venv/bin/python" -m pvforecast setup < /dev/tty
+    if "$INSTALL_DIR/.venv/bin/python" -m pvforecast setup < /dev/tty; then
+        # Wizard erfolgreich, zeigt eigene Meldung
+        :
+    else
+        echo ""
+        echo -e "${YELLOW}⚠️  Setup nicht abgeschlossen.${NC}"
+        echo "   Später nachholen: pvforecast setup"
+    fi
 }
 
 #######################################
