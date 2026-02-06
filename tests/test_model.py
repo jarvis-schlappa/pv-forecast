@@ -655,3 +655,120 @@ class TestOptunaIntegration:
             model.tune_optuna(db, 51.83, 7.28, model_type="xgb", n_trials=2)
 
         assert "xgboost" in str(exc_info.value).lower()
+
+
+class TestEvaluate:
+    """Tests für evaluate() Funktion."""
+
+    def test_evaluate_returns_evaluation_result(self, tmp_path):
+        """Test: evaluate gibt EvaluationResult zurück."""
+        from unittest.mock import MagicMock, patch
+
+        import pandas as pd
+
+        from pvforecast.model import (
+            EvaluationResult,
+            WeatherBreakdown,
+            evaluate,
+        )
+
+        # Mock Database mit Testdaten
+        mock_db = MagicMock()
+        mock_conn = MagicMock()
+        mock_db.connect.return_value.__enter__ = MagicMock(return_value=mock_conn)
+        mock_db.connect.return_value.__exit__ = MagicMock(return_value=False)
+
+        # Simuliere Daten für ein Jahr (vereinfacht: 100 Datenpunkte)
+        test_data = pd.DataFrame({
+            "timestamp": [1704067200 + i * 3600 for i in range(100)],  # Stündlich
+            "production_w": [500 + i * 10 for i in range(100)],
+            "ghi_wm2": [300 + i * 5 for i in range(100)],
+            "cloud_cover_pct": [20 + (i % 60) for i in range(100)],
+            "temperature_c": [10 + (i % 20) for i in range(100)],
+            "wind_speed_ms": [5.0] * 100,
+            "humidity_pct": [60] * 100,
+            "dhi_wm2": [100.0] * 100,
+            "dni_wm2": [200.0] * 100,
+        })
+
+        with patch("pandas.read_sql_query", return_value=test_data):
+            # Mock Modell
+            mock_model = MagicMock()
+            mock_model.predict.return_value = test_data["production_w"].values + 50
+
+            result = evaluate(
+                model=mock_model,
+                db=mock_db,
+                lat=51.0,
+                lon=7.0,
+                peak_kwp=10.0,
+                year=2024,
+            )
+
+        assert isinstance(result, EvaluationResult)
+        assert result.year == 2024
+        assert result.data_points == 100
+        assert result.mae >= 0
+        assert result.rmse >= 0
+        # R² kann < -1 sein bei sehr schlechten Vorhersagen (mathematisch korrekt)
+        assert isinstance(result.r2, float)
+        assert len(result.weather_breakdown) > 0
+        assert all(isinstance(wb, WeatherBreakdown) for wb in result.weather_breakdown)
+
+    def test_evaluate_raises_on_no_data(self, tmp_path):
+        """Test: evaluate wirft ValueError wenn keine Daten."""
+        from unittest.mock import MagicMock, patch
+
+        import pandas as pd
+        import pytest
+
+        from pvforecast.model import evaluate
+
+        mock_db = MagicMock()
+        mock_conn = MagicMock()
+        mock_db.connect.return_value.__enter__ = MagicMock(return_value=mock_conn)
+        mock_db.connect.return_value.__exit__ = MagicMock(return_value=False)
+
+        # Leeres DataFrame
+        empty_df = pd.DataFrame()
+
+        with patch("pandas.read_sql_query", return_value=empty_df):
+            mock_model = MagicMock()
+
+            with pytest.raises(ValueError, match="Keine Daten"):
+                evaluate(mock_model, mock_db, 51.0, 7.0, year=2024)
+
+    def test_evaluate_default_year(self):
+        """Test: evaluate verwendet letztes Jahr als Default."""
+        from datetime import datetime
+        from unittest.mock import MagicMock, patch
+
+        import pandas as pd
+
+        from pvforecast.model import evaluate
+
+        mock_db = MagicMock()
+        mock_conn = MagicMock()
+        mock_db.connect.return_value.__enter__ = MagicMock(return_value=mock_conn)
+        mock_db.connect.return_value.__exit__ = MagicMock(return_value=False)
+
+        test_data = pd.DataFrame({
+            "timestamp": [1704067200 + i * 3600 for i in range(50)],
+            "production_w": [500] * 50,
+            "ghi_wm2": [300] * 50,
+            "cloud_cover_pct": [30] * 50,
+            "temperature_c": [15] * 50,
+            "wind_speed_ms": [5.0] * 50,
+            "humidity_pct": [60] * 50,
+            "dhi_wm2": [100.0] * 50,
+            "dni_wm2": [200.0] * 50,
+        })
+
+        with patch("pandas.read_sql_query", return_value=test_data):
+            mock_model = MagicMock()
+            mock_model.predict.return_value = [500] * 50
+
+            result = evaluate(mock_model, mock_db, 51.0, 7.0)
+
+        expected_year = datetime.now().year - 1
+        assert result.year == expected_year
