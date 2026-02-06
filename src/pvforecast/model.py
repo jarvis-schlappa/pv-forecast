@@ -236,9 +236,9 @@ def prepare_features(
     features["month_sin"], features["month_cos"] = encode_cyclic(months, 12)
     features["doy_sin"], features["doy_cos"] = encode_cyclic(day_of_year, 365)
 
-    # Wetter-Features (Basis)
-    features["ghi"] = df["ghi_wm2"]
-    features["cloud_cover"] = df["cloud_cover_pct"]
+    # Wetter-Features (Basis) - negative Werte auf 0 setzen (Datenqualität)
+    features["ghi"] = df["ghi_wm2"].clip(lower=0)
+    features["cloud_cover"] = df["cloud_cover_pct"].clip(lower=0, upper=100)
     features["temperature"] = df["temperature_c"]
 
     # Erweiterte Wetter-Features (optional, Defaults wenn nicht vorhanden)
@@ -246,10 +246,10 @@ def prepare_features(
     features["humidity"] = df.get("humidity_pct", pd.Series([50] * len(df)))
     features["dhi"] = df.get("dhi_wm2", pd.Series([0.0] * len(df)))
 
-    # NaN-Handling für erweiterte Features
-    features["wind_speed"] = features["wind_speed"].fillna(0.0)
-    features["humidity"] = features["humidity"].fillna(50)
-    features["dhi"] = features["dhi"].fillna(0.0)
+    # NaN-Handling und Wertebereichs-Korrektur
+    features["wind_speed"] = features["wind_speed"].fillna(0.0).clip(lower=0)
+    features["humidity"] = features["humidity"].fillna(50).clip(lower=0, upper=100)
+    features["dhi"] = features["dhi"].fillna(0.0).clip(lower=0)
 
     # Interaktions-Feature: Effektive Strahlung (GHI korrigiert um Bewölkung)
     features["effective_irradiance"] = features["ghi"] * (
@@ -269,7 +269,8 @@ def prepare_features(
 
     # Diffuse Fraction: Verhältnis diffuse/globale Strahlung
     # Hoher Wert = bewölkt, niedriger = klarer Himmel
-    features["diffuse_fraction"] = features["dhi"] / (features["ghi"] + 1)
+    # +1 im Nenner verhindert Division durch 0, clip begrenzt auf sinnvollen Bereich
+    features["diffuse_fraction"] = (features["dhi"] / (features["ghi"] + 1)).clip(0, 1)
 
     # DNI (Direct Normal Irradiance) wenn verfügbar
     if "dni_wm2" in df.columns:
