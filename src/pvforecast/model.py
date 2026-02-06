@@ -15,7 +15,12 @@ import numpy as np
 import pandas as pd
 from scipy.stats import randint, uniform
 from sklearn.ensemble import RandomForestRegressor
-from sklearn.metrics import mean_absolute_error, mean_absolute_percentage_error
+from sklearn.metrics import (
+    mean_absolute_error,
+    mean_absolute_percentage_error,
+    r2_score,
+    root_mean_squared_error,
+)
 from sklearn.model_selection import RandomizedSearchCV, TimeSeriesSplit
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
@@ -467,10 +472,14 @@ def train(
         mape = 0.0
 
     mae = mean_absolute_error(y_test, y_pred)
+    rmse = root_mean_squared_error(y_test, y_pred)
+    r2 = r2_score(y_test, y_pred)
 
     metrics = {
         "mape": round(mape, 2),
         "mae": round(mae, 2),
+        "rmse": round(rmse, 2),
+        "r2": round(r2, 4),
         "n_samples": len(df),
         "n_train": len(X_train),
         "n_test": len(X_test),
@@ -478,7 +487,10 @@ def train(
         "since_year": since_year,
     }
 
-    logger.info(f"{model_name} Training abgeschlossen. MAPE: {mape:.1f}%, MAE: {mae:.0f}W")
+    logger.info(
+        f"{model_name} Training abgeschlossen. "
+        f"MAPE: {mape:.1f}%, MAE: {mae:.0f}W, RMSE: {rmse:.0f}W, R²: {r2:.3f}"
+    )
 
     return pipeline, metrics
 
@@ -627,10 +639,14 @@ def tune(
         mape = 0.0
 
     mae = mean_absolute_error(y_test, y_pred)
+    rmse = root_mean_squared_error(y_test, y_pred)
+    r2 = r2_score(y_test, y_pred)
 
     metrics = {
         "mape": round(mape, 2),
         "mae": round(mae, 2),
+        "rmse": round(rmse, 2),
+        "r2": round(r2, 4),
         "n_samples": len(df),
         "n_train": len(X_train),
         "n_test": len(X_test),
@@ -879,10 +895,14 @@ def tune_optuna(
         mape = 0.0
 
     mae = mean_absolute_error(y_test, y_pred)
+    rmse = root_mean_squared_error(y_test, y_pred)
+    r2 = r2_score(y_test, y_pred)
 
     metrics = {
         "mape": round(mape, 2),
         "mae": round(mae, 2),
+        "rmse": round(rmse, 2),
+        "r2": round(r2, 4),
         "n_samples": len(df),
         "n_test": len(X_test),
         "model_type": model_type,
@@ -897,7 +917,7 @@ def tune_optuna(
     }
 
     logger.info("Optuna-Tuning abgeschlossen!")
-    logger.info(f"Test-MAPE: {mape:.1f}%, Test-MAE: {mae:.0f}W")
+    logger.info(f"Test-MAPE: {mape:.1f}%, Test-MAE: {mae:.0f}W, RMSE: {rmse:.0f}W, R²: {r2:.3f}")
 
     return pipeline, metrics, best_params
 

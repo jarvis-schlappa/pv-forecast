@@ -381,6 +381,8 @@ def cmd_train(args: argparse.Namespace, config: Config) -> int:
     print(f"✅ Training abgeschlossen in {format_duration(train_elapsed)}!")
     print(f"   MAPE: {metrics['mape']:.1f}%")
     print(f"   MAE:  {metrics['mae']:.0f} W")
+    print(f"   RMSE: {metrics['rmse']:.0f} W")
+    print(f"   R²:   {metrics['r2']:.3f}")
     print(f"   Trainingsdaten: {metrics['n_train']}")
     print(f"   Testdaten: {metrics['n_test']}")
     if since_year:
@@ -488,6 +490,8 @@ def cmd_tune(args: argparse.Namespace, config: Config) -> int:
     print("📊 Performance:")
     print(f"   MAPE: {metrics['mape']:.1f}%")
     print(f"   MAE:  {metrics['mae']:.0f} W")
+    print(f"   RMSE: {metrics['rmse']:.0f} W")
+    print(f"   R²:   {metrics['r2']:.3f}")
     print(f"   CV-Score (MAE): {metrics['best_cv_score']:.0f} W")
 
     # Optuna-spezifische Stats
@@ -557,6 +561,10 @@ def cmd_status(args: argparse.Namespace, config: Config) -> int:
             if metrics:
                 print(f"   MAPE: {metrics.get('mape', '?')}%")
                 print(f"   MAE: {metrics.get('mae', '?')} W")
+                if metrics.get('rmse'):
+                    print(f"   RMSE: {metrics.get('rmse')} W")
+                if metrics.get('r2'):
+                    print(f"   R²: {metrics.get('r2')}")
                 print(f"   Trainiert auf: {metrics.get('n_samples', '?')} Datensätze")
             else:
                 print("   ✅ Vorhanden (keine Metriken)")
@@ -574,7 +582,12 @@ def cmd_evaluate(args: argparse.Namespace, config: Config) -> int:
     from zoneinfo import ZoneInfo
 
     import pandas as pd
-    from sklearn.metrics import mean_absolute_error, mean_absolute_percentage_error
+    from sklearn.metrics import (
+        mean_absolute_error,
+        mean_absolute_percentage_error,
+        r2_score,
+        root_mean_squared_error,
+    )
 
     from pvforecast.db import Database
     from pvforecast.model import ModelNotFoundError, load_model, prepare_features
@@ -651,6 +664,8 @@ def cmd_evaluate(args: argparse.Namespace, config: Config) -> int:
 
     # Gesamtmetriken
     mae = mean_absolute_error(y_true, y_pred)
+    rmse = root_mean_squared_error(y_true, y_pred)
+    r2 = r2_score(y_true, y_pred)
 
     # MAPE nur für Stunden > 100W
     mape_threshold = 100
@@ -684,6 +699,8 @@ def cmd_evaluate(args: argparse.Namespace, config: Config) -> int:
     print()
     print("📉 Gesamtmetriken:")
     print(f"   MAE:  {mae:.0f} W")
+    print(f"   RMSE: {rmse:.0f} W")
+    print(f"   R²:   {r2:.3f}")
     print(f"   MAPE: {mape:.1f}% (nur Stunden > 100W)")
     print()
 
