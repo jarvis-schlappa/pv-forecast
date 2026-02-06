@@ -116,9 +116,9 @@ pvforecast doctor
  ✓ Standort: Dülmen PV (9.92 kWp)
    └─ 51.85°N, 7.26°E
  ✓ Datenbank: 62,212 PV / 62,256 Wetter
-   └─ Zeitraum: 2019-01-01 bis 2026-02-05
- ✓ Modell: xgb (MAE: 111W)
-   └─ MAPE: 30.3%
+   └─ Zeitraum: 2019-01-01 bis 2026-02-06
+ ✓ Modell: xgb (MAE: 144W)
+   └─ MAPE: 30.1%
  ✓ XGBoost: 2.1.4
  ✓ libomp: Installiert (Homebrew)
  ✓ Netzwerk: Open-Meteo API erreichbar
@@ -395,13 +395,13 @@ PV-Forecast Status
 📊 Datenbank:
    PV-Datensätze: 62,212
    Wetterdaten:   62,256
-   Zeitraum:      2019-01-01 bis 2026-02-05
+   Zeitraum:      2019-01-01 bis 2026-02-06
 
 🧠 Modell:
    Typ:     XGBoost
-   MAPE:    30.3%
-   MAE:     111 W
-   Erstellt: 2026-02-05 17:30
+   MAPE:    30.1%
+   MAE:     144 W
+   Erstellt: 2026-02-06
 ```
 
 ---
