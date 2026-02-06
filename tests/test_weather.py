@@ -550,21 +550,23 @@ class TestFetchToday:
 
         tz = ZoneInfo("Europe/Berlin")
         mock_now = datetime(2026, 2, 6, 12, 0, tzinfo=tz)
+        # 2026-02-06 12:00 UTC als Unix-Timestamp
+        ts_today = 1770379200
 
         with patch("pvforecast.weather._request_with_retry") as mock_request, \
+             patch("pvforecast.weather._parse_weather_response") as mock_parse, \
              patch("pvforecast.weather._get_now", return_value=mock_now):
-            mock_request.return_value = {
-                "hourly": {
-                    "time": ["2026-02-06T12:00"],
-                    "shortwave_radiation": [500.0],
-                    "cloud_cover": [30],
-                    "temperature_2m": [10.0],
-                    "wind_speed_10m": [5.0],
-                    "relative_humidity_2m": [60],
-                    "diffuse_radiation": [100.0],
-                    "direct_normal_irradiance": [400.0],
-                }
-            }
+            mock_request.return_value = {"hourly": {}}
+            mock_parse.return_value = pd.DataFrame({
+                "timestamp": [ts_today],
+                "ghi_wm2": [500.0],
+                "cloud_cover_pct": [30],
+                "temperature_c": [10.0],
+                "wind_speed_ms": [5.0],
+                "humidity_pct": [60],
+                "dhi_wm2": [100.0],
+                "dni_wm2": [400.0],
+            })
 
             fetch_today(51.0, 7.0, tz)
 
@@ -588,31 +590,30 @@ class TestFetchToday:
 
         tz = ZoneInfo("Europe/Berlin")
         mock_now = datetime(2026, 2, 6, 12, 0, tzinfo=tz)
+        # UTC Zeiten als Unix-Timestamps:
+        # 2026-02-05T22:00 UTC = 2026-02-05 23:00 Berlin (gestern)
+        # 2026-02-05T23:00 UTC = 2026-02-06 00:00 Berlin (heute)
+        # 2026-02-06T12:00 UTC = 2026-02-06 13:00 Berlin (heute)
+        # 2026-02-06T23:00 UTC = 2026-02-07 00:00 Berlin (morgen)
+        ts_yesterday = 1770328800  # 2026-02-05 22:00 UTC
+        ts_today_1 = 1770332400    # 2026-02-05 23:00 UTC
+        ts_today_2 = 1770379200    # 2026-02-06 12:00 UTC
+        ts_tomorrow = 1770418800   # 2026-02-06 23:00 UTC
 
         with patch("pvforecast.weather._request_with_retry") as mock_request, \
+             patch("pvforecast.weather._parse_weather_response") as mock_parse, \
              patch("pvforecast.weather._get_now", return_value=mock_now):
-            # UTC Zeiten: Berlin = UTC+1
-            # 2026-02-05T22:00 UTC = 2026-02-05 23:00 Berlin (gestern)
-            # 2026-02-05T23:00 UTC = 2026-02-06 00:00 Berlin (heute)
-            # 2026-02-06T12:00 UTC = 2026-02-06 13:00 Berlin (heute)
-            # 2026-02-06T23:00 UTC = 2026-02-07 00:00 Berlin (morgen)
-            mock_request.return_value = {
-                "hourly": {
-                    "time": [
-                        "2026-02-05T22:00",
-                        "2026-02-05T23:00",
-                        "2026-02-06T12:00",
-                        "2026-02-06T23:00",
-                    ],
-                    "shortwave_radiation": [0, 100, 500, 0],
-                    "cloud_cover": [50, 30, 20, 60],
-                    "temperature_2m": [5, 6, 12, 4],
-                    "wind_speed_10m": [3, 4, 5, 3],
-                    "relative_humidity_2m": [70, 65, 50, 75],
-                    "diffuse_radiation": [0, 50, 150, 0],
-                    "direct_normal_irradiance": [0, 80, 400, 0],
-                }
-            }
+            mock_request.return_value = {"hourly": {}}
+            mock_parse.return_value = pd.DataFrame({
+                "timestamp": [ts_yesterday, ts_today_1, ts_today_2, ts_tomorrow],
+                "ghi_wm2": [0.0, 100.0, 500.0, 0.0],
+                "cloud_cover_pct": [50, 30, 20, 60],
+                "temperature_c": [5.0, 6.0, 12.0, 4.0],
+                "wind_speed_ms": [3.0, 4.0, 5.0, 3.0],
+                "humidity_pct": [70, 65, 50, 75],
+                "dhi_wm2": [0.0, 50.0, 150.0, 0.0],
+                "dni_wm2": [0.0, 80.0, 400.0, 0.0],
+            })
 
             df = fetch_today(51.0, 7.0, tz)
 
@@ -628,22 +629,23 @@ class TestFetchToday:
 
         tz = ZoneInfo("Europe/Berlin")
         mock_now = datetime(2026, 2, 6, 12, 0, tzinfo=tz)
+        # 2026-02-04 10:00 UTC (zwei Tage vor "heute")
+        ts_old = 1770199200
 
         with patch("pvforecast.weather._request_with_retry") as mock_request, \
+             patch("pvforecast.weather._parse_weather_response") as mock_parse, \
              patch("pvforecast.weather._get_now", return_value=mock_now):
-            # Nur Daten für gestern
-            mock_request.return_value = {
-                "hourly": {
-                    "time": ["2026-02-04T10:00"],
-                    "shortwave_radiation": [500.0],
-                    "cloud_cover": [30],
-                    "temperature_2m": [10.0],
-                    "wind_speed_10m": [5.0],
-                    "relative_humidity_2m": [60],
-                    "diffuse_radiation": [100.0],
-                    "direct_normal_irradiance": [400.0],
-                }
-            }
+            mock_request.return_value = {"hourly": {}}
+            mock_parse.return_value = pd.DataFrame({
+                "timestamp": [ts_old],
+                "ghi_wm2": [500.0],
+                "cloud_cover_pct": [30],
+                "temperature_c": [10.0],
+                "wind_speed_ms": [5.0],
+                "humidity_pct": [60],
+                "dhi_wm2": [100.0],
+                "dni_wm2": [400.0],
+            })
 
             with pytest.raises(WeatherAPIError, match="Keine Wetterdaten für heute"):
                 fetch_today(51.0, 7.0, tz)
@@ -654,21 +656,23 @@ class TestFetchToday:
 
         tz = ZoneInfo("Europe/Berlin")
         mock_now = datetime(2026, 2, 6, 12, 0, tzinfo=tz)
+        # 2026-02-06 12:00 UTC
+        ts_today = 1770379200
 
         with patch("pvforecast.weather._request_with_retry") as mock_request, \
+             patch("pvforecast.weather._parse_weather_response") as mock_parse, \
              patch("pvforecast.weather._get_now", return_value=mock_now):
-            mock_request.return_value = {
-                "hourly": {
-                    "time": ["2026-02-06T12:00"],
-                    "shortwave_radiation": [500.0],
-                    "cloud_cover": [30],
-                    "temperature_2m": [10.0],
-                    "wind_speed_10m": [5.0],
-                    "relative_humidity_2m": [60],
-                    "diffuse_radiation": [100.0],
-                    "direct_normal_irradiance": [400.0],
-                }
-            }
+            mock_request.return_value = {"hourly": {}}
+            mock_parse.return_value = pd.DataFrame({
+                "timestamp": [ts_today],
+                "ghi_wm2": [500.0],
+                "cloud_cover_pct": [30],
+                "temperature_c": [10.0],
+                "wind_speed_ms": [5.0],
+                "humidity_pct": [60],
+                "dhi_wm2": [100.0],
+                "dni_wm2": [400.0],
+            })
 
             # String statt ZoneInfo
             df = fetch_today(51.0, 7.0, "Europe/Berlin")
