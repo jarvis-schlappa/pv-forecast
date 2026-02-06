@@ -740,6 +740,33 @@ def cmd_evaluate(args: argparse.Namespace, config: Config) -> int:
             print(f"   Skill Score:        +{skill_score:.1f}% (ML ist besser)")
         else:
             print(f"   Skill Score:        {skill_score:.1f}% (Persistence ist besser)")
+
+    # Performance nach Wetterbedingungen
+    print()
+    print("🌤️  Performance nach Wetter:")
+
+    # cloud_cover ist bereits in X (Features)
+    weather_categories = [
+        ("☀️ Klar (<20%)", X["cloud_cover"] < 20),
+        ("🌤️ Teilbewölkt (20-60%)", (X["cloud_cover"] >= 20) & (X["cloud_cover"] <= 60)),
+        ("☁️ Bewölkt (>60%)", X["cloud_cover"] > 60),
+    ]
+
+    for label, mask in weather_categories:
+        if mask.sum() > 0:
+            cat_mae = mean_absolute_error(y_true[mask], y_pred[mask])
+            # MAPE nur für Stunden > 100W
+            mape_mask = mask & (y_true > mape_threshold)
+            if mape_mask.sum() > 0:
+                cat_mape = (
+                    mean_absolute_percentage_error(y_true[mape_mask], y_pred[mape_mask])
+                    * 100
+                )
+            else:
+                cat_mape = 0.0
+            print(f"   {label:22} MAE {cat_mae:5.0f}W, MAPE {cat_mape:5.1f}%")
+        else:
+            print(f"   {label:22} (keine Daten)")
     print()
 
     # Jahresübersicht
