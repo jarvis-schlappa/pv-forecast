@@ -6,8 +6,10 @@ import logging
 import pickle
 from dataclasses import dataclass
 from datetime import datetime
-from math import asin, cos, radians, sin
+from math import asin, cos, pi, radians, sin
 from pathlib import Path
+
+import numpy as np
 from typing import Literal
 from zoneinfo import ZoneInfo
 
@@ -81,6 +83,21 @@ class Forecast:
     model_version: str = "rf-v1"
 
 
+def encode_cyclic(values: pd.Series, max_value: float) -> tuple[pd.Series, pd.Series]:
+    """
+    Kodiert Werte zyklisch mit sin/cos.
+
+    Args:
+        values: Serie mit Werten (z.B. Stunden 0-23)
+        max_value: Maximaler Wert des Zyklus (z.B. 24 für Stunden)
+
+    Returns:
+        Tuple aus (sin_values, cos_values)
+    """
+    angle = 2 * pi * values / max_value
+    return np.sin(angle), np.cos(angle)
+
+
 def calculate_sun_elevation(timestamp: int, lat: float, lon: float) -> float:
     """
     Berechnet die Sonnenhöhe (Elevation) für einen Zeitpunkt.
@@ -134,17 +151,24 @@ def prepare_features(df: pd.DataFrame, lat: float, lon: float) -> pd.DataFrame:
         lon: Längengrad
 
     Returns:
-        DataFrame mit Features: hour, month, day_of_year, ghi, cloud_cover,
+        DataFrame mit Features: hour_sin, hour_cos, month_sin, month_cos,
+                               doy_sin, doy_cos, ghi, cloud_cover,
                                temperature, sun_elevation, wind_speed,
-                               humidity, dhi
+                               humidity, dhi, effective_irradiance
     """
     features = pd.DataFrame()
 
-    # Zeitbasierte Features
+    # Zeitbasierte Features (zyklisch kodiert)
     timestamps = pd.to_datetime(df["timestamp"], unit="s", utc=True)
-    features["hour"] = timestamps.dt.hour
-    features["month"] = timestamps.dt.month
-    features["day_of_year"] = timestamps.dt.dayofyear
+    hours = timestamps.dt.hour
+    months = timestamps.dt.month
+    day_of_year = timestamps.dt.dayofyear
+
+    # Zyklische Kodierung: sin/cos statt linearer Werte
+    # So lernt das Modell, dass Stunde 23 und 0 benachbart sind
+    features["hour_sin"], features["hour_cos"] = encode_cyclic(hours, 24)
+    features["month_sin"], features["month_cos"] = encode_cyclic(months, 12)
+    features["doy_sin"], features["doy_cos"] = encode_cyclic(day_of_year, 365)
 
     # Wetter-Features (Basis)
     features["ghi"] = df["ghi_wm2"]
@@ -160,6 +184,11 @@ def prepare_features(df: pd.DataFrame, lat: float, lon: float) -> pd.DataFrame:
     features["wind_speed"] = features["wind_speed"].fillna(0.0)
     features["humidity"] = features["humidity"].fillna(50)
     features["dhi"] = features["dhi"].fillna(0.0)
+
+    # Interaktions-Feature: Effektive Strahlung (GHI korrigiert um Bewölkung)
+    features["effective_irradiance"] = features["ghi"] * (
+        1 - features["cloud_cover"] / 100
+    )
 
     # Sonnenhöhe berechnen
     features["sun_elevation"] = df["timestamp"].apply(
