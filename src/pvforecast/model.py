@@ -52,6 +52,15 @@ except Exception as e:
     XGBOOST_ERROR = f"unknown: {e}"
     logger.debug(f"XGBoost unbekannter Fehler: {e}")
 
+# pvlib ist optional - für Clear-Sky-Index
+PVLIB_AVAILABLE = False
+try:
+    from pvlib.location import Location
+
+    PVLIB_AVAILABLE = True
+except ImportError:
+    logger.debug("pvlib nicht installiert - CSI nicht verfügbar")
+
 # Verfügbare Modell-Typen
 ModelType = Literal["rf", "xgb"]
 
@@ -233,6 +242,30 @@ def prepare_features(
     # Temperatur-Derating: Module verlieren ~0.4%/°C über 25°C
     TEMP_COEFFICIENT = -0.004
     features["efficiency_factor"] = 1 + TEMP_COEFFICIENT * (features["t_module"] - 25)
+
+    # Clear-Sky-Index (CSI): Verhältnis GHI zu theoretischem Maximum
+    # Normalisiert Strahlung über Jahreszeiten hinweg
+    if PVLIB_AVAILABLE and len(df) > 0:
+        try:
+            location = Location(lat, lon)
+            # Timestamps für pvlib vorbereiten
+            times = pd.DatetimeIndex(timestamps)
+            # Clear-Sky GHI berechnen (Ineichen-Modell)
+            clear_sky = location.get_clearsky(times, model="ineichen")
+            clear_sky_ghi = clear_sky["ghi"].values
+            # CSI = GHI / Clear-Sky GHI (mit Schutz vor Division durch 0)
+            ghi_values = features["ghi"].values
+            csi = np.zeros(len(ghi_values))
+            mask = clear_sky_ghi > 10  # Nur berechnen wenn Clear-Sky > 10 W/m²
+            csi[mask] = ghi_values[mask] / clear_sky_ghi[mask]
+            # CSI auf sinnvollen Bereich begrenzen (kann >1 sein bei Reflexionen)
+            features["csi"] = np.clip(csi, 0, 1.5)
+        except Exception as e:
+            logger.warning(f"CSI-Berechnung fehlgeschlagen: {e}")
+            features["csi"] = 0.0
+    else:
+        # Fallback wenn pvlib nicht verfügbar
+        features["csi"] = 0.0
 
     # === Lag-Features ===
 
