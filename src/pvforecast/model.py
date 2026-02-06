@@ -140,7 +140,12 @@ def calculate_sun_elevation(timestamp: int, lat: float, lon: float) -> float:
     return elevation
 
 
-def prepare_features(df: pd.DataFrame, lat: float, lon: float) -> pd.DataFrame:
+def prepare_features(
+    df: pd.DataFrame,
+    lat: float,
+    lon: float,
+    peak_kwp: float | None = None,
+) -> pd.DataFrame:
     """
     Erstellt Feature-DataFrame für ML-Modell.
 
@@ -149,12 +154,13 @@ def prepare_features(df: pd.DataFrame, lat: float, lon: float) -> pd.DataFrame:
             und optional: wind_speed_ms, humidity_pct, dhi_wm2
         lat: Breitengrad (für Sonnenhöhe)
         lon: Längengrad
+        peak_kwp: Anlagenleistung in kWp (optional, für Normalisierung)
 
     Returns:
         DataFrame mit Features: hour_sin, hour_cos, month_sin, month_cos,
                                doy_sin, doy_cos, ghi, cloud_cover,
                                temperature, sun_elevation, wind_speed,
-                               humidity, dhi, effective_irradiance
+                               humidity, dhi, effective_irradiance, peak_kwp
     """
     features = pd.DataFrame()
 
@@ -194,6 +200,10 @@ def prepare_features(df: pd.DataFrame, lat: float, lon: float) -> pd.DataFrame:
     features["sun_elevation"] = df["timestamp"].apply(
         lambda ts: calculate_sun_elevation(int(ts), lat, lon)
     )
+
+    # Anlagenleistung als Feature (für Normalisierung/Transfer-Learning)
+    if peak_kwp is not None:
+        features["peak_kwp"] = peak_kwp
 
     return features
 
@@ -290,6 +300,7 @@ def train(
     lon: float,
     model_type: ModelType = "rf",
     since_year: int | None = None,
+    peak_kwp: float | None = None,
 ) -> tuple[Pipeline, dict]:
     """
     Trainiert Modell auf allen Daten in der Datenbank.
@@ -337,7 +348,7 @@ def train(
     logger.info(f"Trainingsdaten: {len(df)} Datensätze")
 
     # Features erstellen
-    X = prepare_features(df, lat, lon)
+    X = prepare_features(df, lat, lon, peak_kwp=peak_kwp)
     y = df["production_w"]
 
     # Zeitbasierter Split (80% Training, 20% Test)
@@ -393,6 +404,7 @@ def tune(
     n_iter: int = 50,
     cv_splits: int = 5,
     since_year: int | None = None,
+    peak_kwp: float | None = None,
 ) -> tuple[Pipeline, dict, dict]:
     """
     Hyperparameter-Tuning mit RandomizedSearchCV.
@@ -439,7 +451,7 @@ def tune(
     logger.info(f"Tuning-Daten: {len(df)} Datensätze")
 
     # Features erstellen
-    X = prepare_features(df, lat, lon)
+    X = prepare_features(df, lat, lon, peak_kwp=peak_kwp)
     y = df["production_w"]
 
     # Parameter-Suchraum definieren
@@ -588,6 +600,7 @@ def tune_optuna(
     timeout: int | None = None,
     show_progress: bool = True,
     since_year: int | None = None,
+    peak_kwp: float | None = None,
 ) -> tuple[Pipeline, dict, dict]:
     """
     Hyperparameter-Tuning mit Optuna (Bayesian Optimization).
@@ -647,7 +660,7 @@ def tune_optuna(
     logger.info(f"Tuning-Daten: {len(df)} Datensätze")
 
     # Features erstellen
-    X = prepare_features(df, lat, lon)
+    X = prepare_features(df, lat, lon, peak_kwp=peak_kwp)
     y = df["production_w"].values
 
     # TimeSeriesSplit für CV
@@ -849,6 +862,7 @@ def predict(
     weather_df: pd.DataFrame,
     lat: float,
     lon: float,
+    peak_kwp: float | None = None,
 ) -> Forecast:
     """
     Erstellt Prognose basierend auf Wettervorhersage.
@@ -870,7 +884,7 @@ def predict(
         )
 
     # Features erstellen
-    X = prepare_features(weather_df, lat, lon)
+    X = prepare_features(weather_df, lat, lon, peak_kwp=peak_kwp)
 
     # Vorhersage
     predictions = model.predict(X)

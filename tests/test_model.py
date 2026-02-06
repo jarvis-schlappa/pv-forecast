@@ -161,6 +161,25 @@ class TestPrepareFeatures:
         assert features.iloc[1]["effective_irradiance"] == 500
         assert features.iloc[2]["effective_irradiance"] == 0
 
+    def test_peak_kwp_feature(self):
+        """Test: peak_kwp wird als Feature hinzugefügt wenn angegeben."""
+        df = pd.DataFrame(
+            [
+                {"timestamp": 1704067200, "ghi_wm2": 500, "cloud_cover_pct": 20, "temperature_c": 15},
+                {"timestamp": 1704110400, "ghi_wm2": 800, "cloud_cover_pct": 10, "temperature_c": 20},
+            ]
+        )
+
+        # Ohne peak_kwp
+        features_no_kwp = prepare_features(df, 51.83, 7.28)
+        assert "peak_kwp" not in features_no_kwp.columns
+
+        # Mit peak_kwp
+        features_with_kwp = prepare_features(df, 51.83, 7.28, peak_kwp=9.92)
+        assert "peak_kwp" in features_with_kwp.columns
+        assert features_with_kwp.iloc[0]["peak_kwp"] == 9.92
+        assert features_with_kwp.iloc[1]["peak_kwp"] == 9.92
+
 
 class TestSaveLoadModel:
     """Tests für Modell-Speicherung."""
