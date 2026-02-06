@@ -183,7 +183,7 @@ def cmd_predict(args: argparse.Namespace, config: Config) -> int:
         return 1
 
     # Prognose erstellen
-    forecast = predict(model, weather_df, config.latitude, config.longitude)
+    forecast = predict(model, weather_df, config.latitude, config.longitude, config.peak_kwp)
 
     # Ausgabe formatieren
     if args.format == "json":
@@ -263,7 +263,7 @@ def cmd_today(args: argparse.Namespace, config: Config) -> int:
         return 1
 
     # Prognose erstellen
-    forecast = predict(model, weather_df, config.latitude, config.longitude)
+    forecast = predict(model, weather_df, config.latitude, config.longitude, config.peak_kwp)
 
     # Ausgabe
     now_hour = datetime.now(tz).hour
@@ -358,7 +358,8 @@ def cmd_train(args: argparse.Namespace, config: Config) -> int:
     train_start = time.perf_counter()
     try:
         model, metrics = train(
-            db, config.latitude, config.longitude, model_type, since_year=since_year
+            db, config.latitude, config.longitude, model_type,
+            since_year=since_year, peak_kwp=config.peak_kwp
         )
     except ValueError as e:
         print(f"❌ Training fehlgeschlagen: {e}", file=sys.stderr)
@@ -447,6 +448,7 @@ def cmd_tune(args: argparse.Namespace, config: Config) -> int:
                 timeout=timeout,
                 show_progress=True,
                 since_year=since_year,
+                peak_kwp=config.peak_kwp,
             )
         else:
             best_model, metrics, best_params = tune(
@@ -457,6 +459,7 @@ def cmd_tune(args: argparse.Namespace, config: Config) -> int:
                 n_iter=n_iter,
                 cv_splits=cv_splits,
                 since_year=since_year,
+                peak_kwp=config.peak_kwp,
             )
     except DependencyError as e:
         print(f"❌ {e}", file=sys.stderr)
@@ -623,7 +626,7 @@ def cmd_evaluate(args: argparse.Namespace, config: Config) -> int:
     print(f"📈 Datenpunkte: {len(df):,}")
 
     # Features erstellen und Vorhersagen machen
-    X = prepare_features(df, config.latitude, config.longitude)
+    X = prepare_features(df, config.latitude, config.longitude, config.peak_kwp)
     y_true = df["production_w"].values
     y_pred = model.predict(X)
 
