@@ -134,8 +134,10 @@ Stundenwerte
 
 | Modell | MAE | MAPE |
 |--------|-----|------|
-| **XGBoost (tuned)** | ~110 W | ~30% |
-| RandomForest | ~170 W | ~45% |
+| **XGBoost (tuned)** | **144 W** | **30.1%** |
+| RandomForest | ~180 W | ~45% |
+
+*Stand: Februar 2026, nach Feature-Engineering (#80-#83)*
 
 👉 **Aktuelle Benchmarks:** [docs/MODELS.md](docs/MODELS.md#aktuelle-performance)
 

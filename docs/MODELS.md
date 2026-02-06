@@ -61,11 +61,13 @@ pvforecast train --model xgb
 
 ### Features
 
+**Basis-Features:**
+
 | Feature | Beschreibung | Quelle |
 |---------|--------------|--------|
-| `hour` | Stunde (0-23) | Timestamp |
-| `month` | Monat (1-12) | Timestamp |
-| `day_of_year` | Tag im Jahr | Timestamp |
+| `hour_sin/cos` | Stunde (zyklisch) | Timestamp |
+| `month_sin/cos` | Monat (zyklisch) | Timestamp |
+| `day_of_year_sin/cos` | Tag im Jahr (zyklisch) | Timestamp |
 | `ghi` | Globalstrahlung (W/m²) | Open-Meteo |
 | `cloud_cover` | Bewölkung (%) | Open-Meteo |
 | `temperature` | Temperatur (°C) | Open-Meteo |
@@ -73,6 +75,27 @@ pvforecast train --model xgb
 | `wind_speed` | Windgeschwindigkeit (m/s) | Open-Meteo |
 | `humidity` | Relative Luftfeuchtigkeit (%) | Open-Meteo |
 | `dhi` | Diffusstrahlung (W/m²) | Open-Meteo |
+| `dni` | Direktstrahlung (W/m²) | Open-Meteo |
+
+**Abgeleitete Features (ab v0.1.0):**
+
+| Feature | Beschreibung | Berechnung |
+|---------|--------------|------------|
+| `effective_irradiance` | Effektive Strahlung | GHI × (1 - cloud_cover/100) |
+| `csi` | Clear-Sky-Index | GHI / Clear-Sky-GHI (pvlib) |
+| `diffuse_fraction` | Diffus-Anteil | DHI / (GHI + 1) |
+| `t_module` | Modultemperatur | NOCT-basiert |
+| `efficiency_factor` | Temperatur-Derating | 1 - 0.004 × (t_module - 25) |
+| `peak_kwp` | Anlagenleistung | Konfiguration |
+
+**Lag-Features:**
+
+| Feature | Beschreibung |
+|---------|--------------|
+| `ghi_lag_1h/3h` | GHI vor 1/3 Stunden |
+| `ghi_rolling_3h` | GHI Mittel letzte 3h |
+| `cloud_trend` | Bewölkungsänderung |
+| `production_lag_1h/2h/3h/24h` | Produktion vor X Stunden (nur Training) |
 
 ---
 
@@ -195,24 +218,34 @@ pvforecast evaluate --year 2024
 
 | Metrik | Beschreibung | Gut wenn |
 |--------|--------------|----------|
-| **MAE** | Mean Absolute Error (Watt) | < 120 W |
-| **MAPE** | Mean Absolute Percentage Error | < 32% |
+| **MAE** | Mean Absolute Error (Watt) | < 150 W |
+| **MAPE** | Mean Absolute Percentage Error | < 35% |
 
 **Hinweis:** MAPE wird nur für Stunden >100W berechnet (vermeidet Verzerrung bei Nacht/Dämmerung).
 
 ### Aktuelle Performance
 
-*Mit erweiterten Wetter-Features (Wind, Humidity, DHI) und Tuning:*
+*Mit Feature-Engineering (Issues #80-#83):*
 
-| Modell | Methode | CV-Score (MAE) | Anmerkung |
-|--------|---------|----------------|-----------|
-| **XGBoost (tuned)** | Optuna | **199 W** | ⭐ Empfohlen |
-| XGBoost (tuned) | RandomizedSearchCV | 201 W | Schneller |
-| RandomForest | - | ~250 W | Basis |
+| Modell | MAE | MAPE | Anmerkung |
+|--------|-----|------|-----------|
+| **XGBoost (tuned)** | **144 W** | **30.1%** | ⭐ Empfohlen |
+| RandomForest | ~180 W | ~45% | Basis |
 
-**Hinweis:** Der CV-Score (Cross-Validation) ist die zuverlässigste Metrik, da er auf ungesehenen Daten gemessen wird.
+**Jahresabweichung:** +3.4% (Prognose vs. tatsächlicher Ertrag 2025)
 
-*Stand: 2026-02-05, 62k Datensätze (2019-2026)*
+*Stand: 2026-02-06, 62k Datensätze (2019-2026)*
+
+### Feature-Engineering Fortschritt
+
+| Issue | Feature | MAPE-Verbesserung |
+|-------|---------|-------------------|
+| #80 | Zyklische Features, effective_irradiance | -0.2% |
+| #83 | peak_kwp Normalisierung | Basis für Multi-Anlagen |
+| #82 | **Lag-Features (Wetter + Produktion)** | **-10%** |
+| #81 | CSI, DNI, Modultemperatur | -1.4% |
+
+**Gesamt: MAPE 41.7% → 30.1% (-11.6%)**
 
 ---
 
