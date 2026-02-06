@@ -662,7 +662,7 @@ def cmd_evaluate(args: argparse.Namespace, config: Config) -> int:
 
     y_pred = pd.Series(y_pred)
 
-    # Gesamtmetriken
+    # Gesamtmetriken ML-Modell
     mae = mean_absolute_error(y_true, y_pred)
     rmse = root_mean_squared_error(y_true, y_pred)
     r2 = r2_score(y_true, y_pred)
@@ -674,6 +674,33 @@ def cmd_evaluate(args: argparse.Namespace, config: Config) -> int:
         mape = mean_absolute_percentage_error(y_true[mask], y_pred[mask]) * 100
     else:
         mape = 0.0
+
+    # Persistence-Modell: gleicher Wochentag, 7 Tage vorher
+    # Für Skill Score Berechnung
+    df_sorted = df.sort_values("timestamp").reset_index(drop=True)
+    df_sorted["datetime"] = pd.to_datetime(df_sorted["timestamp"], unit="s", utc=True)
+
+    # Persistence: Wert von vor 7 Tagen (168 Stunden)
+    persistence_pred = df_sorted["production_w"].shift(168)  # 7 * 24 = 168
+    valid_mask = ~persistence_pred.isna()
+
+    if valid_mask.sum() > 0:
+        y_true_valid = df_sorted.loc[valid_mask, "production_w"]
+        y_pred_valid = y_pred[valid_mask]
+        persistence_valid = persistence_pred[valid_mask]
+
+        mae_persistence = mean_absolute_error(y_true_valid, persistence_valid)
+        mae_ml_valid = mean_absolute_error(y_true_valid, y_pred_valid)
+
+        # Skill Score: wie viel besser ist ML vs Persistence?
+        # 1 - (MAE_ML / MAE_Persistence) → positiv = ML besser
+        if mae_persistence > 0:
+            skill_score = (1 - mae_ml_valid / mae_persistence) * 100
+        else:
+            skill_score = 0.0
+    else:
+        mae_persistence = None
+        skill_score = None
 
     # Tagesweise Aggregation für Übersicht
     df["date"] = pd.to_datetime(df["timestamp"], unit="s", utc=True).dt.date
@@ -702,6 +729,17 @@ def cmd_evaluate(args: argparse.Namespace, config: Config) -> int:
     print(f"   RMSE: {rmse:.0f} W")
     print(f"   R²:   {r2:.3f}")
     print(f"   MAPE: {mape:.1f}% (nur Stunden > 100W)")
+
+    # Skill Score vs Persistence
+    if skill_score is not None:
+        print()
+        print("🎯 Skill Score (vs. Persistence):")
+        print(f"   ML-Modell MAE:      {mae_ml_valid:.0f} W")
+        print(f"   Persistence MAE:    {mae_persistence:.0f} W")
+        if skill_score > 0:
+            print(f"   Skill Score:        +{skill_score:.1f}% (ML ist besser)")
+        else:
+            print(f"   Skill Score:        {skill_score:.1f}% (Persistence ist besser)")
     print()
 
     # Jahresübersicht
