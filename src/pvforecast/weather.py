@@ -224,6 +224,80 @@ def fetch_forecast(
     return df
 
 
+def _get_now(tz: ZoneInfo) -> datetime:
+    """Gibt aktuelle Zeit in gegebener Timezone zurück. Mockable für Tests."""
+    return datetime.now(tz)
+
+
+def fetch_today(
+    lat: float,
+    lon: float,
+    tz: ZoneInfo | str,
+    timeout: float = 30.0,
+    max_retries: int = DEFAULT_MAX_RETRIES,
+) -> pd.DataFrame:
+    """
+    Holt Wetterdaten für den heutigen Tag (Vergangenheit + Prognose).
+
+    Kombiniert past_hours (00:00 bis jetzt) und forecast_hours (jetzt bis 23:59)
+    für eine vollständige Tagesprognose.
+
+    Args:
+        lat: Breitengrad
+        lon: Längengrad
+        tz: Timezone (ZoneInfo oder String wie "Europe/Berlin")
+        timeout: Request timeout in Sekunden
+        max_retries: Maximale Anzahl Versuche bei Fehlern
+
+    Returns:
+        DataFrame mit Wetterdaten für heute (gleiches Schema wie fetch_forecast)
+
+    Raises:
+        WeatherAPIError: Bei API-Fehlern nach allen Retries
+    """
+    if isinstance(tz, str):
+        tz = ZoneInfo(tz)
+
+    now = _get_now(tz)
+    current_hour = now.hour
+
+    # past_hours: 00:00 bis jetzt (+2 Puffer für API-Verzögerung)
+    past_hours = current_hour + 2
+    # forecast_hours: jetzt bis Ende des Tages (+1 Puffer)
+    forecast_hours = 24 - current_hour + 1
+
+    logger.info(f"Lade Wetterdaten für heute: past={past_hours}h, forecast={forecast_hours}h")
+
+    params = {
+        "latitude": lat,
+        "longitude": lon,
+        "hourly": WEATHER_PARAMS,
+        "timezone": "UTC",
+        "past_hours": past_hours,
+        "forecast_hours": forecast_hours,
+    }
+
+    data = _request_with_retry(
+        FORECAST_API, params, timeout=timeout, max_retries=max_retries
+    )
+
+    if "hourly" not in data:
+        raise WeatherAPIError(f"Unerwartete API-Antwort: {data}")
+
+    df = _parse_weather_response(data)
+
+    # Auf heute filtern
+    today = now.date()
+    weather_dates = pd.to_datetime(df["timestamp"], unit="s", utc=True)
+    weather_dates_local = weather_dates.dt.tz_convert(tz).dt.date
+    df = df[weather_dates_local == today].copy()
+
+    if len(df) == 0:
+        raise WeatherAPIError("Keine Wetterdaten für heute verfügbar")
+
+    return df
+
+
 def _parse_weather_response(data: dict) -> pd.DataFrame:
     """Parst Open-Meteo JSON-Antwort zu DataFrame."""
     hourly = data["hourly"]
