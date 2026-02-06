@@ -617,7 +617,8 @@ def cmd_evaluate(args: argparse.Namespace, config: Config) -> int:
                 w.temperature_c,
                 w.wind_speed_ms,
                 w.humidity_pct,
-                w.dhi_wm2
+                w.dhi_wm2,
+                w.dni_wm2
             FROM pv_readings p
             INNER JOIN weather_history w ON p.timestamp = w.timestamp
             WHERE p.timestamp >= ? AND p.timestamp <= ?
