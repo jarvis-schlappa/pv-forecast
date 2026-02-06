@@ -143,6 +143,8 @@ def format_forecast_json(forecast: Forecast) -> str:
 
 def cmd_predict(args: argparse.Namespace, config: Config) -> int:
     """Führt Prognose aus."""
+    import pandas as pd
+
     tz = ZoneInfo(config.timezone)
 
     # Modell laden
@@ -172,11 +174,10 @@ def cmd_predict(args: argparse.Namespace, config: Config) -> int:
         return 1
 
     # Filtere auf Ziel-Tage (volle Tage morgen + übermorgen etc.)
-    weather_df = weather_df[
-        weather_df["timestamp"].apply(
-            lambda ts: datetime.fromtimestamp(ts, tz).date() in target_dates
-        )
-    ]
+    # Vektorisierte Datums-Filterung statt apply()
+    weather_dates = pd.to_datetime(weather_df["timestamp"], unit="s", utc=True)
+    weather_dates_local = weather_dates.dt.tz_convert(tz).dt.date
+    weather_df = weather_df[weather_dates_local.isin(target_dates)]
 
     if len(weather_df) == 0:
         print("❌ Keine Wetterdaten für die Ziel-Tage verfügbar.", file=sys.stderr)
@@ -256,10 +257,10 @@ def cmd_today(args: argparse.Namespace, config: Config) -> int:
         print(f"❌ Fehler bei Wetterabfrage: {e}", file=sys.stderr)
         return 1
 
-    # Filtere auf heute
-    weather_df = weather_df[
-        weather_df["timestamp"].apply(lambda ts: datetime.fromtimestamp(ts, tz).date() == today)
-    ]
+    # Filtere auf heute (vektorisiert statt apply)
+    weather_dates = pd.to_datetime(weather_df["timestamp"], unit="s", utc=True)
+    weather_dates_local = weather_dates.dt.tz_convert(tz).dt.date
+    weather_df = weather_df[weather_dates_local == today]
 
     if len(weather_df) == 0:
         print("❌ Keine Wetterdaten für heute verfügbar.", file=sys.stderr)

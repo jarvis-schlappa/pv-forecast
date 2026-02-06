@@ -1010,17 +1010,16 @@ def predict(
         if row.sun_elevation < 0:
             predictions[i] = 0
 
-    # Hourly Forecasts erstellen
-    hourly = []
-    for _, row in weather_df.iterrows():
-        hourly.append(
-            HourlyForecast(
-                timestamp=datetime.fromtimestamp(int(row["timestamp"]), UTC_TZ),
-                production_w=predictions[len(hourly)],
-                ghi_wm2=float(row["ghi_wm2"]),
-                cloud_cover_pct=int(row["cloud_cover_pct"]),
-            )
+    # Hourly Forecasts erstellen (itertuples ist schneller als iterrows)
+    hourly = [
+        HourlyForecast(
+            timestamp=datetime.fromtimestamp(int(row.timestamp), UTC_TZ),
+            production_w=predictions[i],
+            ghi_wm2=float(row.ghi_wm2),
+            cloud_cover_pct=int(row.cloud_cover_pct),
         )
+        for i, row in enumerate(weather_df.itertuples(index=False))
+    ]
 
     # Summe berechnen (Wh → kWh)
     total_wh = sum(predictions)

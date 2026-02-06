@@ -147,23 +147,24 @@ def import_to_db(df: pd.DataFrame, db: Database) -> int:
         """Konvertiert numpy/pandas Typen zu Python nativen Typen."""
         if pd.isna(val):
             return None
-        if hasattr(val, 'item'):  # numpy scalar
+        if hasattr(val, "item"):  # numpy scalar
             return val.item()
         return val
 
-    inserted = 0
+    # Alle Zeilen in Liste von Tupeln konvertieren (für executemany)
+    all_values = [
+        tuple(to_python(row[c]) if c in row.index else None for c in columns)
+        for _, row in df.iterrows()
+    ]
+
     with db.connect() as conn:
-        for _, row in df.iterrows():
-            values = tuple(to_python(row[c]) if c in row.index else None for c in columns)
-            try:
-                conn.execute(
-                    f"INSERT OR IGNORE INTO pv_readings ({column_names}) VALUES ({placeholders})",
-                    values,
-                )
-                if conn.total_changes > inserted:
-                    inserted = conn.total_changes
-            except Exception as e:
-                logger.warning(f"Fehler bei Zeile {row.get('timestamp')}: {e}")
+        before = conn.execute("SELECT COUNT(*) FROM pv_readings").fetchone()[0]
+        conn.executemany(
+            f"INSERT OR IGNORE INTO pv_readings ({column_names}) VALUES ({placeholders})",
+            all_values,
+        )
+        after = conn.execute("SELECT COUNT(*) FROM pv_readings").fetchone()[0]
+        inserted = after - before
 
     logger.debug(f"Importiert: {inserted} neue Datensätze")
     return inserted
