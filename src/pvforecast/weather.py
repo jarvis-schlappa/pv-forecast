@@ -283,19 +283,19 @@ def save_weather_to_db(df: pd.DataFrame, db: Database) -> int:
     if "dni_wm2" not in df.columns:
         df = df.assign(dni_wm2=0.0)
 
-    # Daten für Bulk Insert vorbereiten
+    # Daten für Bulk Insert vorbereiten (itertuples ist ~100x schneller als iterrows)
     records = [
         (
-            int(row["timestamp"]),
-            float(row["ghi_wm2"]),
-            int(row["cloud_cover_pct"]),
-            float(row["temperature_c"]),
-            float(row["wind_speed_ms"]) if row["wind_speed_ms"] is not None else 0.0,
-            int(row["humidity_pct"]) if row["humidity_pct"] is not None else 50,
-            float(row["dhi_wm2"]) if row["dhi_wm2"] is not None else 0.0,
-            float(row["dni_wm2"]) if row["dni_wm2"] is not None else 0.0,
+            int(row.timestamp),
+            float(row.ghi_wm2),
+            int(row.cloud_cover_pct),
+            float(row.temperature_c),
+            float(row.wind_speed_ms) if row.wind_speed_ms is not None else 0.0,
+            int(row.humidity_pct) if row.humidity_pct is not None else 50,
+            float(row.dhi_wm2) if row.dhi_wm2 is not None else 0.0,
+            float(row.dni_wm2) if row.dni_wm2 is not None else 0.0,
         )
-        for _, row in df.iterrows()
+        for row in df.itertuples(index=False)
     ]
 
     # Bulk Insert in einer Transaktion
