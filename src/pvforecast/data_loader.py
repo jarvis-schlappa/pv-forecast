@@ -157,12 +157,12 @@ def import_to_db(df: pd.DataFrame, db: Database) -> int:
         for _, row in df.iterrows()
     ]
 
+    # SQL-Statement bauen (Spalten sind aus interner Konstante, nicht User-Input)
+    sql = "INSERT OR IGNORE INTO pv_readings (" + column_names + ") VALUES (" + placeholders + ")"
+
     with db.connect() as conn:
         before = conn.execute("SELECT COUNT(*) FROM pv_readings").fetchone()[0]
-        conn.executemany(
-            f"INSERT OR IGNORE INTO pv_readings ({column_names}) VALUES ({placeholders})",
-            all_values,
-        )
+        conn.executemany(sql, all_values)
         after = conn.execute("SELECT COUNT(*) FROM pv_readings").fetchone()[0]
         inserted = after - before
 
