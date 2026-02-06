@@ -46,6 +46,7 @@ from pvforecast.weather import (
     WeatherAPIError,
     ensure_weather_history,
     fetch_forecast,
+    fetch_today,
 )
 
 logger = logging.getLogger(__name__)
@@ -206,10 +207,6 @@ def cmd_predict(args: argparse.Namespace, config: Config) -> int:
 
 def cmd_today(args: argparse.Namespace, config: Config) -> int:
     """Zeigt Prognose für heute (ganzer Tag)."""
-    import httpx
-    import pandas as pd
-
-    Database(config.db_path)
     tz = ZoneInfo(config.timezone)
 
     # Modell laden
@@ -221,51 +218,12 @@ def cmd_today(args: argparse.Namespace, config: Config) -> int:
         return 1
 
     today = datetime.now(tz).date()
-    current_hour = datetime.now(tz).hour
 
-    # Wetterdaten für ganzen Tag: past_hours für Vergangenheit, forecast für Rest
-    # past_hours=aktuelle Stunde+1 deckt 00:00 bis jetzt ab
-    past_hours = current_hour + 2  # +2 für Puffer
-    forecast_hours = 24 - current_hour + 1  # Rest des Tages
-
+    # Wetterdaten für heute holen (nutzt Retry-Logic aus weather.py)
     try:
-        params = {
-            "latitude": config.latitude,
-            "longitude": config.longitude,
-            "hourly": "shortwave_radiation,cloud_cover,temperature_2m",
-            "timezone": "UTC",
-            "past_hours": past_hours,
-            "forecast_hours": forecast_hours,
-        }
-        with httpx.Client(timeout=30) as client:
-            response = client.get("https://api.open-meteo.com/v1/forecast", params=params)
-            response.raise_for_status()
-            data = response.json()
-
-        hourly = data["hourly"]
-        weather_df = pd.DataFrame(
-            {
-                "timestamp": pd.to_datetime(hourly["time"]).astype("int64") // 10**9,
-                "ghi_wm2": hourly["shortwave_radiation"],
-                "cloud_cover_pct": hourly["cloud_cover"],
-                "temperature_c": hourly["temperature_2m"],
-            }
-        )
-        weather_df["ghi_wm2"] = weather_df["ghi_wm2"].fillna(0.0)
-        weather_df["cloud_cover_pct"] = weather_df["cloud_cover_pct"].fillna(0).astype(int)
-        weather_df["temperature_c"] = weather_df["temperature_c"].fillna(10.0)
-
-    except Exception as e:
+        weather_df = fetch_today(config.latitude, config.longitude, tz)
+    except WeatherAPIError as e:
         print(f"❌ Fehler bei Wetterabfrage: {e}", file=sys.stderr)
-        return 1
-
-    # Filtere auf heute (vektorisiert statt apply)
-    weather_dates = pd.to_datetime(weather_df["timestamp"], unit="s", utc=True)
-    weather_dates_local = weather_dates.dt.tz_convert(tz).dt.date
-    weather_df = weather_df[weather_dates_local == today]
-
-    if len(weather_df) == 0:
-        print("❌ Keine Wetterdaten für heute verfügbar.", file=sys.stderr)
         return 1
 
     # TODO: Für bessere Today-Prognose: Produktionsdaten bis jetzt aus DB holen

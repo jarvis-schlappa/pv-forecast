@@ -539,3 +539,138 @@ class TestExtendedWeatherFeatures:
             assert row[0] is None
             assert row[1] is None
             assert row[2] is None
+
+
+class TestFetchToday:
+    """Tests für fetch_today Funktion."""
+
+    def test_fetch_today_uses_retry_logic(self):
+        """Test: fetch_today nutzt _request_with_retry."""
+        from pvforecast.weather import fetch_today
+
+        tz = ZoneInfo("Europe/Berlin")
+        mock_now = datetime(2026, 2, 6, 12, 0, tzinfo=tz)
+
+        with patch("pvforecast.weather._request_with_retry") as mock_request, \
+             patch("pvforecast.weather._get_now", return_value=mock_now):
+            mock_request.return_value = {
+                "hourly": {
+                    "time": ["2026-02-06T12:00"],
+                    "shortwave_radiation": [500.0],
+                    "cloud_cover": [30],
+                    "temperature_2m": [10.0],
+                    "wind_speed_10m": [5.0],
+                    "relative_humidity_2m": [60],
+                    "diffuse_radiation": [100.0],
+                    "direct_normal_irradiance": [400.0],
+                }
+            }
+
+            fetch_today(51.0, 7.0, tz)
+
+            # Prüfe dass _request_with_retry aufgerufen wurde
+            mock_request.assert_called_once()
+            call_args = mock_request.call_args
+
+            # Prüfe API URL (Forecast API)
+            assert "api.open-meteo.com" in call_args[0][0]
+
+            # Prüfe dass past_hours und forecast_hours gesetzt sind
+            params = call_args[0][1]
+            assert "past_hours" in params
+            assert "forecast_hours" in params
+            # Um 12:00 sollte past_hours=14 (12+2 Puffer)
+            assert params["past_hours"] == 14
+
+    def test_fetch_today_filters_to_today(self):
+        """Test: fetch_today filtert auf heute."""
+        from pvforecast.weather import fetch_today
+
+        tz = ZoneInfo("Europe/Berlin")
+        mock_now = datetime(2026, 2, 6, 12, 0, tzinfo=tz)
+
+        with patch("pvforecast.weather._request_with_retry") as mock_request, \
+             patch("pvforecast.weather._get_now", return_value=mock_now):
+            # UTC Zeiten: Berlin = UTC+1
+            # 2026-02-05T22:00 UTC = 2026-02-05 23:00 Berlin (gestern)
+            # 2026-02-05T23:00 UTC = 2026-02-06 00:00 Berlin (heute)
+            # 2026-02-06T12:00 UTC = 2026-02-06 13:00 Berlin (heute)
+            # 2026-02-06T23:00 UTC = 2026-02-07 00:00 Berlin (morgen)
+            mock_request.return_value = {
+                "hourly": {
+                    "time": [
+                        "2026-02-05T22:00",
+                        "2026-02-05T23:00",
+                        "2026-02-06T12:00",
+                        "2026-02-06T23:00",
+                    ],
+                    "shortwave_radiation": [0, 100, 500, 0],
+                    "cloud_cover": [50, 30, 20, 60],
+                    "temperature_2m": [5, 6, 12, 4],
+                    "wind_speed_10m": [3, 4, 5, 3],
+                    "relative_humidity_2m": [70, 65, 50, 75],
+                    "diffuse_radiation": [0, 50, 150, 0],
+                    "direct_normal_irradiance": [0, 80, 400, 0],
+                }
+            }
+
+            df = fetch_today(51.0, 7.0, tz)
+
+            # Nur Daten für heute (2026-02-06 in Berlin)
+            assert len(df) == 2
+            timestamps = pd.to_datetime(df["timestamp"], unit="s", utc=True)
+            dates = timestamps.dt.tz_convert(tz).dt.date
+            assert all(d == date(2026, 2, 6) for d in dates)
+
+    def test_fetch_today_raises_on_no_data(self):
+        """Test: fetch_today wirft Fehler wenn keine Daten für heute."""
+        from pvforecast.weather import fetch_today
+
+        tz = ZoneInfo("Europe/Berlin")
+        mock_now = datetime(2026, 2, 6, 12, 0, tzinfo=tz)
+
+        with patch("pvforecast.weather._request_with_retry") as mock_request, \
+             patch("pvforecast.weather._get_now", return_value=mock_now):
+            # Nur Daten für gestern
+            mock_request.return_value = {
+                "hourly": {
+                    "time": ["2026-02-04T10:00"],
+                    "shortwave_radiation": [500.0],
+                    "cloud_cover": [30],
+                    "temperature_2m": [10.0],
+                    "wind_speed_10m": [5.0],
+                    "relative_humidity_2m": [60],
+                    "diffuse_radiation": [100.0],
+                    "direct_normal_irradiance": [400.0],
+                }
+            }
+
+            with pytest.raises(WeatherAPIError, match="Keine Wetterdaten für heute"):
+                fetch_today(51.0, 7.0, tz)
+
+    def test_fetch_today_accepts_string_timezone(self):
+        """Test: fetch_today akzeptiert Timezone als String."""
+        from pvforecast.weather import fetch_today
+
+        tz = ZoneInfo("Europe/Berlin")
+        mock_now = datetime(2026, 2, 6, 12, 0, tzinfo=tz)
+
+        with patch("pvforecast.weather._request_with_retry") as mock_request, \
+             patch("pvforecast.weather._get_now", return_value=mock_now):
+            mock_request.return_value = {
+                "hourly": {
+                    "time": ["2026-02-06T12:00"],
+                    "shortwave_radiation": [500.0],
+                    "cloud_cover": [30],
+                    "temperature_2m": [10.0],
+                    "wind_speed_10m": [5.0],
+                    "relative_humidity_2m": [60],
+                    "diffuse_radiation": [100.0],
+                    "direct_normal_irradiance": [400.0],
+                }
+            }
+
+            # String statt ZoneInfo
+            df = fetch_today(51.0, 7.0, "Europe/Berlin")
+
+            assert len(df) == 1
