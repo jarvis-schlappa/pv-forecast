@@ -8,7 +8,7 @@ from contextlib import contextmanager
 from pathlib import Path
 
 # Schema Version für Migrations
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 SCHEMA_SQL = """
 -- PV-Ertragsdaten (aus E3DC CSV)
@@ -31,7 +31,9 @@ CREATE TABLE IF NOT EXISTS weather_history (
     -- Erweiterte Features (v2)
     wind_speed_ms       REAL,                 -- Windgeschwindigkeit m/s
     humidity_pct        INTEGER,              -- Relative Luftfeuchtigkeit %
-    dhi_wm2             REAL                  -- Diffusstrahlung W/m²
+    dhi_wm2             REAL,                 -- Diffusstrahlung W/m²
+    -- v3
+    dni_wm2             REAL                  -- Direktnormalstrahlung W/m²
 );
 
 -- Metadaten
@@ -50,6 +52,11 @@ MIGRATION_V1_TO_V2 = """
 ALTER TABLE weather_history ADD COLUMN wind_speed_ms REAL;
 ALTER TABLE weather_history ADD COLUMN humidity_pct INTEGER;
 ALTER TABLE weather_history ADD COLUMN dhi_wm2 REAL;
+"""
+
+# Migration von Schema v2 zu v3
+MIGRATION_V2_TO_V3 = """
+ALTER TABLE weather_history ADD COLUMN dni_wm2 REAL;
 """
 
 
@@ -79,6 +86,8 @@ class Database:
             # Migrationen durchführen
             if current_version < 2:
                 self._migrate_v1_to_v2(conn)
+            if current_version < 3:
+                self._migrate_v2_to_v3(conn)
 
             # Schema-Version setzen
             conn.execute(
@@ -98,6 +107,14 @@ class Database:
             conn.execute("ALTER TABLE weather_history ADD COLUMN humidity_pct INTEGER")
         if "dhi_wm2" not in columns:
             conn.execute("ALTER TABLE weather_history ADD COLUMN dhi_wm2 REAL")
+
+    def _migrate_v2_to_v3(self, conn: sqlite3.Connection) -> None:
+        """Migration von Schema v2 zu v3: DNI hinzufügen."""
+        cursor = conn.execute("PRAGMA table_info(weather_history)")
+        columns = {row[1] for row in cursor.fetchall()}
+
+        if "dni_wm2" not in columns:
+            conn.execute("ALTER TABLE weather_history ADD COLUMN dni_wm2 REAL")
 
     @contextmanager
     def connect(self) -> Generator[sqlite3.Connection, None, None]:

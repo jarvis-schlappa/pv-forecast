@@ -209,6 +209,31 @@ def prepare_features(
     if peak_kwp is not None:
         features["peak_kwp"] = peak_kwp
 
+    # === Physikalische Features ===
+
+    # Diffuse Fraction: Verhältnis diffuse/globale Strahlung
+    # Hoher Wert = bewölkt, niedriger = klarer Himmel
+    features["diffuse_fraction"] = features["dhi"] / (features["ghi"] + 1)
+
+    # DNI (Direct Normal Irradiance) wenn verfügbar
+    if "dni_wm2" in df.columns:
+        features["dni"] = df["dni_wm2"].fillna(0)
+    else:
+        features["dni"] = 0.0
+
+    # Modultemperatur (NOCT-basiert)
+    # NOCT = 45°C (Nominal Operating Cell Temperature)
+    NOCT = 45
+    features["t_module"] = (
+        features["temperature"]
+        + (features["ghi"] / 800) * (NOCT - 20)
+        - features["wind_speed"] * 2
+    )
+
+    # Temperatur-Derating: Module verlieren ~0.4%/°C über 25°C
+    TEMP_COEFFICIENT = -0.004
+    features["efficiency_factor"] = 1 + TEMP_COEFFICIENT * (features["t_module"] - 25)
+
     # === Lag-Features ===
 
     # Wetter-Lags (immer verfügbar, da Wetterdaten sequentiell)
@@ -359,7 +384,8 @@ def train(
                 w.temperature_c,
                 w.wind_speed_ms,
                 w.humidity_pct,
-                w.dhi_wm2
+                w.dhi_wm2,
+                w.dni_wm2
             FROM pv_readings p
             INNER JOIN weather_history w ON p.timestamp = w.timestamp
             WHERE p.curtailed = 0  -- Keine abgeregelten Daten
@@ -462,7 +488,8 @@ def tune(
                 w.temperature_c,
                 w.wind_speed_ms,
                 w.humidity_pct,
-                w.dhi_wm2
+                w.dhi_wm2,
+                w.dni_wm2
             FROM pv_readings p
             INNER JOIN weather_history w ON p.timestamp = w.timestamp
             WHERE p.curtailed = 0
@@ -671,7 +698,8 @@ def tune_optuna(
                 w.temperature_c,
                 w.wind_speed_ms,
                 w.humidity_pct,
-                w.dhi_wm2
+                w.dhi_wm2,
+                w.dni_wm2
             FROM pv_readings p
             INNER JOIN weather_history w ON p.timestamp = w.timestamp
             WHERE p.curtailed = 0

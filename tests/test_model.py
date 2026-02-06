@@ -291,6 +291,71 @@ class TestPrepareFeatures:
         assert features.iloc[0]["production_lag_1h"] == 0
         assert features.iloc[1]["production_lag_1h"] == 0
 
+    def test_physics_features(self):
+        """Test: Physikalische Features (diffuse_fraction, t_module, efficiency)."""
+        df = pd.DataFrame(
+            [
+                {
+                    "timestamp": 1704067200,
+                    "ghi_wm2": 800,
+                    "cloud_cover_pct": 20,
+                    "temperature_c": 25,
+                    "wind_speed_ms": 2.0,
+                    "dhi_wm2": 200,
+                },
+                {
+                    "timestamp": 1704070800,
+                    "ghi_wm2": 1000,
+                    "cloud_cover_pct": 0,
+                    "temperature_c": 35,
+                    "wind_speed_ms": 0.0,
+                    "dhi_wm2": 100,
+                },
+            ]
+        )
+
+        features = prepare_features(df, 51.83, 7.28)
+
+        # diffuse_fraction prüfen
+        assert "diffuse_fraction" in features.columns
+        # 200 / (800 + 1) ≈ 0.25
+        assert abs(features.iloc[0]["diffuse_fraction"] - 0.25) < 0.01
+
+        # t_module prüfen (NOCT=45)
+        # t_module = temp + (ghi/800) * (45-20) - wind*2
+        # = 25 + (800/800)*25 - 2*2 = 25 + 25 - 4 = 46
+        assert "t_module" in features.columns
+        assert abs(features.iloc[0]["t_module"] - 46) < 0.1
+
+        # efficiency_factor prüfen
+        # = 1 + (-0.004) * (46 - 25) = 1 - 0.084 = 0.916
+        assert "efficiency_factor" in features.columns
+        assert abs(features.iloc[0]["efficiency_factor"] - 0.916) < 0.01
+
+    def test_dni_feature(self):
+        """Test: DNI wird als Feature hinzugefügt wenn vorhanden."""
+        # Ohne DNI
+        df_no_dni = pd.DataFrame(
+            [{"timestamp": 1704067200, "ghi_wm2": 500, "cloud_cover_pct": 20, "temperature_c": 15}]
+        )
+        features_no_dni = prepare_features(df_no_dni, 51.83, 7.28)
+        assert features_no_dni.iloc[0]["dni"] == 0.0
+
+        # Mit DNI
+        df_with_dni = pd.DataFrame(
+            [
+                {
+                    "timestamp": 1704067200,
+                    "ghi_wm2": 500,
+                    "cloud_cover_pct": 20,
+                    "temperature_c": 15,
+                    "dni_wm2": 700,
+                }
+            ]
+        )
+        features_with_dni = prepare_features(df_with_dni, 51.83, 7.28)
+        assert features_with_dni.iloc[0]["dni"] == 700
+
 
 class TestSaveLoadModel:
     """Tests für Modell-Speicherung."""
