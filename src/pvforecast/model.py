@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-import pickle
 from dataclasses import dataclass
 from datetime import datetime
 from math import asin, cos, pi, radians, sin
@@ -11,6 +10,7 @@ from pathlib import Path
 from typing import Literal
 from zoneinfo import ZoneInfo
 
+import joblib
 import numpy as np
 import pandas as pd
 from scipy.stats import randint, uniform
@@ -937,8 +937,8 @@ def save_model(model: Pipeline, path: Path, metrics: dict | None = None) -> None
         "created_at": datetime.now(UTC_TZ).isoformat(),
     }
 
-    with open(path, "wb") as f:
-        pickle.dump(data, f)
+    # joblib ist sklearn-Standard und bietet bessere Kompression
+    joblib.dump(data, path, compress=3)
 
     logger.info(f"Modell gespeichert: {path} (Version: {version})")
 
@@ -956,8 +956,7 @@ def load_model(path: Path) -> tuple[Pipeline, dict | None]:
     if not path.exists():
         raise ModelNotFoundError(f"Kein Modell gefunden: {path}")
 
-    with open(path, "rb") as f:
-        data = pickle.load(f)
+    data = joblib.load(path)
 
     if isinstance(data, dict):
         return data["model"], data.get("metrics")
