@@ -1,11 +1,11 @@
 # PV-Forecast – Projektstatus
 
-> Letzte Aktualisierung: 2026-02-05 17:55
+> Letzte Aktualisierung: 2026-02-06
 
-## 🎯 Aktueller Stand: Phase 2 abgeschlossen ✅
+## 🎯 Aktueller Stand: Feature Engineering abgeschlossen ✅
 
-MVP + alle geplanten Verbesserungen implementiert.
-CLI-Output optimiert (Progress, Timing, weniger Verbose).
+MVP + Feature Engineering + Optuna Tuning implementiert.
+MAPE von 41.7% auf 30.1% verbessert (-11.6%).
 
 ---
 
@@ -33,19 +33,23 @@ CLI-Output optimiert (Progress, Timing, weniger Verbose).
 | #45 | CLI Output Cleanup | #48 | ✅ |
 | #46 | Progress-Anzeige | #49 | ✅ |
 | #47 | Timing bei Operationen | #49 | ✅ |
+| #29 | Optuna Tuning | - | ✅ |
+| #80 | Zyklische Features + effective_irradiance | #84 | ✅ |
+| #81 | CSI, DNI, Modultemperatur | #87 | ✅ |
+| #82 | Lag-Features | #86 | ✅ |
+| #83 | peak_kwp Normalisierung | #85 | ✅ |
+| #109 | CI: fetch_today Tests Python 3.11+ | - | ✅ |
 
 ## 🔓 Offene Issues
 
 | # | Titel | Prio | Beschreibung |
 |---|-------|------|--------------|
 | #23 | Automatische tägliche Prognose | 🟢 Niedrig | Cron-Integration |
-| #26 | Feature Engineering | 🟡 Mittel | Weitere ML-Features |
 | #27 | Separate Modelle pro Saison | 🟢 Niedrig | Sommer/Winter-Split |
 | #28 | Ensemble RF+XGB | 🟢 Niedrig | Modell-Kombination |
-| #29 | Optuna Tuning | 🟢 Niedrig | Besseres Hyperparameter-Tuning |
 | #36-39 | Home Assistant Integration | 🟡 Mittel | HA-Sensor |
 | #50 | Alternative Weather Provider | 🟡 Mittel | Solcast, Forecast.Solar |
-| #51 | Dokumentation aktualisieren | 🟢 Niedrig | Post-Phase-2 Cleanup |
+| #111 | UX: Fehlermeldung optionale Deps | 🟢 Niedrig | zsh-kompatibel, [tune] extra |
 
 ---
 
@@ -71,16 +75,16 @@ CLI-Output optimiert (Progress, Timing, weniger Verbose).
 
 | Modell | MAE | MAPE | Anmerkung |
 |--------|-----|------|-----------|
-| XGBoost (tuned) | **111 W** | **30.3%** | ⭐ Empfohlen |
-| RandomForest | 168 W | 46.0% | Basis |
+| XGBoost (tuned) | **144 W** | **30.1%** | ⭐ Empfohlen |
+| RandomForest | ~180 W | ~45% | Basis |
 
-*MAPE nur für Stunden >100W. Mit erweiterten Wetter-Features.*
+*MAPE nur für Stunden >100W. Mit Feature Engineering (#80-#83).*
 
 ---
 
 ## 🧪 Test-Abdeckung
 
-- **158 Tests** ✅ (Unit + E2E)
+- **250 Tests** ✅ (Unit + E2E)
 - Module: validation, data_loader, weather, model, config, db, cli
 - CI: GitHub Actions (Python 3.9-3.12)
 

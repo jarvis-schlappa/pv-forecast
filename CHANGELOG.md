@@ -5,6 +5,28 @@ Alle wichtigen Änderungen an diesem Projekt werden hier dokumentiert.
 Das Format basiert auf [Keep a Changelog](https://keepachangelog.com/de/1.0.0/),
 und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
+## [Unreleased]
+
+### Hinzugefügt
+
+- **Optuna Tuning** (`pvforecast tune --method optuna`) – Bayesian Optimization mit Pruning (#29)
+- **Feature Engineering** für bessere Prognosen (#80-#83):
+  - Zyklische Features (Stunde, Monat, Tag im Jahr)
+  - Effective Irradiance, Clear-Sky-Index, Diffuse Fraction
+  - Lag-Features (Wetter + Produktion der letzten Stunden)
+  - Modultemperatur + Temperatur-Derating
+  - peak_kwp Normalisierung (Vorbereitung Multi-Anlagen)
+
+### Geändert
+
+- **Performance verbessert:** MAPE 41.7% → 30.1% (-11.6%)
+
+### Behoben
+
+- CI: fetch_today Tests auf Python 3.11+ (#109)
+
+---
+
 ## [0.1.0] - 2026-02-05
 
 Erstes Release von PV-Forecast. 🎉
@@ -41,8 +63,8 @@ Erstes Release von PV-Forecast. 🎉
 
 | Modell | MAE | MAPE |
 |--------|-----|------|
-| XGBoost (tuned) | ~110 W | ~30% |
-| RandomForest | ~170 W | ~45% |
+| XGBoost (tuned) | 144 W | 30.1% |
+| RandomForest | ~180 W | ~45% |
 
 *Getestet mit 62.000 Datensätzen (2019-2026), MAPE nur für Stunden >100W.*
 
