@@ -83,18 +83,27 @@ class TestPrepareFeatures:
 
         features = prepare_features(df, 51.83, 7.28)
 
-        assert "hour" in features.columns
-        assert "month" in features.columns
-        assert "day_of_year" in features.columns
+        # Zyklische Zeit-Features
+        assert "hour_sin" in features.columns
+        assert "hour_cos" in features.columns
+        assert "month_sin" in features.columns
+        assert "month_cos" in features.columns
+        assert "doy_sin" in features.columns
+        assert "doy_cos" in features.columns
+        # Wetter-Features
         assert "ghi" in features.columns
         assert "cloud_cover" in features.columns
         assert "temperature" in features.columns
         assert "sun_elevation" in features.columns
+        # Interaktions-Features
+        assert "effective_irradiance" in features.columns
 
         assert len(features) == 2
 
-    def test_hour_feature_correct(self):
-        """Test: Stunden-Feature ist korrekt."""
+    def test_hour_feature_cyclic(self):
+        """Test: Stunden-Feature ist zyklisch kodiert."""
+        import numpy as np
+
         # 2024-01-01 00:00 UTC and 12:00 UTC
         df = pd.DataFrame(
             [
@@ -105,11 +114,17 @@ class TestPrepareFeatures:
 
         features = prepare_features(df, 51.83, 7.28)
 
-        assert features.iloc[0]["hour"] == 0
-        assert features.iloc[1]["hour"] == 12
+        # Stunde 0: sin(0) = 0, cos(0) = 1
+        assert np.isclose(features.iloc[0]["hour_sin"], 0, atol=1e-10)
+        assert np.isclose(features.iloc[0]["hour_cos"], 1, atol=1e-10)
+        # Stunde 12: sin(π) = 0, cos(π) = -1
+        assert np.isclose(features.iloc[1]["hour_sin"], 0, atol=1e-10)
+        assert np.isclose(features.iloc[1]["hour_cos"], -1, atol=1e-10)
 
-    def test_month_feature_correct(self):
-        """Test: Monat-Feature ist korrekt."""
+    def test_month_feature_cyclic(self):
+        """Test: Monat-Feature ist zyklisch kodiert."""
+        import numpy as np
+
         # January and July 2024
         df = pd.DataFrame(
             [
@@ -120,8 +135,31 @@ class TestPrepareFeatures:
 
         features = prepare_features(df, 51.83, 7.28)
 
-        assert features.iloc[0]["month"] == 1
-        assert features.iloc[1]["month"] == 7
+        # Januar (Monat 1): sin(2π * 1/12) = 0.5, cos(2π * 1/12) ≈ 0.866
+        assert np.isclose(features.iloc[0]["month_sin"], 0.5, atol=1e-10)
+        assert np.isclose(features.iloc[0]["month_cos"], np.sqrt(3) / 2, atol=1e-10)
+        # Juli (Monat 7): sin(2π * 7/12) ≈ -0.5, cos(2π * 7/12) ≈ -0.866
+        assert np.isclose(features.iloc[1]["month_sin"], -0.5, atol=1e-10)
+        assert np.isclose(features.iloc[1]["month_cos"], -np.sqrt(3) / 2, atol=1e-10)
+
+    def test_effective_irradiance(self):
+        """Test: Effektive Strahlung wird korrekt berechnet."""
+        df = pd.DataFrame(
+            [
+                # GHI 1000, keine Wolken → effektiv 1000
+                {"timestamp": 1704067200, "ghi_wm2": 1000, "cloud_cover_pct": 0, "temperature_c": 20},
+                # GHI 1000, 50% Wolken → effektiv 500
+                {"timestamp": 1704110400, "ghi_wm2": 1000, "cloud_cover_pct": 50, "temperature_c": 20},
+                # GHI 1000, 100% Wolken → effektiv 0
+                {"timestamp": 1704153600, "ghi_wm2": 1000, "cloud_cover_pct": 100, "temperature_c": 20},
+            ]
+        )
+
+        features = prepare_features(df, 51.83, 7.28)
+
+        assert features.iloc[0]["effective_irradiance"] == 1000
+        assert features.iloc[1]["effective_irradiance"] == 500
+        assert features.iloc[2]["effective_irradiance"] == 0
 
 
 class TestSaveLoadModel:
