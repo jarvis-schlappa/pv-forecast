@@ -22,9 +22,11 @@ FORECAST_API = "https://api.open-meteo.com/v1/forecast"
 # Parameter die wir abfragen
 # GHI = shortwave_radiation (Globalstrahlung)
 # DHI = diffuse_radiation (Diffusstrahlung)
+# DNI = direct_normal_irradiance (Direktstrahlung auf geneigte Fläche)
 WEATHER_PARAMS = (
     "shortwave_radiation,cloud_cover,temperature_2m,"
-    "wind_speed_10m,relative_humidity_2m,diffuse_radiation"
+    "wind_speed_10m,relative_humidity_2m,diffuse_radiation,"
+    "direct_normal_irradiance"
 )
 
 # Retry-Konfiguration
@@ -232,10 +234,11 @@ def _parse_weather_response(data: dict) -> pd.DataFrame:
             "ghi_wm2": hourly["shortwave_radiation"],
             "cloud_cover_pct": hourly["cloud_cover"],
             "temperature_c": hourly["temperature_2m"],
-            # Neue Features (optional, können None sein bei alten Daten)
+            # Erweiterte Features (optional, können None sein bei alten Daten)
             "wind_speed_ms": hourly.get("wind_speed_10m"),
             "humidity_pct": hourly.get("relative_humidity_2m"),
             "dhi_wm2": hourly.get("diffuse_radiation"),
+            "dni_wm2": hourly.get("direct_normal_irradiance"),
         }
     )
 
@@ -246,10 +249,11 @@ def _parse_weather_response(data: dict) -> pd.DataFrame:
     df["ghi_wm2"] = df["ghi_wm2"].fillna(0.0)
     df["cloud_cover_pct"] = df["cloud_cover_pct"].fillna(0).astype(int)
     df["temperature_c"] = df["temperature_c"].fillna(10.0)
-    # Neue Features: None/NaN belassen wenn nicht vorhanden
+    # Erweiterte Features: NaN mit Defaults füllen
     df["wind_speed_ms"] = df["wind_speed_ms"].fillna(0.0)
     df["humidity_pct"] = df["humidity_pct"].fillna(50).astype(int)  # Default 50%
     df["dhi_wm2"] = df["dhi_wm2"].fillna(0.0)
+    df["dni_wm2"] = df["dni_wm2"].fillna(0.0)
 
     return df
 
@@ -276,6 +280,8 @@ def save_weather_to_db(df: pd.DataFrame, db: Database) -> int:
         df = df.assign(humidity_pct=50)
     if "dhi_wm2" not in df.columns:
         df = df.assign(dhi_wm2=0.0)
+    if "dni_wm2" not in df.columns:
+        df = df.assign(dni_wm2=0.0)
 
     # Daten für Bulk Insert vorbereiten
     records = [
@@ -287,6 +293,7 @@ def save_weather_to_db(df: pd.DataFrame, db: Database) -> int:
             float(row["wind_speed_ms"]) if row["wind_speed_ms"] is not None else 0.0,
             int(row["humidity_pct"]) if row["humidity_pct"] is not None else 50,
             float(row["dhi_wm2"]) if row["dhi_wm2"] is not None else 0.0,
+            float(row["dni_wm2"]) if row["dni_wm2"] is not None else 0.0,
         )
         for _, row in df.iterrows()
     ]
@@ -296,8 +303,8 @@ def save_weather_to_db(df: pd.DataFrame, db: Database) -> int:
         conn.executemany(
             """INSERT OR REPLACE INTO weather_history
                (timestamp, ghi_wm2, cloud_cover_pct, temperature_c,
-                wind_speed_ms, humidity_pct, dhi_wm2)
-               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                wind_speed_ms, humidity_pct, dhi_wm2, dni_wm2)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
             records,
         )
 

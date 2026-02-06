@@ -31,8 +31,9 @@ dependencies = [
 [project.optional-dependencies]
 xgb = ["xgboost>=2.0"]
 tune = ["optuna>=3.0"]
+physics = ["pvlib>=0.10.0"]
 dev = ["pytest>=8.0", "pytest-cov>=4.0", "ruff>=0.4"]
-all = ["xgboost>=2.0", "optuna>=3.0", "pytest>=8.0", "pytest-cov>=4.0", "ruff>=0.4"]
+all = ["xgboost>=2.0", "optuna>=3.0", "pvlib>=0.10.0", "pytest>=8.0", "pytest-cov>=4.0", "ruff>=0.4"]
 
 [project.scripts]
 pvforecast = "pvforecast.cli:main"
