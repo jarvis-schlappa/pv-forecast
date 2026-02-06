@@ -182,8 +182,11 @@ def cmd_predict(args: argparse.Namespace, config: Config) -> int:
         print("❌ Keine Wetterdaten für die Ziel-Tage verfügbar.", file=sys.stderr)
         return 1
 
-    # Prognose erstellen
-    forecast = predict(model, weather_df, config.latitude, config.longitude, config.peak_kwp)
+    # Prognose erstellen (mode="predict" für Zukunftsprognose ohne Produktions-Lags)
+    forecast = predict(
+        model, weather_df, config.latitude, config.longitude, config.peak_kwp,
+        mode="predict"
+    )
 
     # Ausgabe formatieren
     if args.format == "json":
@@ -262,8 +265,13 @@ def cmd_today(args: argparse.Namespace, config: Config) -> int:
         print("❌ Keine Wetterdaten für heute verfügbar.", file=sys.stderr)
         return 1
 
-    # Prognose erstellen
-    forecast = predict(model, weather_df, config.latitude, config.longitude, config.peak_kwp)
+    # TODO: Für bessere Today-Prognose: Produktionsdaten bis jetzt aus DB holen
+    # und mit weather_df mergen, dann mode="today" verwenden.
+    # Aktuell: mode="predict" (ohne Produktions-Lags)
+    forecast = predict(
+        model, weather_df, config.latitude, config.longitude, config.peak_kwp,
+        mode="predict"
+    )
 
     # Ausgabe
     now_hour = datetime.now(tz).hour
@@ -625,8 +633,8 @@ def cmd_evaluate(args: argparse.Namespace, config: Config) -> int:
 
     print(f"📈 Datenpunkte: {len(df):,}")
 
-    # Features erstellen und Vorhersagen machen
-    X = prepare_features(df, config.latitude, config.longitude, config.peak_kwp)
+    # Features erstellen und Vorhersagen machen (mode="train" für Backtesting)
+    X = prepare_features(df, config.latitude, config.longitude, config.peak_kwp, mode="train")
     y_true = df["production_w"].values
     y_pred = model.predict(X)
 

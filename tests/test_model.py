@@ -180,6 +180,100 @@ class TestPrepareFeatures:
         assert features_with_kwp.iloc[0]["peak_kwp"] == 9.92
         assert features_with_kwp.iloc[1]["peak_kwp"] == 9.92
 
+    def test_weather_lag_features(self):
+        """Test: Wetter-Lag-Features werden korrekt berechnet."""
+        df = pd.DataFrame(
+            [
+                {"timestamp": 1704067200, "ghi_wm2": 100, "cloud_cover_pct": 10, "temperature_c": 5},
+                {"timestamp": 1704070800, "ghi_wm2": 200, "cloud_cover_pct": 20, "temperature_c": 8},
+                {"timestamp": 1704074400, "ghi_wm2": 300, "cloud_cover_pct": 30, "temperature_c": 10},
+                {"timestamp": 1704078000, "ghi_wm2": 400, "cloud_cover_pct": 25, "temperature_c": 12},
+            ]
+        )
+
+        features = prepare_features(df, 51.83, 7.28)
+
+        # Wetter-Lags prüfen
+        assert "ghi_lag_1h" in features.columns
+        assert "ghi_lag_3h" in features.columns
+        assert "ghi_rolling_3h" in features.columns
+        assert "cloud_trend" in features.columns
+
+        # ghi_lag_1h: 0, 100, 200, 300 (erste ist 0 weil fillna)
+        assert features.iloc[0]["ghi_lag_1h"] == 0
+        assert features.iloc[1]["ghi_lag_1h"] == 100
+        assert features.iloc[2]["ghi_lag_1h"] == 200
+        assert features.iloc[3]["ghi_lag_1h"] == 300
+
+        # ghi_rolling_3h: rolling mean mit min_periods=1
+        # [100], [100,200], [100,200,300], [200,300,400]
+        assert features.iloc[0]["ghi_rolling_3h"] == 100
+        assert features.iloc[1]["ghi_rolling_3h"] == 150  # (100+200)/2
+        assert features.iloc[2]["ghi_rolling_3h"] == 200  # (100+200+300)/3
+        assert features.iloc[3]["ghi_rolling_3h"] == 300  # (200+300+400)/3
+
+        # cloud_trend: diff mit fillna(0)
+        assert features.iloc[0]["cloud_trend"] == 0  # fillna
+        assert features.iloc[1]["cloud_trend"] == 10  # 20-10
+        assert features.iloc[2]["cloud_trend"] == 10  # 30-20
+        assert features.iloc[3]["cloud_trend"] == -5  # 25-30
+
+    def test_production_lag_features_train_mode(self):
+        """Test: Produktions-Lags werden im train-Modus berechnet."""
+        df = pd.DataFrame(
+            [
+                {"timestamp": 1704067200, "ghi_wm2": 100, "cloud_cover_pct": 10, "temperature_c": 5, "production_w": 500},
+                {"timestamp": 1704070800, "ghi_wm2": 200, "cloud_cover_pct": 20, "temperature_c": 8, "production_w": 1000},
+                {"timestamp": 1704074400, "ghi_wm2": 300, "cloud_cover_pct": 30, "temperature_c": 10, "production_w": 1500},
+                {"timestamp": 1704078000, "ghi_wm2": 400, "cloud_cover_pct": 25, "temperature_c": 12, "production_w": 2000},
+            ]
+        )
+
+        features = prepare_features(df, 51.83, 7.28, mode="train")
+
+        # Produktions-Lags prüfen
+        assert "production_lag_1h" in features.columns
+        assert "production_lag_2h" in features.columns
+        assert "production_lag_3h" in features.columns
+        assert "production_lag_24h" in features.columns
+
+        # production_lag_1h: 0, 500, 1000, 1500
+        assert features.iloc[0]["production_lag_1h"] == 0
+        assert features.iloc[1]["production_lag_1h"] == 500
+        assert features.iloc[2]["production_lag_1h"] == 1000
+        assert features.iloc[3]["production_lag_1h"] == 1500
+
+    def test_production_lag_features_predict_mode(self):
+        """Test: Produktions-Lags sind 0 im predict-Modus."""
+        df = pd.DataFrame(
+            [
+                {"timestamp": 1704067200, "ghi_wm2": 100, "cloud_cover_pct": 10, "temperature_c": 5, "production_w": 500},
+                {"timestamp": 1704070800, "ghi_wm2": 200, "cloud_cover_pct": 20, "temperature_c": 8, "production_w": 1000},
+            ]
+        )
+
+        features = prepare_features(df, 51.83, 7.28, mode="predict")
+
+        # Produktions-Lags sollten 0 sein (auch wenn production_w vorhanden)
+        assert features.iloc[0]["production_lag_1h"] == 0
+        assert features.iloc[1]["production_lag_1h"] == 0
+        assert features.iloc[0]["production_lag_24h"] == 0
+
+    def test_production_lag_features_no_production_data(self):
+        """Test: Produktions-Lags sind 0 wenn keine Produktionsdaten."""
+        df = pd.DataFrame(
+            [
+                {"timestamp": 1704067200, "ghi_wm2": 100, "cloud_cover_pct": 10, "temperature_c": 5},
+                {"timestamp": 1704070800, "ghi_wm2": 200, "cloud_cover_pct": 20, "temperature_c": 8},
+            ]
+        )
+
+        features = prepare_features(df, 51.83, 7.28, mode="train")
+
+        # Produktions-Lags sollten 0 sein (keine production_w Spalte)
+        assert features.iloc[0]["production_lag_1h"] == 0
+        assert features.iloc[1]["production_lag_1h"] == 0
+
 
 class TestSaveLoadModel:
     """Tests für Modell-Speicherung."""
