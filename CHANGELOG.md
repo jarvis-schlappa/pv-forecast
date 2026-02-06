@@ -5,7 +5,7 @@ Alle wichtigen Änderungen an diesem Projekt werden hier dokumentiert.
 Das Format basiert auf [Keep a Changelog](https://keepachangelog.com/de/1.0.0/),
 und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
-## [Unreleased]
+## [0.1.1] - 2026-02-06
 
 ### Hinzugefügt
 
@@ -70,4 +70,5 @@ Erstes Release von PV-Forecast. 🎉
 
 ---
 
+[0.1.1]: https://github.com/jarvis-schlappa/pv-forecast/releases/tag/v0.1.1
 [0.1.0]: https://github.com/jarvis-schlappa/pv-forecast/releases/tag/v0.1.0
