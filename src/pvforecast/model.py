@@ -8,11 +8,10 @@ from dataclasses import dataclass
 from datetime import datetime
 from math import asin, cos, pi, radians, sin
 from pathlib import Path
-
-import numpy as np
 from typing import Literal
 from zoneinfo import ZoneInfo
 
+import numpy as np
 import pandas as pd
 from scipy.stats import randint, uniform
 from sklearn.ensemble import RandomForestRegressor
@@ -140,27 +139,32 @@ def calculate_sun_elevation(timestamp: int, lat: float, lon: float) -> float:
     return elevation
 
 
+FeatureMode = Literal["train", "today", "predict"]
+
+
 def prepare_features(
     df: pd.DataFrame,
     lat: float,
     lon: float,
     peak_kwp: float | None = None,
+    mode: FeatureMode = "train",
 ) -> pd.DataFrame:
     """
     Erstellt Feature-DataFrame für ML-Modell.
 
     Args:
         df: DataFrame mit timestamp, ghi_wm2, cloud_cover_pct, temperature_c,
-            und optional: wind_speed_ms, humidity_pct, dhi_wm2
+            und optional: wind_speed_ms, humidity_pct, dhi_wm2, production_w
         lat: Breitengrad (für Sonnenhöhe)
         lon: Längengrad
         peak_kwp: Anlagenleistung in kWp (optional, für Normalisierung)
+        mode: Feature-Modus:
+            - "train": Training mit historischen Daten (alle Lags verfügbar)
+            - "today": Prognose für heute (Produktions-Lags bis jetzt verfügbar)
+            - "predict": Prognose für Zukunft (keine Produktions-Lags)
 
     Returns:
-        DataFrame mit Features: hour_sin, hour_cos, month_sin, month_cos,
-                               doy_sin, doy_cos, ghi, cloud_cover,
-                               temperature, sun_elevation, wind_speed,
-                               humidity, dhi, effective_irradiance, peak_kwp
+        DataFrame mit Features inkl. Wetter-Lags und Produktions-Lags
     """
     features = pd.DataFrame()
 
@@ -204,6 +208,30 @@ def prepare_features(
     # Anlagenleistung als Feature (für Normalisierung/Transfer-Learning)
     if peak_kwp is not None:
         features["peak_kwp"] = peak_kwp
+
+    # === Lag-Features ===
+
+    # Wetter-Lags (immer verfügbar, da Wetterdaten sequentiell)
+    features["ghi_lag_1h"] = features["ghi"].shift(1).fillna(0)
+    features["ghi_lag_3h"] = features["ghi"].shift(3).fillna(0)
+    features["ghi_rolling_3h"] = features["ghi"].rolling(3, min_periods=1).mean()
+    features["cloud_trend"] = features["cloud_cover"].diff().fillna(0)
+
+    # Produktions-Lags (abhängig von mode und Datenverfügbarkeit)
+    if "production_w" in df.columns and mode in ("train", "today"):
+        # Historische Produktionsdaten verfügbar
+        production = df["production_w"].reset_index(drop=True)
+        features["production_lag_1h"] = production.shift(1).fillna(0)
+        features["production_lag_2h"] = production.shift(2).fillna(0)
+        features["production_lag_3h"] = production.shift(3).fillna(0)
+        features["production_lag_24h"] = production.shift(24).fillna(0)
+    else:
+        # Keine Produktionsdaten oder predict-Modus → Nullen
+        # Wichtig: Features müssen trotzdem existieren für konsistentes Feature-Set
+        features["production_lag_1h"] = 0.0
+        features["production_lag_2h"] = 0.0
+        features["production_lag_3h"] = 0.0
+        features["production_lag_24h"] = 0.0
 
     return features
 
@@ -347,8 +375,8 @@ def train(
 
     logger.info(f"Trainingsdaten: {len(df)} Datensätze")
 
-    # Features erstellen
-    X = prepare_features(df, lat, lon, peak_kwp=peak_kwp)
+    # Features erstellen (mode="train" für historische Daten)
+    X = prepare_features(df, lat, lon, peak_kwp=peak_kwp, mode="train")
     y = df["production_w"]
 
     # Zeitbasierter Split (80% Training, 20% Test)
@@ -450,8 +478,8 @@ def tune(
 
     logger.info(f"Tuning-Daten: {len(df)} Datensätze")
 
-    # Features erstellen
-    X = prepare_features(df, lat, lon, peak_kwp=peak_kwp)
+    # Features erstellen (mode="train" für historische Daten)
+    X = prepare_features(df, lat, lon, peak_kwp=peak_kwp, mode="train")
     y = df["production_w"]
 
     # Parameter-Suchraum definieren
@@ -659,8 +687,8 @@ def tune_optuna(
 
     logger.info(f"Tuning-Daten: {len(df)} Datensätze")
 
-    # Features erstellen
-    X = prepare_features(df, lat, lon, peak_kwp=peak_kwp)
+    # Features erstellen (mode="train" für historische Daten)
+    X = prepare_features(df, lat, lon, peak_kwp=peak_kwp, mode="train")
     y = df["production_w"].values
 
     # TimeSeriesSplit für CV
@@ -863,6 +891,7 @@ def predict(
     lat: float,
     lon: float,
     peak_kwp: float | None = None,
+    mode: FeatureMode = "predict",
 ) -> Forecast:
     """
     Erstellt Prognose basierend auf Wettervorhersage.
@@ -870,8 +899,11 @@ def predict(
     Args:
         model: Trainierte sklearn Pipeline
         weather_df: DataFrame mit timestamp, ghi_wm2, cloud_cover_pct, temperature_c
+            und optional production_w für today-Prognose
         lat: Breitengrad
         lon: Längengrad
+        peak_kwp: Anlagenleistung in kWp
+        mode: "today" für Prognose mit Produktions-Lags, "predict" für Zukunft
 
     Returns:
         Forecast-Objekt mit Stundenwerten und Summe
@@ -883,8 +915,8 @@ def predict(
             generated_at=datetime.now(UTC_TZ),
         )
 
-    # Features erstellen
-    X = prepare_features(weather_df, lat, lon, peak_kwp=peak_kwp)
+    # Features erstellen (mode bestimmt ob Produktions-Lags verfügbar)
+    X = prepare_features(weather_df, lat, lon, peak_kwp=peak_kwp, mode=mode)
 
     # Vorhersage
     predictions = model.predict(X)
