@@ -746,6 +746,141 @@ def cmd_setup(args: argparse.Namespace, config: Config) -> int:
         return 130
 
 
+def cmd_reset(args: argparse.Namespace, config: Config) -> int:
+    """Setzt Datenbank, Modell und/oder Config zurück."""
+    from pvforecast.config import _default_config_path
+
+    # Pfade bestimmen
+    db_path = Path(config.db_path)
+    model_path = Path(config.model_path)
+    config_path = _default_config_path()
+
+    # Targets bestimmen
+    targets: list[str] = []
+    if args.all:
+        targets = ["db", "model", "config"]
+    else:
+        if args.database:
+            targets.append("db")
+        if args.model_file:
+            targets.append("model")
+        if args.configuration:
+            targets.append("config")
+
+    # Interaktive Auswahl wenn keine Flags
+    if not targets and not args.force:
+        print("⚠️  Reset - Daten werden unwiderruflich gelöscht!")
+        print()
+        print("Was soll gelöscht werden?")
+        print()
+
+        # Datenbank
+        db_info = "nicht vorhanden"
+        if db_path.exists():
+            try:
+                db = Database(db_path)
+                with db.connect() as conn:
+                    pv_count = conn.execute(
+                        "SELECT COUNT(*) FROM pv_readings"
+                    ).fetchone()[0]
+                db_info = f"{pv_count:,} PV-Datensätze"
+            except Exception:
+                db_info = "vorhanden"
+        response = input(f"  [D]atenbank ({db_info})? [j/N]: ").strip().lower()
+        if response in ("j", "y", "d"):
+            targets.append("db")
+
+        # Modell
+        model_info = "nicht vorhanden"
+        if model_path.exists():
+            try:
+                model_data = load_model(model_path)
+                model_info = f"{model_data.model_type}, MAPE {model_data.mape:.1f}%"
+            except Exception:
+                model_info = "vorhanden"
+        response = input(f"  [M]odell ({model_info})? [j/N]: ").strip().lower()
+        if response in ("j", "y", "m"):
+            targets.append("model")
+
+        # Config
+        config_info = "nicht vorhanden"
+        if config_path.exists():
+            config_info = f"{config.system_name}, {config.peak_kwp} kWp"
+        response = input(f"  [C]onfig ({config_info})? [j/N]: ").strip().lower()
+        if response in ("j", "y", "c"):
+            targets.append("config")
+
+        print()
+
+    if not targets:
+        print("Nichts ausgewählt. Abbruch.")
+        return 0
+
+    # Zusammenfassung anzeigen
+    print("Folgende Dateien werden gelöscht:")
+    files_to_delete: list[Path] = []
+
+    if "db" in targets:
+        if db_path.exists():
+            size = db_path.stat().st_size / 1024 / 1024
+            print(f"  📊 Datenbank: {db_path} ({size:.1f} MB)")
+            files_to_delete.append(db_path)
+        else:
+            print(f"  📊 Datenbank: {db_path} (nicht vorhanden)")
+
+    if "model" in targets:
+        if model_path.exists():
+            size = model_path.stat().st_size / 1024 / 1024
+            print(f"  🧠 Modell: {model_path} ({size:.1f} MB)")
+            files_to_delete.append(model_path)
+        else:
+            print(f"  🧠 Modell: {model_path} (nicht vorhanden)")
+
+    if "config" in targets:
+        if config_path.exists():
+            print(f"  ⚙️  Config: {config_path}")
+            files_to_delete.append(config_path)
+        else:
+            print(f"  ⚙️  Config: {config_path} (nicht vorhanden)")
+
+    print()
+
+    if not files_to_delete:
+        print("Keine Dateien zum Löschen vorhanden.")
+        return 0
+
+    # Dry-run
+    if args.dry_run:
+        print("(Dry-run: Keine Dateien wurden gelöscht)")
+        return 0
+
+    # Bestätigung
+    if not args.force:
+        response = input("Wirklich löschen? [j/N]: ").strip().lower()
+        if response not in ("j", "y"):
+            print("Abbruch.")
+            return 1
+
+    # Löschen
+    for file_path in files_to_delete:
+        try:
+            file_path.unlink()
+            print(f"✅ Gelöscht: {file_path}")
+        except PermissionError:
+            print(f"❌ Keine Berechtigung: {file_path}")
+            return 1
+        except Exception as e:
+            print(f"❌ Fehler beim Löschen von {file_path}: {e}")
+            return 1
+
+    print()
+    print("Reset abgeschlossen.")
+    if "config" in targets:
+        print("Tipp: 'pvforecast setup' für Neueinrichtung")
+
+    return 0
+
+
 def cmd_doctor(args: argparse.Namespace, config: Config) -> int:
     """Führt Diagnose-Checks aus."""
     doctor = Doctor()
@@ -949,6 +1084,41 @@ def create_parser() -> argparse.ArgumentParser:
     # doctor
     subparsers.add_parser("doctor", help="Diagnose und Systemcheck")
 
+    # reset
+    p_reset = subparsers.add_parser("reset", help="Setzt Daten zurück (Datenbank/Modell/Config)")
+    p_reset.add_argument(
+        "--all",
+        action="store_true",
+        help="Alles löschen (Datenbank, Modell, Config)",
+    )
+    p_reset.add_argument(
+        "--database",
+        action="store_true",
+        help="Nur Datenbank löschen",
+    )
+    p_reset.add_argument(
+        "--model-file",
+        action="store_true",
+        dest="model_file",
+        help="Nur Modell löschen",
+    )
+    p_reset.add_argument(
+        "--configuration",
+        action="store_true",
+        dest="configuration",
+        help="Nur Config löschen",
+    )
+    p_reset.add_argument(
+        "--force",
+        action="store_true",
+        help="Keine Bestätigung (für Skripte)",
+    )
+    p_reset.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Nur anzeigen, nichts löschen",
+    )
+
     return parser
 
 
@@ -1031,6 +1201,7 @@ def _run_command(args: argparse.Namespace, parser: argparse.ArgumentParser) -> i
         "config": cmd_config,
         "setup": cmd_setup,
         "doctor": cmd_doctor,
+        "reset": cmd_reset,
     }
 
     cmd_func = commands.get(args.command)
