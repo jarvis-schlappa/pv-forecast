@@ -96,6 +96,48 @@ class Forecast:
     model_version: str = "rf-v1"
 
 
+@dataclass
+class WeatherBreakdown:
+    """Performance-Metriken für eine Wetterkategorie."""
+
+    label: str
+    mae: float
+    mape: float
+    count: int
+
+
+@dataclass
+class EvaluationResult:
+    """Ergebnis einer Modell-Evaluation (Backtesting)."""
+
+    # Hauptmetriken
+    mae: float
+    rmse: float
+    r2: float
+    mape: float
+
+    # Skill Score vs Persistence
+    skill_score: float | None
+    mae_persistence: float | None
+
+    # Jahresertrag
+    total_actual_kwh: float
+    total_predicted_kwh: float
+    total_error_kwh: float
+    total_error_pct: float
+
+    # Aggregierte Daten
+    daily: pd.DataFrame  # date, actual_kwh, predicted_kwh, error_kwh, error_pct
+    monthly: pd.DataFrame  # month, actual_kwh, predicted_kwh, error_pct
+
+    # Wetter-Breakdown
+    weather_breakdown: list[WeatherBreakdown]
+
+    # Metadaten
+    data_points: int
+    year: int
+
+
 def encode_cyclic(values: pd.Series, max_value: float) -> tuple[pd.Series, pd.Series]:
     """
     Kodiert Werte zyklisch mit sin/cos.
@@ -1028,4 +1070,174 @@ def predict(
         hourly=hourly,
         total_kwh=round(total_kwh, 2),
         generated_at=datetime.now(UTC_TZ),
+    )
+
+
+def evaluate(
+    model: Pipeline,
+    db: Database,
+    lat: float,
+    lon: float,
+    peak_kwp: float | None = None,
+    year: int | None = None,
+) -> EvaluationResult:
+    """
+    Evaluiert das Modell gegen historische Daten (Backtesting).
+
+    Args:
+        model: Trainierte sklearn Pipeline
+        db: Database-Instanz
+        lat: Breitengrad
+        lon: Längengrad
+        peak_kwp: Anlagenleistung in kWp
+        year: Jahr für Evaluation (Standard: letztes vollständige Jahr)
+
+    Returns:
+        EvaluationResult mit allen Metriken
+
+    Raises:
+        ValueError: Wenn keine Daten für das Jahr vorhanden
+    """
+    if year is None:
+        year = datetime.now().year - 1
+
+    # Daten für das Jahr laden (PV + Wetter)
+    with db.connect() as conn:
+        start_ts = int(datetime(year, 1, 1, tzinfo=UTC_TZ).timestamp())
+        end_ts = int(datetime(year, 12, 31, 23, 59, 59, tzinfo=UTC_TZ).timestamp())
+
+        query = """
+            SELECT
+                p.timestamp,
+                p.production_w,
+                w.ghi_wm2,
+                w.cloud_cover_pct,
+                w.temperature_c,
+                w.wind_speed_ms,
+                w.humidity_pct,
+                w.dhi_wm2,
+                w.dni_wm2
+            FROM pv_readings p
+            INNER JOIN weather_history w ON p.timestamp = w.timestamp
+            WHERE p.timestamp >= ? AND p.timestamp <= ?
+              AND p.curtailed = 0
+              AND p.production_w >= 0
+              AND w.ghi_wm2 IS NOT NULL
+        """
+        df = pd.read_sql_query(query, conn, params=(start_ts, end_ts))
+
+    if len(df) == 0:
+        raise ValueError(f"Keine Daten für {year} gefunden")
+
+    # Features erstellen und Vorhersagen machen
+    X = prepare_features(df, lat, lon, peak_kwp, mode="train")
+    y_true = df["production_w"].values
+    y_pred = model.predict(X)
+
+    # Negative Vorhersagen auf 0 setzen
+    y_pred = np.maximum(0, y_pred)
+
+    # Nacht-Stunden auf 0 setzen
+    night_mask = X["sun_elevation"] < 0
+    y_pred = np.where(night_mask, 0, y_pred)
+
+    # Gesamtmetriken
+    mae = mean_absolute_error(y_true, y_pred)
+    rmse = root_mean_squared_error(y_true, y_pred)
+    r2 = r2_score(y_true, y_pred)
+
+    # MAPE nur für Stunden > 100W
+    mape_threshold = 100
+    mask = y_true > mape_threshold
+    if mask.sum() > 0:
+        mape = mean_absolute_percentage_error(y_true[mask], y_pred[mask]) * 100
+    else:
+        mape = 0.0
+
+    # Persistence-Modell (gleicher Wochentag, 7 Tage vorher)
+    df_sorted = df.sort_values("timestamp").reset_index(drop=True)
+    persistence_pred = df_sorted["production_w"].shift(168)  # 7 * 24 = 168
+    valid_mask = ~persistence_pred.isna()
+
+    skill_score: float | None = None
+    mae_persistence: float | None = None
+
+    if valid_mask.sum() > 0:
+        y_true_valid = df_sorted.loc[valid_mask, "production_w"].values
+        y_pred_valid = y_pred[valid_mask]
+        persistence_valid = persistence_pred[valid_mask].values
+
+        mae_persistence = mean_absolute_error(y_true_valid, persistence_valid)
+        mae_ml_valid = mean_absolute_error(y_true_valid, y_pred_valid)
+
+        if mae_persistence > 0:
+            skill_score = (1 - mae_ml_valid / mae_persistence) * 100
+
+    # Tagesweise Aggregation
+    df["date"] = pd.to_datetime(df["timestamp"], unit="s", utc=True).dt.date
+    df["pred_w"] = y_pred
+    daily = df.groupby("date").agg(
+        actual_kwh=("production_w", lambda x: x.sum() / 1000),
+        predicted_kwh=("pred_w", lambda x: x.sum() / 1000),
+    )
+    daily["error_kwh"] = daily["predicted_kwh"] - daily["actual_kwh"]
+    daily["error_pct"] = (daily["error_kwh"] / daily["actual_kwh"].replace(0, 1)) * 100
+
+    # Monatsweise Aggregation
+    df["month"] = pd.to_datetime(df["timestamp"], unit="s", utc=True).dt.month
+    monthly = df.groupby("month").agg(
+        actual_kwh=("production_w", lambda x: x.sum() / 1000),
+        predicted_kwh=("pred_w", lambda x: x.sum() / 1000),
+    )
+    monthly["error_pct"] = (
+        (monthly["predicted_kwh"] - monthly["actual_kwh"]) / monthly["actual_kwh"] * 100
+    )
+
+    # Jahresertrag
+    total_actual_kwh = daily["actual_kwh"].sum()
+    total_predicted_kwh = daily["predicted_kwh"].sum()
+    total_error_kwh = total_predicted_kwh - total_actual_kwh
+    total_error_pct = (total_error_kwh / total_actual_kwh) * 100 if total_actual_kwh > 0 else 0
+
+    # Wetter-Breakdown
+    weather_categories = [
+        ("☀️ Klar (<20%)", X["cloud_cover"] < 20),
+        ("🌤️ Teilbewölkt (20-60%)", (X["cloud_cover"] >= 20) & (X["cloud_cover"] <= 60)),
+        ("☁️ Bewölkt (>60%)", X["cloud_cover"] > 60),
+    ]
+
+    weather_breakdown = []
+    for label, cat_mask in weather_categories:
+        if cat_mask.sum() > 0:
+            cat_mae = mean_absolute_error(y_true[cat_mask], y_pred[cat_mask])
+            mape_mask = cat_mask & (y_true > mape_threshold)
+            if mape_mask.sum() > 0:
+                cat_mape = mean_absolute_percentage_error(
+                    y_true[mape_mask], y_pred[mape_mask]
+                ) * 100
+            else:
+                cat_mape = 0.0
+            weather_breakdown.append(WeatherBreakdown(
+                label=label,
+                mae=cat_mae,
+                mape=cat_mape,
+                count=int(cat_mask.sum()),
+            ))
+
+    return EvaluationResult(
+        mae=mae,
+        rmse=rmse,
+        r2=r2,
+        mape=mape,
+        skill_score=skill_score,
+        mae_persistence=mae_persistence,
+        total_actual_kwh=total_actual_kwh,
+        total_predicted_kwh=total_predicted_kwh,
+        total_error_kwh=total_error_kwh,
+        total_error_pct=total_error_pct,
+        daily=daily.reset_index(),
+        monthly=monthly.reset_index(),
+        weather_breakdown=weather_breakdown,
+        data_points=len(df),
+        year=year,
     )

@@ -23,8 +23,10 @@ from pvforecast.data_loader import DataImportError, import_csv_files
 from pvforecast.db import Database
 from pvforecast.doctor import Doctor
 from pvforecast.model import (
+    EvaluationResult,
     Forecast,
     ModelNotFoundError,
+    evaluate,
     load_model,
     predict,
     save_model,
@@ -580,20 +582,6 @@ def cmd_status(args: argparse.Namespace, config: Config) -> int:
 def cmd_evaluate(args: argparse.Namespace, config: Config) -> int:
     """Evaluiert das Modell gegen echte Daten (Backtesting)."""
     from datetime import datetime
-    from zoneinfo import ZoneInfo
-
-    import pandas as pd
-    from sklearn.metrics import (
-        mean_absolute_error,
-        mean_absolute_percentage_error,
-        r2_score,
-        root_mean_squared_error,
-    )
-
-    from pvforecast.db import Database
-    from pvforecast.model import ModelNotFoundError, load_model, prepare_features
-
-    UTC_TZ = ZoneInfo("UTC")
 
     # Modell laden
     try:
@@ -604,211 +592,84 @@ def cmd_evaluate(args: argparse.Namespace, config: Config) -> int:
         print("   Tipp: Erst 'pvforecast train' ausführen")
         return 1
 
-    # Datenbank öffnen
+    # Jahr ermitteln
+    year = args.year if args.year else datetime.now().year - 1
+
+    # Datenbank öffnen und Evaluation durchführen
     db = Database(config.db_path)
 
-    # Jahr ermitteln
-    if args.year:
-        year = args.year
-    else:
-        # Standardmäßig das letzte vollständige Jahr
-        year = datetime.now().year - 1
-
-    print(f"📊 Backtesting für {year}")
-    print("=" * 50)
-
-    # Daten für das Jahr laden (PV + Wetter)
-    with db.connect() as conn:
-        start_ts = int(datetime(year, 1, 1, tzinfo=UTC_TZ).timestamp())
-        end_ts = int(datetime(year, 12, 31, 23, 59, 59, tzinfo=UTC_TZ).timestamp())
-
-        query = """
-            SELECT
-                p.timestamp,
-                p.production_w,
-                w.ghi_wm2,
-                w.cloud_cover_pct,
-                w.temperature_c,
-                w.wind_speed_ms,
-                w.humidity_pct,
-                w.dhi_wm2,
-                w.dni_wm2
-            FROM pv_readings p
-            INNER JOIN weather_history w ON p.timestamp = w.timestamp
-            WHERE p.timestamp >= ? AND p.timestamp <= ?
-              AND p.curtailed = 0
-              AND p.production_w >= 0
-              AND w.ghi_wm2 IS NOT NULL
-        """
-        df = pd.read_sql_query(query, conn, params=(start_ts, end_ts))
-
-    if len(df) == 0:
-        print(f"❌ Keine Daten für {year} gefunden!")
+    try:
+        result = evaluate(
+            model=model,
+            db=db,
+            lat=config.latitude,
+            lon=config.longitude,
+            peak_kwp=config.peak_kwp,
+            year=year,
+        )
+    except ValueError as e:
+        print(f"❌ {e}")
         return 1
 
-    print(f"📈 Datenpunkte: {len(df):,}")
+    # Ausgabe formatieren
+    _print_evaluation_result(result)
+    return 0
 
-    # Features erstellen und Vorhersagen machen (mode="train" für Backtesting)
-    X = prepare_features(df, config.latitude, config.longitude, config.peak_kwp, mode="train")
-    y_true = df["production_w"].values
-    y_pred = model.predict(X)
 
-    # Negative Vorhersagen auf 0 setzen
-    y_pred = [max(0, p) for p in y_pred]
+def _print_evaluation_result(result: EvaluationResult) -> None:
+    """Formatiert und gibt EvaluationResult aus."""
+    print(f"📊 Backtesting für {result.year}")
+    print("=" * 50)
+    print(f"📈 Datenpunkte: {result.data_points:,}")
 
-    # Nacht-Stunden auf 0 setzen
-    for i, row in enumerate(X.itertuples()):
-        if row.sun_elevation < 0:
-            y_pred[i] = 0
-
-    y_pred = pd.Series(y_pred)
-
-    # Gesamtmetriken ML-Modell
-    mae = mean_absolute_error(y_true, y_pred)
-    rmse = root_mean_squared_error(y_true, y_pred)
-    r2 = r2_score(y_true, y_pred)
-
-    # MAPE nur für Stunden > 100W
-    mape_threshold = 100
-    mask = y_true > mape_threshold
-    if mask.sum() > 0:
-        mape = mean_absolute_percentage_error(y_true[mask], y_pred[mask]) * 100
-    else:
-        mape = 0.0
-
-    # Persistence-Modell: gleicher Wochentag, 7 Tage vorher
-    # Für Skill Score Berechnung
-    df_sorted = df.sort_values("timestamp").reset_index(drop=True)
-    df_sorted["datetime"] = pd.to_datetime(df_sorted["timestamp"], unit="s", utc=True)
-
-    # Persistence: Wert von vor 7 Tagen (168 Stunden)
-    persistence_pred = df_sorted["production_w"].shift(168)  # 7 * 24 = 168
-    valid_mask = ~persistence_pred.isna()
-
-    if valid_mask.sum() > 0:
-        y_true_valid = df_sorted.loc[valid_mask, "production_w"]
-        y_pred_valid = y_pred[valid_mask]
-        persistence_valid = persistence_pred[valid_mask]
-
-        mae_persistence = mean_absolute_error(y_true_valid, persistence_valid)
-        mae_ml_valid = mean_absolute_error(y_true_valid, y_pred_valid)
-
-        # Skill Score: wie viel besser ist ML vs Persistence?
-        # 1 - (MAE_ML / MAE_Persistence) → positiv = ML besser
-        if mae_persistence > 0:
-            skill_score = (1 - mae_ml_valid / mae_persistence) * 100
-        else:
-            skill_score = 0.0
-    else:
-        mae_persistence = None
-        skill_score = None
-
-    # Tagesweise Aggregation für Übersicht
-    df["date"] = pd.to_datetime(df["timestamp"], unit="s", utc=True).dt.date
-    df["pred_w"] = y_pred.values
-    daily = df.groupby("date").agg(
-        actual_kwh=("production_w", lambda x: x.sum() / 1000),
-        predicted_kwh=("pred_w", lambda x: x.sum() / 1000),
-    )
-    daily["error_kwh"] = daily["predicted_kwh"] - daily["actual_kwh"]
-    daily["error_pct"] = (daily["error_kwh"] / daily["actual_kwh"].replace(0, 1)) * 100
-
-    # Monatsweise Aggregation
-    df["month"] = pd.to_datetime(df["timestamp"], unit="s", utc=True).dt.month
-    monthly = df.groupby("month").agg(
-        actual_kwh=("production_w", lambda x: x.sum() / 1000),
-        predicted_kwh=("pred_w", lambda x: x.sum() / 1000),
-    )
-    monthly["error_pct"] = (
-        (monthly["predicted_kwh"] - monthly["actual_kwh"]) / monthly["actual_kwh"] * 100
-    )
-
-    # Ausgabe
     print()
     print("📉 Gesamtmetriken:")
-    print(f"   MAE:  {mae:.0f} W")
-    print(f"   RMSE: {rmse:.0f} W")
-    print(f"   R²:   {r2:.3f}")
-    print(f"   MAPE: {mape:.1f}% (nur Stunden > 100W)")
+    print(f"   MAE:  {result.mae:.0f} W")
+    print(f"   RMSE: {result.rmse:.0f} W")
+    print(f"   R²:   {result.r2:.3f}")
+    print(f"   MAPE: {result.mape:.1f}% (nur Stunden > 100W)")
 
     # Skill Score vs Persistence
-    if skill_score is not None:
+    if result.skill_score is not None and result.mae_persistence is not None:
         print()
         print("🎯 Skill Score (vs. Persistence):")
-        print(f"   ML-Modell MAE:      {mae_ml_valid:.0f} W")
-        print(f"   Persistence MAE:    {mae_persistence:.0f} W")
-        if skill_score > 0:
-            print(f"   Skill Score:        +{skill_score:.1f}% (ML ist besser)")
+        # Berechne ML MAE aus Skill Score für Anzeige
+        ml_mae = result.mae_persistence * (1 - result.skill_score / 100)
+        print(f"   ML-Modell MAE:      {ml_mae:.0f} W")
+        print(f"   Persistence MAE:    {result.mae_persistence:.0f} W")
+        if result.skill_score > 0:
+            print(f"   Skill Score:        +{result.skill_score:.1f}% (ML ist besser)")
         else:
-            print(f"   Skill Score:        {skill_score:.1f}% (Persistence ist besser)")
+            print(f"   Skill Score:        {result.skill_score:.1f}% (Persistence ist besser)")
 
     # Performance nach Wetterbedingungen
     print()
     print("🌤️  Performance nach Wetter:")
-
-    # cloud_cover ist bereits in X (Features)
-    weather_categories = [
-        ("☀️ Klar (<20%)", X["cloud_cover"] < 20),
-        ("🌤️ Teilbewölkt (20-60%)", (X["cloud_cover"] >= 20) & (X["cloud_cover"] <= 60)),
-        ("☁️ Bewölkt (>60%)", X["cloud_cover"] > 60),
-    ]
-
-    for label, mask in weather_categories:
-        if mask.sum() > 0:
-            cat_mae = mean_absolute_error(y_true[mask], y_pred[mask])
-            # MAPE nur für Stunden > 100W
-            mape_mask = mask & (y_true > mape_threshold)
-            if mape_mask.sum() > 0:
-                cat_mape = (
-                    mean_absolute_percentage_error(y_true[mape_mask], y_pred[mape_mask])
-                    * 100
-                )
-            else:
-                cat_mape = 0.0
-            print(f"   {label:22} MAE {cat_mae:5.0f}W, MAPE {cat_mape:5.1f}%")
-        else:
-            print(f"   {label:22} (keine Daten)")
+    for wb in result.weather_breakdown:
+        print(f"   {wb.label:22} MAE {wb.mae:5.0f}W, MAPE {wb.mape:5.1f}%")
     print()
 
     # Jahresübersicht
-    total_actual = daily["actual_kwh"].sum()
-    total_predicted = daily["predicted_kwh"].sum()
-    total_error = total_predicted - total_actual
-    total_error_pct = (total_error / total_actual) * 100
-
-    print(f"☀️  Jahresertrag {year}:")
-    print(f"   Tatsächlich:  {total_actual:,.0f} kWh")
-    print(f"   Vorhersage:   {total_predicted:,.0f} kWh")
-    print(f"   Abweichung:   {total_error:+,.0f} kWh ({total_error_pct:+.1f}%)")
+    print(f"☀️  Jahresertrag {result.year}:")
+    print(f"   Tatsächlich:  {result.total_actual_kwh:,.0f} kWh")
+    print(f"   Vorhersage:   {result.total_predicted_kwh:,.0f} kWh")
+    print(f"   Abweichung:   {result.total_error_kwh:+,.0f} kWh ({result.total_error_pct:+.1f}%)")
     print()
 
     # Monatsübersicht
     print("📅 Monatliche Abweichung:")
-    month_names = [
-        "Jan",
-        "Feb",
-        "Mär",
-        "Apr",
-        "Mai",
-        "Jun",
-        "Jul",
-        "Aug",
-        "Sep",
-        "Okt",
-        "Nov",
-        "Dez",
-    ]
+    month_names = ["Jan", "Feb", "Mär", "Apr", "Mai", "Jun",
+                   "Jul", "Aug", "Sep", "Okt", "Nov", "Dez"]
+
     for month in range(1, 13):
-        if month in monthly.index:
-            row = monthly.loc[month]
-            err = row["error_pct"]
+        month_data = result.monthly[result.monthly["month"] == month]
+        if len(month_data) > 0:
+            err = month_data.iloc[0]["error_pct"]
             bar = "█" * min(10, int(abs(err) / 2))
             sign = "+" if err > 0 else "-" if err < 0 else " "
             print(f"   {month_names[month - 1]}: {sign}{abs(err):5.1f}% {bar}")
         else:
             print(f"   {month_names[month - 1]}: keine Daten")
-
-    return 0
 
 
 def cmd_setup(args: argparse.Namespace, config: Config) -> int:
