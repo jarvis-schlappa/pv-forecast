@@ -7,7 +7,7 @@ import json
 import logging
 import sys
 import time
-from datetime import datetime, timedelta
+from datetime import datetime, time as dt_time, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -526,8 +526,11 @@ def cmd_predict(args: argparse.Namespace, config: Config) -> int:
 
 def cmd_today(args: argparse.Namespace, config: Config) -> int:
     """Zeigt Prognose für heute (ganzer Tag)."""
+    import pandas as pd
+
     tz = ZoneInfo(config.timezone)
     source_name = getattr(args, "source", None)
+    full_day = getattr(args, "full", False)
 
     # Modell laden
     try:
@@ -538,8 +541,9 @@ def cmd_today(args: argparse.Namespace, config: Config) -> int:
         return 1
 
     today = datetime.now(tz).date()
+    now_hour = datetime.now(tz).hour
 
-    # Wetterdaten für heute holen
+    # Wetterdaten für heute holen (API: ab jetzt)
     try:
         source = _get_forecast_source(config, source_name)
         if source is None:
@@ -555,18 +559,54 @@ def cmd_today(args: argparse.Namespace, config: Config) -> int:
         print(f"❌ Fehler bei Wetterabfrage: {e}", file=sys.stderr)
         return 1
 
-    # TODO: Für bessere Today-Prognose: Produktionsdaten bis jetzt aus DB holen
-    # und mit weather_df mergen, dann mode="today" verwenden.
-    # Aktuell: mode="predict" (ohne Produktions-Lags)
+    # Bei --full: Vergangene Stunden aus DB holen
+    past_weather_df = None
+    if full_day and now_hour > 0:
+        db = Database(config.db_path)
+        start_of_day = datetime.combine(today, dt_time.min, tz)
+        start_ts = int(start_of_day.timestamp())
+        now_ts = int(datetime.now(tz).replace(minute=0, second=0, microsecond=0).timestamp())
+
+        with db.connect() as conn:
+            rows = conn.execute(
+                """SELECT timestamp, ghi_wm2, cloud_cover_pct, temperature_c,
+                          wind_speed_ms, humidity_pct, dhi_wm2, dni_wm2
+                   FROM weather_history
+                   WHERE timestamp >= ? AND timestamp < ?
+                   ORDER BY timestamp""",
+                (start_ts, now_ts),
+            ).fetchall()
+
+        if rows:
+            past_weather_df = pd.DataFrame(
+                rows,
+                columns=[
+                    "timestamp", "ghi_wm2", "cloud_cover_pct", "temperature_c",
+                    "wind_speed_ms", "humidity_pct", "dhi_wm2", "dni_wm2"
+                ],
+            )
+            past_weather_df.index = pd.to_datetime(past_weather_df["timestamp"], unit="s", utc=True)
+            past_weather_df = past_weather_df.drop(columns=["timestamp"])
+        else:
+            print("ℹ️  Keine historischen Wetterdaten für heute in DB.", file=sys.stderr)
+
+    # Kombiniere vergangene + zukünftige Wetterdaten
+    if past_weather_df is not None and len(past_weather_df) > 0:
+        weather_df = pd.concat([past_weather_df, weather_df])
+        weather_df = weather_df[~weather_df.index.duplicated(keep="last")]
+        weather_df = weather_df.sort_index()
+
+    # Prognose berechnen
     forecast = predict(
         model, weather_df, config.latitude, config.longitude, config.peak_kwp, mode="predict"
     )
 
     # Ausgabe
-    now_hour = datetime.now(tz).hour
     print()
     print(f"PV-Prognose für heute ({today.strftime('%d.%m.%Y')})")
     print(f"{config.system_name} ({config.peak_kwp} kWp)")
+    if full_day:
+        print("  (--full: inkl. vergangener Stunden)")
     print()
     print("═" * 50)
     print(f"  Erwarteter Tagesertrag:  {forecast.total_kwh:>6.1f} kWh")
@@ -578,8 +618,13 @@ def cmd_today(args: argparse.Namespace, config: Config) -> int:
     for h in forecast.hourly:
         local = h.timestamp.astimezone(tz)
         emoji = get_weather_emoji(h.cloud_cover_pct)
-        # Markiere aktuelle Stunde
-        marker = " ◄" if local.hour == now_hour else ""
+        # Markiere aktuelle Stunde und vergangene
+        if local.hour == now_hour:
+            marker = " ◄"
+        elif local.hour < now_hour:
+            marker = " (vergangen)"
+        else:
+            marker = ""
         if h.production_w > 0 or 6 <= local.hour <= 20:
             print(f"  {local.strftime('%H:%M')}   {h.production_w:>5} W   {emoji}{marker}")
 
@@ -1326,6 +1371,11 @@ def create_parser() -> argparse.ArgumentParser:
         choices=["mosmix", "open-meteo"],
         default=None,
         help="Wetter-Datenquelle (default: aus Config)",
+    )
+    p_today.add_argument(
+        "--full",
+        action="store_true",
+        help="Ganzer Tag inkl. vergangener Stunden",
     )
 
     # train
