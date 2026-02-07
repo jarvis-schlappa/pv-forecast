@@ -543,58 +543,24 @@ def cmd_today(args: argparse.Namespace, config: Config) -> int:
     today = datetime.now(tz).date()
     now_hour = datetime.now(tz).hour
 
-    # Wetterdaten für heute holen (API: ab jetzt)
+    # Wetterdaten für heute holen
     try:
-        source = _get_forecast_source(config, source_name)
-        if source is None:
-            # Legacy open-meteo (nutzt Retry-Logic aus weather.py)
+        if full_day:
+            # Bei --full: Open-Meteo verwenden (hat past_hours für vergangene Stunden)
+            # MOSMIX liefert nur Prognosen ab jetzt
             weather_df = fetch_today(config.latitude, config.longitude, tz)
         else:
-            # DWD source - fetch_today returns full day
-            weather_df = source.fetch_today(str(tz))
+            source = _get_forecast_source(config, source_name)
+            if source is None:
+                weather_df = fetch_today(config.latitude, config.longitude, tz)
+            else:
+                weather_df = source.fetch_today(str(tz))
     except WeatherSourceError as e:
         print(f"❌ Fehler bei Wetterabfrage: {e}", file=sys.stderr)
         return 1
     except WeatherAPIError as e:
         print(f"❌ Fehler bei Wetterabfrage: {e}", file=sys.stderr)
         return 1
-
-    # Bei --full: Vergangene Stunden aus DB holen
-    past_weather_df = None
-    if full_day and now_hour > 0:
-        db = Database(config.db_path)
-        start_of_day = datetime.combine(today, dt_time.min, tz)
-        start_ts = int(start_of_day.timestamp())
-        now_ts = int(datetime.now(tz).replace(minute=0, second=0, microsecond=0).timestamp())
-
-        with db.connect() as conn:
-            rows = conn.execute(
-                """SELECT timestamp, ghi_wm2, cloud_cover_pct, temperature_c,
-                          wind_speed_ms, humidity_pct, dhi_wm2, dni_wm2
-                   FROM weather_history
-                   WHERE timestamp >= ? AND timestamp < ?
-                   ORDER BY timestamp""",
-                (start_ts, now_ts),
-            ).fetchall()
-
-        if rows:
-            past_weather_df = pd.DataFrame(
-                rows,
-                columns=[
-                    "timestamp", "ghi_wm2", "cloud_cover_pct", "temperature_c",
-                    "wind_speed_ms", "humidity_pct", "dhi_wm2", "dni_wm2"
-                ],
-            )
-            past_weather_df.index = pd.to_datetime(past_weather_df["timestamp"], unit="s", utc=True)
-            past_weather_df = past_weather_df.drop(columns=["timestamp"])
-        else:
-            print("ℹ️  Keine historischen Wetterdaten für heute in DB.", file=sys.stderr)
-
-    # Kombiniere vergangene + zukünftige Wetterdaten
-    if past_weather_df is not None and len(past_weather_df) > 0:
-        weather_df = pd.concat([past_weather_df, weather_df])
-        weather_df = weather_df[~weather_df.index.duplicated(keep="last")]
-        weather_df = weather_df.sort_index()
 
     # Prognose berechnen
     forecast = predict(
