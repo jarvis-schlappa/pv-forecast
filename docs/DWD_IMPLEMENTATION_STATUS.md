@@ -2,7 +2,7 @@
 
 > **Issue:** [#123 - Refactor: Einheitliche DWD-Architektur](https://github.com/jarvis-schlappa/pv-forecast/issues/123)
 > **Branch:** `feature/dwd-architecture-123`
-> **Letztes Update:** 2026-02-07 17:25
+> **Letztes Update:** 2026-02-07 17:32
 
 ## Übersicht
 
@@ -76,6 +76,8 @@ src/pvforecast/sources/
 | CLI MOSMIX Integration | ✅ | `pvforecast fetch-forecast --source mosmix` |
 | HOSTRADA NetCDF-Parser | ✅ | `sources/hostrada.py` |
 | CLI HOSTRADA Integration | ✅ | `pvforecast fetch-historical --source hostrada` |
+| predict --source Flag | ✅ | `pvforecast predict --source mosmix` |
+| today --source Flag | ✅ | `pvforecast today --source mosmix` |
 | DB-Schema (mosmix_forecast) | ⏳ | Für Caching-Feature (optional) |
 | Open-Meteo entfernen | ⏳ | `weather.py` (als Fallback behalten) |
 
