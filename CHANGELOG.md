@@ -5,6 +5,42 @@ Alle wichtigen Änderungen an diesem Projekt werden hier dokumentiert.
 Das Format basiert auf [Keep a Changelog](https://keepachangelog.com/de/1.0.0/),
 und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
+## [0.2.0] - 2026-02-07
+
+### Hinzugefügt
+
+- **DWD MOSMIX Forecasts** – Offizielle DWD-Vorhersagen als Alternative zu Open-Meteo (#123)
+  - `pvforecast predict --source mosmix` / `pvforecast today --source mosmix`
+  - `pvforecast fetch-forecast --source mosmix` für Rohdaten-Abruf
+  - KML-Parser mit DHI-Schätzung (Erbs-Modell)
+  - Konfigurierbare MOSMIX-Station (Standard: P0051/Dülmen)
+
+- **DWD HOSTRADA Historische Daten** – 1km-Rasterdaten für Training (#123)
+  - `pvforecast fetch-historical --source hostrada`
+  - Stream-Processing: Download → Extract → Delete (kein 63 GB Cache)
+  - Fortschrittsanzeige und Download-Warnung mit Bestätigung
+  - NetCDF-Parser mit xarray
+
+- **Neue Dependencies:** xarray, netCDF4, scipy (für DWD-Quellen)
+
+### Geändert
+
+- **Performance mit HOSTRADA-Training deutlich besser:**
+  
+  | Metrik | Open-Meteo | HOSTRADA | Verbesserung |
+  |--------|------------|----------|--------------|
+  | MAE | 126 W | 105 W | **-17%** |
+  | MAPE | 31.3% | 21.9% | **-9.4 PP** |
+  | R² | 0.948 | 0.974 | +0.026 |
+
+- Dokumentation erweitert (CLI.md, CONFIG.md, MODELS.md, neue ARCHITECTURE_DWD.md)
+
+### Behoben
+
+- Ruff Lint-Fehler in src/ und tests/
+
+---
+
 ## [0.1.1] - 2026-02-06
 
 ### Hinzugefügt
@@ -70,5 +106,6 @@ Erstes Release von PV-Forecast. 🎉
 
 ---
 
+[0.2.0]: https://github.com/jarvis-schlappa/pv-forecast/releases/tag/v0.2.0
 [0.1.1]: https://github.com/jarvis-schlappa/pv-forecast/releases/tag/v0.1.1
 [0.1.0]: https://github.com/jarvis-schlappa/pv-forecast/releases/tag/v0.1.0
