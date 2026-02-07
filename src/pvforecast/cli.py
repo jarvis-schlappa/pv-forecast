@@ -442,6 +442,39 @@ def cmd_fetch_historical(args: argparse.Namespace, config: Config) -> int:
 
         print()
 
+    # Save to database
+    from pvforecast.db import Database
+
+    db = Database(config.db_path)
+
+    # Convert DataFrame to records for DB insert
+    records = []
+    for idx, row in weather_df.iterrows():
+        ts = idx.timestamp() if hasattr(idx, "timestamp") else idx
+        records.append(
+            (
+                int(ts),
+                float(row.get("ghi_wm2", 0)),
+                float(row.get("cloud_cover_pct", 0)),
+                float(row.get("temperature_c", 0)),
+                float(row.get("wind_speed_ms", 0)),
+                float(row.get("humidity_pct", 0)),
+                float(row.get("dhi_wm2", 0)),
+                float(row.get("dni_wm2", 0)),
+            )
+        )
+
+    if records:
+        with db.connect() as conn:
+            conn.executemany(
+                """INSERT OR REPLACE INTO weather_history
+                   (timestamp, ghi_wm2, cloud_cover_pct, temperature_c,
+                    wind_speed_ms, humidity_pct, dhi_wm2, dni_wm2)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                records,
+            )
+        print(f"💾 {len(records)} Datensätze in Datenbank gespeichert")
+
     total_hours = len(weather_df)
     total_days = total_hours / 24
     print(f"✅ {total_hours} Stunden ({total_days:.0f} Tage) historische Daten geladen")
