@@ -45,7 +45,8 @@ class MOSMIXConfig:
 class HOSTRADAConfig:
     """HOSTRADA-spezifische Konfiguration."""
 
-    cache_dir: Path = field(default_factory=_default_hostrada_cache)
+    # Optionales lokales Verzeichnis mit vorhandenen NetCDF-Dateien
+    local_dir: str | None = None
 
 
 @dataclass
