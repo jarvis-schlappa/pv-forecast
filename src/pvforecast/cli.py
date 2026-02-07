@@ -402,7 +402,7 @@ def cmd_fetch_historical(args: argparse.Namespace, config: Config) -> int:
         print("❌ Keine Wetterdaten verfügbar.", file=sys.stderr)
         return 1
 
-    # Output
+    # Output (only for explicit json/csv format - default just saves to DB)
     if output_format == "json":
         records = weather_df.reset_index().to_dict(orient="records")
         # Convert timestamps
@@ -414,33 +414,7 @@ def cmd_fetch_historical(args: argparse.Namespace, config: Config) -> int:
         print(json.dumps(records, indent=2, default=str))
     elif output_format == "csv":
         print(weather_df.to_csv())
-    else:
-        # Table format
-        ZoneInfo(config.timezone)
-        print()
-        print(f"Historical Weather ({source_name})")
-        print("=" * 80)
-        print(f"{'Zeit':18} {'GHI':>8} {'Wolken':>8} {'Temp':>8} {'Feuchte':>8} {'Wind':>8}")
-        print("-" * 80)
-
-        # Show daily summaries
-        weather_df_display = weather_df.copy()
-        weather_df_display["date"] = weather_df_display.index.date
-
-        for dt, day_df in weather_df_display.groupby("date"):
-            ghi_sum = day_df["ghi_wm2"].sum() / 1000  # kWh/m²
-            cloud_avg = day_df["cloud_cover_pct"].mean()
-            temp_avg = day_df["temperature_c"].mean()
-            humid_avg = day_df["humidity_pct"].mean()
-            wind_avg = day_df["wind_speed_ms"].mean()
-            emoji = get_weather_emoji(int(cloud_avg))
-
-            print(
-                f"{str(dt):18} {ghi_sum:>6.1f}kWh {cloud_avg:>6.0f}% {emoji} "
-                f"{temp_avg:>6.1f}°C {humid_avg:>6.0f}% {wind_avg:>6.1f}m/s"
-            )
-
-        print()
+    # Default: no table output, just save to DB
 
     # Save to database
     from pvforecast.db import Database
