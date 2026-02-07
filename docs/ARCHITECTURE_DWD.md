@@ -213,11 +213,15 @@ pvforecast today
 pvforecast config --show
 ```
 
-## 5. Migration: Hybrid-Strategie
+## 5. Migration
 
-### ⚠️ HOSTRADA Einschränkung
-HOSTRADA (DUETT) Strahlungsdaten sind erst **ab April 2024** verfügbar.
-Für historische Daten (2019-2024) muss Open-Meteo beibehalten werden.
+### HOSTRADA Verfügbarkeit
+HOSTRADA Raster-Daten (NetCDF) sind verfügbar **ab 1995** bis ~2 Monate vor heute.
+
+**Pfad:** `/climate_environment/CDC/grids_germany/hourly/hostrada/radiation_downwelling/`
+**Format:** `rsds_1hr_HOSTRADA-v1-0_BE_gn_YYYYMM0100-YYYYMMDDhh.nc` (monatlich, ~120-215 MB)
+
+⚠️ Nicht verwechseln mit DUETT-Stationsdaten (`derived_germany/duett/`) - die sind erst ab 2024!
 
 ### Finale Architektur
 
@@ -229,17 +233,17 @@ Für historische Daten (2019-2024) muss Open-Meteo beibehalten werden.
 │    MOSMIX (Primary) ──────────► 10-Tage Vorhersage         │
 │                                                             │
 │  HISTORICAL:                                                │
-│    Open-Meteo Archive ────────► Training-Daten (2019+)     │
-│    (HOSTRADA optional ab 2024)                              │
+│    HOSTRADA (Primary) ────────► Training-Daten (1995+)     │
+│    Open-Meteo (Fallback) ─────► Für aktuelle 1-2 Monate    │
 └─────────────────────────────────────────────────────────────┘
 ```
 
 ### Migration
 
 1. **Phase 1 (done):** MOSMIX für Forecasts implementieren
-2. **Phase 2:** Default forecast_provider auf "mosmix" setzen
-3. **Phase 3:** Open-Meteo für historische Daten behalten (nicht entfernen!)
-4. **Optional:** HOSTRADA als zusätzliche Quelle für Daten ab 2024
+2. **Phase 2:** HOSTRADA für historische Daten implementieren
+3. **Phase 3:** Default auf DWD-Quellen umstellen
+4. **Phase 4:** Open-Meteo als optionalen Fallback behalten
 
 ## 6. DHI-Schätzung für MOSMIX
 

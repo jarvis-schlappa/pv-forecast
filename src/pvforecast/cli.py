@@ -49,6 +49,7 @@ from pvforecast.weather import (
     fetch_today,
 )
 from pvforecast.sources.base import WeatherSourceError
+from pvforecast.sources.hostrada import HOSTRADASource
 from pvforecast.sources.mosmix import MOSMIXSource, MOSMIXConfig
 
 logger = logging.getLogger(__name__)
@@ -79,6 +80,32 @@ def _get_forecast_source(config: Config, source_override: str | None = None):
         return None  # Use legacy weather.py functions
     else:
         raise ValueError(f"Unknown forecast source: {source}")
+
+
+def _get_historical_source(config: Config, source_override: str | None = None):
+    """
+    Get the appropriate historical source based on config or override.
+    
+    Args:
+        config: Application config
+        source_override: Override source name (hostrada, open-meteo)
+    
+    Returns:
+        HistoricalSource instance or None for legacy open-meteo
+    """
+    source = source_override or config.weather.historical_provider
+    
+    if source == "hostrada":
+        cache_dir = Path(config.weather.hostrada.cache_dir) if config.weather.hostrada.cache_dir else None
+        return HOSTRADASource(
+            latitude=config.latitude,
+            longitude=config.longitude,
+            cache_dir=cache_dir,
+        )
+    elif source == "open-meteo":
+        return None  # Use legacy weather.py functions
+    else:
+        raise ValueError(f"Unknown historical source: {source}")
 
 
 def format_duration(seconds: float) -> str:
@@ -238,6 +265,89 @@ def cmd_fetch_forecast(args: argparse.Namespace, config: Config) -> int:
         print()
 
     print(f"✅ {len(weather_df)} Stunden Forecast geladen")
+    return 0
+
+
+def cmd_fetch_historical(args: argparse.Namespace, config: Config) -> int:
+    """Fetches historical weather data from configured source."""
+    from datetime import date
+    
+    source_name = getattr(args, "source", None) or config.weather.historical_provider
+    output_format = getattr(args, "format", "table")
+    
+    # Parse date range
+    start_str = getattr(args, "start", None)
+    end_str = getattr(args, "end", None)
+    
+    if not start_str or not end_str:
+        # Default: last 7 days
+        end_date = date.today() - timedelta(days=60)  # HOSTRADA ~2 months behind
+        start_date = end_date - timedelta(days=6)
+    else:
+        start_date = date.fromisoformat(start_str)
+        end_date = date.fromisoformat(end_str)
+    
+    print(f"🌤️  Fetching historical data from {source_name}...")
+    print(f"   Range: {start_date} to {end_date}")
+    
+    try:
+        source = _get_historical_source(config, source_name)
+        
+        if source is None:
+            print("❌ Open-Meteo historical not implemented via this command yet.", file=sys.stderr)
+            print("   Use 'pvforecast import' instead.", file=sys.stderr)
+            return 1
+        
+        weather_df = source.fetch_historical(start_date, end_date)
+        
+    except WeatherSourceError as e:
+        print(f"❌ Fehler: {e}", file=sys.stderr)
+        return 1
+    
+    if len(weather_df) == 0:
+        print("❌ Keine Wetterdaten verfügbar.", file=sys.stderr)
+        return 1
+    
+    # Output
+    if output_format == "json":
+        records = weather_df.reset_index().to_dict(orient="records")
+        # Convert timestamps
+        for r in records:
+            if "timestamp" in r:
+                r["timestamp"] = datetime.fromtimestamp(r["timestamp"], ZoneInfo("UTC")).isoformat()
+            if "index" in r:
+                r["time"] = str(r.pop("index"))
+        print(json.dumps(records, indent=2, default=str))
+    elif output_format == "csv":
+        print(weather_df.to_csv())
+    else:
+        # Table format
+        tz = ZoneInfo(config.timezone)
+        print()
+        print(f"Historical Weather ({source_name})")
+        print("=" * 80)
+        print(f"{'Zeit':18} {'GHI':>8} {'Wolken':>8} {'Temp':>8} {'Feuchte':>8} {'Wind':>8}")
+        print("-" * 80)
+        
+        # Show daily summaries
+        weather_df_display = weather_df.copy()
+        weather_df_display["date"] = weather_df_display.index.date
+        
+        for dt, day_df in weather_df_display.groupby("date"):
+            ghi_sum = day_df["ghi_wm2"].sum() / 1000  # kWh/m²
+            cloud_avg = day_df["cloud_cover_pct"].mean()
+            temp_avg = day_df["temperature_c"].mean()
+            humid_avg = day_df["humidity_pct"].mean()
+            wind_avg = day_df["wind_speed_ms"].mean()
+            emoji = get_weather_emoji(int(cloud_avg))
+            
+            print(f"{str(dt):18} {ghi_sum:>6.1f}kWh {cloud_avg:>6.0f}% {emoji} {temp_avg:>6.1f}°C {humid_avg:>6.0f}% {wind_avg:>6.1f}m/s")
+        
+        print()
+    
+    total_hours = len(weather_df)
+    total_days = total_hours / 24
+    print(f"✅ {total_hours} Stunden ({total_days:.0f} Tage) historische Daten geladen")
     return 0
 
 
@@ -982,6 +1092,33 @@ def create_parser() -> argparse.ArgumentParser:
         help="Ausgabeformat (default: table)",
     )
 
+    # fetch-historical (new)
+    p_fetch_hist = subparsers.add_parser("fetch-historical", help="Holt historische Wetterdaten")
+    p_fetch_hist.add_argument(
+        "--source",
+        choices=["hostrada", "open-meteo"],
+        default=None,
+        help="Datenquelle (default: aus Config)",
+    )
+    p_fetch_hist.add_argument(
+        "--start",
+        type=str,
+        default=None,
+        help="Startdatum (YYYY-MM-DD)",
+    )
+    p_fetch_hist.add_argument(
+        "--end",
+        type=str,
+        default=None,
+        help="Enddatum (YYYY-MM-DD)",
+    )
+    p_fetch_hist.add_argument(
+        "--format",
+        choices=["table", "json", "csv"],
+        default="table",
+        help="Ausgabeformat (default: table)",
+    )
+
     # predict
     p_predict = subparsers.add_parser("predict", help="Erstellt PV-Prognose")
     p_predict.add_argument(
@@ -1215,6 +1352,7 @@ def _run_command(args: argparse.Namespace, parser: argparse.ArgumentParser) -> i
     # Command ausführen
     commands = {
         "fetch-forecast": cmd_fetch_forecast,
+        "fetch-historical": cmd_fetch_historical,
         "predict": cmd_predict,
         "today": cmd_today,
         "import": cmd_import,
