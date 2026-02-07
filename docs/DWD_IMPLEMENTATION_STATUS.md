@@ -2,7 +2,7 @@
 
 > **Issue:** [#123 - Refactor: Einheitliche DWD-Architektur](https://github.com/jarvis-schlappa/pv-forecast/issues/123)
 > **Branch:** `feature/dwd-architecture-123`
-> **Letztes Update:** 2026-02-07 17:15
+> **Letztes Update:** 2026-02-07 17:25
 
 ## Übersicht
 
@@ -14,7 +14,7 @@ Umstellung von Open-Meteo auf DWD-native Datenquellen:
 
 ```
 Fachexperte → Architekt → Entwickler → Tester → Security → Real-Test → Merge
-    ✅           ✅          🔄          ⏳         ⏳          ⏳        ⏳
+    ✅           ✅          ✅          ⏳         ⏳          ⏳        ⏳
 ```
 
 **Legende:** ✅ Abgeschlossen | 🔄 In Arbeit | ⏳ Ausstehend
@@ -26,26 +26,24 @@ Fachexperte → Architekt → Entwickler → Tester → Security → Real-Test �
 **Ergebnisse:**
 - MOSMIX Station P0051 (Dülmen) verfügbar und geeignet
 - KML-Format analysiert und verstanden
-- HOSTRADA NetCDF-Struktur identifiziert
+- HOSTRADA NetCDF-Struktur identifiziert (Grids, 1km Auflösung)
 - Parameter-Mapping definiert:
 
-| Open-Meteo | MOSMIX | HOSTRADA | Umrechnung |
-|------------|--------|----------|------------|
-| `shortwave_radiation` | `Rad1h` | SIS | MOSMIX: kJ/m² → W/m² (/3.6) |
-| `temperature_2m` | `TTT` | - | K → °C (-273.15) |
-| `cloud_cover` | `Neff` | - | % |
-| `wind_speed_10m` | `FF` | - | m/s |
-| `diffuse_radiation` | - | SID | Nur HOSTRADA |
+| Open-Meteo | MOSMIX | HOSTRADA | Einheit |
+|------------|--------|----------|---------|
+| `shortwave_radiation` | `Rad1h` | `rsds` | W/m² |
+| `temperature_2m` | `TTT` | `tas` | °C |
+| `cloud_cover` | `Neff` | `clt` | % |
+| `wind_speed_10m` | `FF` | `sfcWind` | m/s |
+| `relative_humidity` | - | `hurs` | % |
 
-**DHI/DNI:**
-- Werden im Modell genutzt, aber mit Fallback auf 0.0
-- MOSMIX liefert kein DHI → bleibt 0.0 für Forecasts
-- HOSTRADA liefert SID (diffuse) → kann genutzt werden
-- **Entscheidung:** DHI-Schätzung als separates Issue (low priority)
+**DHI-Schätzung:**
+- MOSMIX und HOSTRADA liefern kein direktes DHI
+- Implementiert: Erbs-Modell für DHI-Schätzung aus GHI
 
 **Datenzeitraum:**
-- E3DC-Daten: 2019-01-01 bis heute
-- HOSTRADA-Import ab 2019-01-01
+- **HOSTRADA:** 1995-01 bis ~2 Monate vor heute (Raster-Daten)
+- **MOSMIX:** Echtzeit-Forecasts (10 Tage voraus)
 
 ### ✅ Phase 2: Architektur-Design (abgeschlossen)
 
@@ -54,32 +52,39 @@ Fachexperte → Architekt → Entwickler → Tester → Security → Real-Test �
 **Kernentscheidungen:**
 1. Source-Abstraktion mit `ForecastSource` / `HistoricalSource` Interfaces
 2. MOSMIX-Station konfigurierbar via `config.yaml`
-3. MOSMIX-Forecasts werden gecacht (für Analyse)
-4. HOSTRADA monatsweise laden (einfacher, besseres Caching)
-5. Neue Dependencies: `xarray`, `netCDF4`, `scipy`
+3. HOSTRADA mit lokaler Cache-Directory für NetCDF-Dateien
+4. HOSTRADA monatsweise laden (besseres Caching)
+5. Dependencies: `xarray`, `netCDF4`, `scipy`
 
-**Neue Struktur:**
+**Struktur:**
 ```
 src/pvforecast/sources/
-├── __init__.py
-├── base.py       # Interfaces
-├── mosmix.py     # Forecast
-└── hostrada.py   # Historical
+├── __init__.py     ✅
+├── base.py         ✅ Interfaces
+├── mosmix.py       ✅ Forecast (KML-Parser)
+└── hostrada.py     ✅ Historical (NetCDF-Parser)
 ```
 
-### ⏳ Phase 3: Entwicklung (in Arbeit)
+### ✅ Phase 3: Entwicklung (abgeschlossen)
 
 | Task | Status | Datei |
 |------|--------|-------|
 | Source Interfaces | ✅ | `sources/base.py` |
 | MOSMIX KML-Parser | ✅ | `sources/mosmix.py` |
-| DHI-Schätzung (Erbs-Modell) | ✅ | `sources/mosmix.py` |
+| DHI-Schätzung (Erbs-Modell) | ✅ | `sources/mosmix.py`, `sources/hostrada.py` |
 | Config-Erweiterung | ✅ | `config.py` |
-| CLI MOSMIX Integration | ✅ | `cli.py` (`fetch-forecast --source mosmix`) |
-| DB-Schema (mosmix_forecast) | ⏳ | `db.py` |
-| HOSTRADA Integration | ⚠️ BLOCKED | Daten erst ab 2024-04 verfügbar! |
-| Hybrid-Strategie | 🔄 | Open-Meteo für Historie, MOSMIX für Forecast |
-| Open-Meteo entfernen | ⏳ | `weather.py` |
+| CLI MOSMIX Integration | ✅ | `pvforecast fetch-forecast --source mosmix` |
+| HOSTRADA NetCDF-Parser | ✅ | `sources/hostrada.py` |
+| CLI HOSTRADA Integration | ✅ | `pvforecast fetch-historical --source hostrada` |
+| DB-Schema (mosmix_forecast) | ⏳ | Für Caching-Feature (optional) |
+| Open-Meteo entfernen | ⏳ | `weather.py` (als Fallback behalten) |
+
+**HOSTRADA Parameter:**
+- `radiation_downwelling` → GHI (rsds)
+- `air_temperature_mean` → Temperatur (tas)
+- `cloud_cover` → Bewölkung (clt, Oktas → %)
+- `humidity_relative` → Luftfeuchtigkeit (hurs)
+- `wind_speed` → Wind (sfcWind)
 
 ### ⏳ Phase 4: Tests
 
@@ -88,8 +93,8 @@ src/pvforecast/sources/
 | Unit: MOSMIX Parser | ⏳ |
 | Unit: HOSTRADA Parser | ⏳ |
 | Unit: Config | ⏳ |
-| E2E: fetch-forecast --source mosmix | ⏳ |
-| E2E: fetch-historical --source hostrada | ⏳ |
+| E2E: fetch-forecast --source mosmix | ✅ Manual |
+| E2E: fetch-historical --source hostrada | ✅ Manual |
 | E2E: predict mit MOSMIX | ⏳ |
 
 ### ⏳ Phase 5: Security Review
@@ -111,15 +116,18 @@ src/pvforecast/sources/
 |--------|-------------------|------------|
 | KML-Format ändert sich | Gering | Schema-Validierung, Parser versionieren |
 | Station P0051 entfällt | Sehr gering | Config-Option, Fallback-Station |
-| NetCDF-Files sehr groß | Mittel | Lokaler Cache, Chunk-Loading |
+| NetCDF-Files sehr groß (~120-215 MB/Monat) | Mittel | Lokaler Cache, Chunk-Loading |
 | DWD-Server nicht erreichbar | Gelegentlich | Retry-Logik, Graceful Degradation |
 
 ## Nächste Schritte
 
-1. [ ] `sources/base.py` - Interfaces implementieren
-2. [ ] `sources/mosmix.py` - KML-Parser
-3. [ ] Config erweitern für `weather.forecast.mosmix.station_id`
-4. [ ] Tests schreiben
+1. [x] ~~Config-Erweiterung für MOSMIX~~
+2. [x] ~~CLI fetch-forecast~~
+3. [x] ~~HOSTRADA Parser~~
+4. [x] ~~CLI fetch-historical~~
+5. [ ] Unit Tests schreiben
+6. [ ] Default auf DWD-Quellen umstellen
+7. [ ] PR erstellen & CI prüfen
 
 ## Zeitschätzung
 
@@ -127,11 +135,11 @@ src/pvforecast/sources/
 |-------|-----------|-------------|
 | Fachexperte | 2h | 1h ✅ |
 | Architekt | 2h | 1h ✅ |
-| Entwickler | 12h | - |
+| Entwickler | 12h | ~4h ✅ |
 | Tester | 3h | - |
 | Security | 1h | - |
 | Real-Test | 2h | - |
-| **Gesamt** | **~22h** | - |
+| **Gesamt** | **~22h** | ~6h (bisher) |
 
 ---
 
