@@ -291,12 +291,42 @@ def cmd_fetch_historical(args: argparse.Namespace, config: Config) -> int:
 
     # Warning for HOSTRADA due to massive download size
     if source_name == "hostrada":
-        days = (end_date - start_date).days + 1
-        months = max(1, days // 30)
+        # Check which months already exist in DB
+        from pvforecast.db import Database
+
+        db = Database(config.db_path)
+        existing_months = db.get_weather_months_with_data()
+
+        # Calculate requested months
+        requested_months: set[tuple[int, int]] = set()
+        current = date(start_date.year, start_date.month, 1)
+        end_month = date(end_date.year, end_date.month, 1)
+        while current <= end_month:
+            requested_months.add((current.year, current.month))
+            # Next month
+            if current.month == 12:
+                current = date(current.year + 1, 1, 1)
+            else:
+                current = date(current.year, current.month + 1, 1)
+
+        # Find missing months
+        missing_months = requested_months - existing_months
+
+        if not missing_months:
+            print("✅ Alle angeforderten Monate sind bereits in der Datenbank.")
+            return 0
+
+        # Sort for display
+        missing_sorted = sorted(missing_months)
+        months = len(missing_months)
         est_gb = months * 0.15 * 5  # ~150 MB per month per parameter, 5 parameters
 
         print()
+        if existing_months & requested_months:
+            skipped = len(requested_months) - len(missing_months)
+            print(f"ℹ️  {skipped} Monate bereits in DB, überspringe diese.")
         print("⚠️  HOSTRADA lädt komplette Deutschland-Raster herunter.")
+        print(f"    Fehlende Monate: {months}")
         print(f"    Geschätzter Download: ~{est_gb:.1f} GB ({months} Monate × 5 Parameter)")
         lat, lon = config.latitude, config.longitude
         print(f"    Extrahierte Daten: wenige MB (nur Gridpunkt {lat:.2f}°N, {lon:.2f}°E)")
@@ -315,6 +345,16 @@ def cmd_fetch_historical(args: argparse.Namespace, config: Config) -> int:
             except (EOFError, KeyboardInterrupt):
                 print("\nAbgebrochen.")
                 return 0
+
+        # Adjust date range to only fetch missing months
+        first_missing = min(missing_sorted)
+        last_missing = max(missing_sorted)
+        start_date = date(first_missing[0], first_missing[1], 1)
+        # End date = last day of last missing month
+        if last_missing[1] == 12:
+            end_date = date(last_missing[0] + 1, 1, 1) - timedelta(days=1)
+        else:
+            end_date = date(last_missing[0], last_missing[1] + 1, 1) - timedelta(days=1)
 
     try:
         source = _get_historical_source(config, source_name)
