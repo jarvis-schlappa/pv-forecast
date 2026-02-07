@@ -5,6 +5,40 @@ Alle wichtigen Änderungen an diesem Projekt werden hier dokumentiert.
 Das Format basiert auf [Keep a Changelog](https://keepachangelog.com/de/1.0.0/),
 und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
+## [0.3.0] - 2026-02-07
+
+### Hinzugefügt
+
+- **`today --full`** – Zeigt ganzen Tag inkl. vergangener Stunden (#125)
+  - Open-Meteo: Volle Unterstützung mit `past_hours`
+  - MOSMIX: Info-Meldung (nur Prognosen ab jetzt verfügbar)
+
+- **Lokale HOSTRADA-Dateien** – NetCDF-Dateien aus lokalem Verzeichnis laden
+  - `pvforecast setup` fragt nach lokalem Verzeichnis
+  - Erkennt bereits heruntergeladene Dateien (kein erneuter Download)
+
+- **Wildcards beim Import** – `pvforecast import ~/Downloads/E3DC*.csv`
+
+- **Automatische Versionierung** – Version aus Git-Tags via hatch-vcs
+  - Releases: `v0.3.0` → `0.3.0`
+  - Entwicklung: `0.3.1.dev5+g<hash>`
+
+### Behoben
+
+- **KRITISCH: `fetch-historical` speichert jetzt Daten in DB**
+  - Bug: Daten wurden geladen und angezeigt, aber nie persistiert
+  - Jetzt: Automatischer INSERT OR REPLACE nach Fetch
+
+- **Installer:** Alle interaktiven Prompts lesen von `/dev/tty` (curl|bash kompatibel)
+- **Installer:** Bessere Fehlerbehandlung und Validierung
+
+### Geändert
+
+- `fetch-historical` zeigt keine Tabelle mehr (nur DB-Speicherung)
+- README: Alle Wetterdatenquellen dokumentiert (MOSMIX, HOSTRADA, Open-Meteo)
+
+---
+
 ## [0.2.1] - 2026-02-07
 
 ### Behoben
@@ -122,6 +156,7 @@ Erstes Release von PV-Forecast. 🎉
 
 ---
 
+[0.3.0]: https://github.com/jarvis-schlappa/pv-forecast/releases/tag/v0.3.0
 [0.2.1]: https://github.com/jarvis-schlappa/pv-forecast/releases/tag/v0.2.1
 [0.2.0]: https://github.com/jarvis-schlappa/pv-forecast/releases/tag/v0.2.0
 [0.1.1]: https://github.com/jarvis-schlappa/pv-forecast/releases/tag/v0.1.1
