@@ -134,8 +134,15 @@ def import_to_db(df: pd.DataFrame, db: Database) -> int:
     Returns:
         Anzahl neu eingefügter Zeilen
     """
-    columns = ["timestamp", "production_w", "curtailed", "soc_pct",
-               "grid_feed_w", "grid_draw_w", "consumption_w"]
+    columns = [
+        "timestamp",
+        "production_w",
+        "curtailed",
+        "soc_pct",
+        "grid_feed_w",
+        "grid_draw_w",
+        "consumption_w",
+    ]
 
     # Nur vorhandene Spalten
     columns = [c for c in columns if c in df.columns]

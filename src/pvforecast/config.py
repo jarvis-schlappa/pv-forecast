@@ -95,9 +95,7 @@ class Config:
                 f"longitude muss zwischen -180 und 180 liegen, ist: {self.longitude}"
             )
         if self.peak_kwp <= 0:
-            raise ConfigValidationError(
-                f"peak_kwp muss positiv sein, ist: {self.peak_kwp}"
-            )
+            raise ConfigValidationError(f"peak_kwp muss positiv sein, ist: {self.peak_kwp}")
         if not self.system_name or not self.system_name.strip():
             raise ConfigValidationError("system_name darf nicht leer sein")
 
@@ -216,7 +214,9 @@ class Config:
                     provider = str(api["weather_provider"])
                     kwargs["weather"] = WeatherConfig(
                         forecast_provider=provider,
-                        historical_provider="open-meteo" if provider == "open-meteo" else "hostrada",
+                        historical_provider=(
+                            "open-meteo" if provider == "open-meteo" else "hostrada"
+                        ),
                     )
 
         return cls(**kwargs)
