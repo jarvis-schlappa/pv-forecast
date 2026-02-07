@@ -945,10 +945,17 @@ def cmd_setup(args: argparse.Namespace, config: Config) -> int:
     """Führt den interaktiven Setup-Wizard aus."""
     config_path = get_config_path()
 
+    # Bei existierender Config fragen ob überschreiben
     if config_path.exists() and not args.force:
-        print(f"⚠️  Config existiert bereits: {config_path}")
-        print("   Verwende --force um zu überschreiben.")
-        return 1
+        print(f"ℹ️  Config existiert bereits: {config_path}")
+        try:
+            response = input("   Konfiguration aktualisieren? [J/n]: ").strip().lower()
+            if response in ("n", "no", "nein"):
+                print("   Abgebrochen.")
+                return 0
+        except (EOFError, KeyboardInterrupt):
+            print("\n   Abgebrochen.")
+            return 0
 
     wizard = SetupWizard()
     try:
