@@ -290,6 +290,32 @@ def cmd_fetch_historical(args: argparse.Namespace, config: Config) -> int:
     print(f"🌤️  Fetching historical data from {source_name}...")
     print(f"   Range: {start_date} to {end_date}")
     
+    # Warning for HOSTRADA due to massive download size
+    if source_name == "hostrada":
+        days = (end_date - start_date).days + 1
+        months = max(1, days // 30)
+        est_gb = months * 0.15 * 5  # ~150 MB per month per parameter, 5 parameters
+        
+        print()
+        print("⚠️  HOSTRADA lädt komplette Deutschland-Raster herunter.")
+        print(f"    Geschätzter Download: ~{est_gb:.1f} GB ({months} Monate × 5 Parameter)")
+        print(f"    Extrahierte Daten: wenige MB (nur Gridpunkt {config.latitude:.2f}°N, {config.longitude:.2f}°E)")
+        print()
+        print("    Für regelmäßige Updates empfehlen wir Open-Meteo.")
+        print("    HOSTRADA eignet sich für einmaliges Training mit historischen Daten.")
+        print()
+        
+        skip_confirm = getattr(args, "yes", False)
+        if not skip_confirm:
+            try:
+                confirm = input("Fortfahren? [y/N]: ").strip().lower()
+                if confirm not in ("y", "yes", "j", "ja"):
+                    print("Abgebrochen.")
+                    return 0
+            except (EOFError, KeyboardInterrupt):
+                print("\nAbgebrochen.")
+                return 0
+    
     try:
         source = _get_historical_source(config, source_name)
         
@@ -1136,6 +1162,11 @@ def create_parser() -> argparse.ArgumentParser:
         choices=["table", "json", "csv"],
         default="table",
         help="Ausgabeformat (default: table)",
+    )
+    p_fetch_hist.add_argument(
+        "-y", "--yes",
+        action="store_true",
+        help="Bestätigung überspringen (für Automatisierung)",
     )
 
     # predict
