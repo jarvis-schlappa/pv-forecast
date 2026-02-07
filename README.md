@@ -132,14 +132,16 @@ Stundenwerte
 
 ## Performance
 
-| Modell | MAE | MAPE |
-|--------|-----|------|
-| **XGBoost (tuned)** | **144 W** | **30.1%** |
-| RandomForest | ~180 W | ~45% |
+| Datenquelle | Modell | MAE | MAPE | R² |
+|-------------|--------|-----|------|-----|
+| **DWD HOSTRADA** | XGBoost | **105 W** | **21.9%** | **0.974** |
+| Open-Meteo | XGBoost | 126 W | 30.1% | 0.950 |
 
-*Stand: Februar 2026, nach Feature-Engineering (#80-#83)*
+*Stand: Februar 2026, XGBoost nach Feature-Engineering*
 
-👉 **Aktuelle Benchmarks:** [docs/MODELS.md](docs/MODELS.md#aktuelle-performance)
+**Empfehlung:** HOSTRADA für Training (beste Qualität), Open-Meteo für Updates (geringere Latenz).
+
+👉 **Details:** [docs/MODELS.md](docs/MODELS.md) | [docs/CONFIG.md](docs/CONFIG.md#wetterdaten-quellen)
 
 ## Entwicklung
 
@@ -160,4 +162,6 @@ MIT
 
 ## Datenquellen
 
-- Wetterdaten: [Open-Meteo](https://open-meteo.com/)
+- **DWD MOSMIX**: Vorhersagen (10 Tage, stündlich)
+- **DWD HOSTRADA**: Historische Daten (ab 1995, 1 km Raster)
+- **Open-Meteo**: Vorhersagen + Historie (Fallback)
