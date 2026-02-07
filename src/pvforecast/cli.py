@@ -48,8 +48,37 @@ from pvforecast.weather import (
     fetch_forecast,
     fetch_today,
 )
+from pvforecast.sources.base import WeatherSourceError
+from pvforecast.sources.mosmix import MOSMIXSource, MOSMIXConfig
 
 logger = logging.getLogger(__name__)
+
+
+def _get_forecast_source(config: Config, source_override: str | None = None):
+    """
+    Get the appropriate forecast source based on config or override.
+    
+    Args:
+        config: Application config
+        source_override: Override source name (mosmix, open-meteo)
+    
+    Returns:
+        ForecastSource instance or None for legacy open-meteo
+    """
+    source = source_override or config.weather.forecast_provider
+    
+    if source == "mosmix":
+        mosmix_config = MOSMIXConfig(
+            station_id=config.weather.mosmix.station_id,
+            use_mosmix_l=config.weather.mosmix.use_mosmix_l,
+            lat=config.latitude,
+            lon=config.longitude,
+        )
+        return MOSMIXSource(mosmix_config)
+    elif source == "open-meteo":
+        return None  # Use legacy weather.py functions
+    else:
+        raise ValueError(f"Unknown forecast source: {source}")
 
 
 def format_duration(seconds: float) -> str:
@@ -142,6 +171,74 @@ def format_forecast_json(forecast: Forecast) -> str:
         ],
     }
     return json.dumps(data, indent=2)
+
+
+def cmd_fetch_forecast(args: argparse.Namespace, config: Config) -> int:
+    """Fetches weather forecast data from configured source."""
+    source_name = getattr(args, "source", None) or config.weather.forecast_provider
+    hours = getattr(args, "hours", 48)
+    output_format = getattr(args, "format", "table")
+
+    print(f"🌤️  Fetching forecast from {source_name}...")
+
+    try:
+        source = _get_forecast_source(config, source_name)
+
+        if source is None:
+            # Legacy open-meteo
+            weather_df = fetch_forecast(config.latitude, config.longitude, hours=hours)
+        else:
+            weather_df = source.fetch_forecast(hours=hours)
+
+    except WeatherSourceError as e:
+        print(f"❌ Fehler: {e}", file=sys.stderr)
+        return 1
+    except WeatherAPIError as e:
+        print(f"❌ Fehler: {e}", file=sys.stderr)
+        return 1
+
+    if len(weather_df) == 0:
+        print("❌ Keine Wetterdaten verfügbar.", file=sys.stderr)
+        return 1
+
+    # Output
+    if output_format == "json":
+        import json
+        records = weather_df.to_dict(orient="records")
+        # Convert timestamps to ISO format
+        for r in records:
+            if "timestamp" in r:
+                r["timestamp"] = datetime.fromtimestamp(r["timestamp"], ZoneInfo("UTC")).isoformat()
+        print(json.dumps(records, indent=2))
+    elif output_format == "csv":
+        print(weather_df.to_csv(index=False))
+    else:
+        # Table format
+        tz = ZoneInfo(config.timezone)
+        print()
+        print(f"Weather Forecast ({source_name})")
+        print(f"Station: {config.weather.mosmix.station_id}" if source_name == "mosmix" else "")
+        print("=" * 70)
+        print(f"{'Zeit':18} {'GHI':>8} {'Wolken':>8} {'Temp':>8} {'DHI':>8}")
+        print("-" * 70)
+
+        for _, row in weather_df.head(24).iterrows():
+            dt = datetime.fromtimestamp(row["timestamp"], tz)
+            time_str = dt.strftime("%d.%m. %H:%M")
+            ghi = row.get("ghi_wm2", 0)
+            cloud = row.get("cloud_cover_pct", 0)
+            temp = row.get("temperature_c", 0)
+            dhi = row.get("dhi_wm2", 0)
+            emoji = get_weather_emoji(int(cloud))
+
+            print(f"{time_str:18} {ghi:>7.0f}W {cloud:>6}% {emoji} {temp:>6.1f}°C {dhi:>7.1f}W")
+
+        if len(weather_df) > 24:
+            print(f"... ({len(weather_df) - 24} weitere Stunden)")
+        print()
+
+    print(f"✅ {len(weather_df)} Stunden Forecast geladen")
+    return 0
 
 
 def cmd_predict(args: argparse.Namespace, config: Config) -> int:
@@ -864,6 +961,27 @@ def create_parser() -> argparse.ArgumentParser:
 
     subparsers = parser.add_subparsers(dest="command", required=True)
 
+    # fetch-forecast (new)
+    p_fetch = subparsers.add_parser("fetch-forecast", help="Holt Wettervorhersage")
+    p_fetch.add_argument(
+        "--source",
+        choices=["mosmix", "open-meteo"],
+        default=None,
+        help="Datenquelle (default: aus Config)",
+    )
+    p_fetch.add_argument(
+        "--hours",
+        type=int,
+        default=48,
+        help="Anzahl Stunden (default: 48)",
+    )
+    p_fetch.add_argument(
+        "--format",
+        choices=["table", "json", "csv"],
+        default="table",
+        help="Ausgabeformat (default: table)",
+    )
+
     # predict
     p_predict = subparsers.add_parser("predict", help="Erstellt PV-Prognose")
     p_predict.add_argument(
@@ -1059,6 +1177,9 @@ def main() -> int:
     except WeatherAPIError as e:
         print(f"❌ Wetter-API-Fehler: {e}", file=sys.stderr)
         return 1
+    except WeatherSourceError as e:
+        print(f"❌ Wetter-Source-Fehler: {e}", file=sys.stderr)
+        return 1
     except ModelNotFoundError as e:
         print(f"❌ {e}", file=sys.stderr)
         print("   Tipp: Führe erst 'pvforecast train' aus.", file=sys.stderr)
@@ -1093,6 +1214,7 @@ def _run_command(args: argparse.Namespace, parser: argparse.ArgumentParser) -> i
 
     # Command ausführen
     commands = {
+        "fetch-forecast": cmd_fetch_forecast,
         "predict": cmd_predict,
         "today": cmd_today,
         "import": cmd_import,
