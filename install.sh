@@ -169,18 +169,191 @@ check_dependencies() {
 
 check_existing_installation() {
     if [[ -d "$INSTALL_DIR" ]]; then
-        print_warning "Verzeichnis $INSTALL_DIR existiert bereits."
+        print_warning "Installation gefunden: $INSTALL_DIR"
         echo ""
-        read -p "   Löschen und neu installieren? [j/N]: " -r response
-        if [[ "$response" =~ ^[jJyY]$ ]]; then
-            print_info "Lösche $INSTALL_DIR..."
-            rm -rf "$INSTALL_DIR"
+        
+        # Prüfe Zustand der Installation
+        local has_git=0
+        local has_venv=0
+        local has_package=0
+        
+        [[ -d "$INSTALL_DIR/.git" ]] && has_git=1
+        [[ -d "$INSTALL_DIR/.venv" ]] && has_venv=1
+        [[ -f "$INSTALL_DIR/.venv/bin/pvforecast" ]] && has_package=1
+        
+        # Status anzeigen
+        if [[ $has_git -eq 1 ]]; then
+            print_success "Git-Repository"
         else
-            echo ""
-            echo "Installation abgebrochen."
-            echo "Lösche das Verzeichnis manuell oder wähle einen anderen Pfad."
-            exit 1
+            print_error "Git-Repository fehlt"
         fi
+        
+        if [[ $has_venv -eq 1 ]]; then
+            print_success "Virtual Environment"
+        else
+            print_error "Virtual Environment fehlt"
+        fi
+        
+        if [[ $has_package -eq 1 ]]; then
+            print_success "pvforecast installiert"
+        else
+            print_error "pvforecast nicht installiert"
+        fi
+        
+        echo ""
+        
+        # Optionen basierend auf Zustand
+        if [[ $has_git -eq 1 && $has_venv -eq 1 && $has_package -eq 1 ]]; then
+            echo "   [U] Update (git pull + pip upgrade)"
+            echo "   [R] Reparieren (venv neu erstellen)"
+            echo "   [N] Neu installieren (alles löschen)"
+            echo "   [A] Abbrechen"
+            echo ""
+            read -p "   Auswahl [U]: " -r response
+            response=${response:-U}
+            
+            case "${response^^}" in
+                U)
+                    update_existing_installation
+                    return 1  # Signal: kein Clone nötig
+                    ;;
+                R)
+                    repair_installation
+                    return 1  # Signal: kein Clone nötig
+                    ;;
+                N)
+                    print_info "Lösche $INSTALL_DIR..."
+                    rm -rf "$INSTALL_DIR"
+                    return 0  # Signal: Clone nötig
+                    ;;
+                A)
+                    echo ""
+                    echo "Abgebrochen."
+                    exit 0
+                    ;;
+                *)
+                    echo "Ungültige Auswahl. Abgebrochen."
+                    exit 1
+                    ;;
+            esac
+        elif [[ $has_git -eq 1 ]]; then
+            # Git vorhanden aber venv fehlt oder kaputt
+            echo "   Installation ist unvollständig. Reparieren?"
+            read -p "   [J/n]: " -r response
+            if [[ ! "$response" =~ ^[nN]$ ]]; then
+                repair_installation
+                return 1
+            else
+                echo "Abgebrochen."
+                exit 1
+            fi
+        else
+            # Kein Git - komplett neu
+            echo "   [N] Neu installieren (Verzeichnis löschen)"
+            echo "   [A] Abbrechen"
+            echo ""
+            read -p "   Auswahl [N]: " -r response
+            response=${response:-N}
+            
+            if [[ "${response^^}" == "N" ]]; then
+                print_info "Lösche $INSTALL_DIR..."
+                rm -rf "$INSTALL_DIR"
+                return 0
+            else
+                echo "Abgebrochen."
+                exit 0
+            fi
+        fi
+    fi
+    return 0  # Keine existierende Installation
+}
+
+update_existing_installation() {
+    print_step "Aktualisiere Installation..."
+    cd "$INSTALL_DIR"
+    
+    # Git pull
+    print_info "Hole Updates..."
+    if git pull --quiet 2>/dev/null; then
+        print_success "git pull"
+    else
+        print_warning "git pull fehlgeschlagen (evtl. lokale Änderungen)"
+    fi
+    
+    # Pip upgrade
+    print_info "Aktualisiere Pakete..."
+    if .venv/bin/pip install --quiet --upgrade -e . 2>/dev/null; then
+        print_success "pip upgrade"
+    else
+        print_error "pip upgrade fehlgeschlagen"
+        return 1
+    fi
+    
+    echo ""
+    print_success "Update abgeschlossen!"
+    echo ""
+    
+    # Frage ob Setup laufen soll
+    read -p "   Setup-Wizard starten? [j/N]: " -r response
+    if [[ "$response" =~ ^[jJyY]$ ]]; then
+        run_setup
+    else
+        echo ""
+        echo "   Starte später mit: pvforecast setup"
+    fi
+    
+    exit 0
+}
+
+repair_installation() {
+    print_step "Repariere Installation..."
+    cd "$INSTALL_DIR"
+    
+    # Alte venv löschen
+    if [[ -d ".venv" ]]; then
+        print_info "Lösche alte venv..."
+        rm -rf .venv
+    fi
+    
+    # Neue venv erstellen
+    print_info "Erstelle neue venv..."
+    if python3 -m venv .venv 2>/dev/null; then
+        print_success ".venv erstellt"
+    else
+        print_error "venv-Erstellung fehlgeschlagen"
+        exit 1
+    fi
+    
+    # Pip upgrade
+    .venv/bin/pip install --quiet --upgrade pip 2>/dev/null
+    
+    # Package installieren
+    print_info "Installiere pvforecast..."
+    if .venv/bin/pip install --quiet -e . 2>/dev/null; then
+        print_success "pip install"
+    else
+        print_error "Installation fehlgeschlagen"
+        exit 1
+    fi
+    
+    echo ""
+    print_success "Reparatur abgeschlossen!"
+    
+    # Wrapper prüfen
+    check_wrapper
+    
+    echo ""
+    run_setup
+    exit 0
+}
+
+check_wrapper() {
+    if [[ ! -f "$WRAPPER_PATH" ]]; then
+        print_warning "Wrapper fehlt, erstelle neu..."
+        create_wrapper
+    elif ! "$WRAPPER_PATH" --version &>/dev/null; then
+        print_warning "Wrapper funktioniert nicht, erstelle neu..."
+        create_wrapper
     fi
 }
 
@@ -298,11 +471,15 @@ run_setup() {
 main() {
     print_header
     check_dependencies
-    check_existing_installation
-    clone_repository
-    create_venv
-    install_package
-    create_wrapper
+    
+    # check_existing_installation gibt 1 zurück wenn Update/Repair durchgeführt wurde
+    if check_existing_installation; then
+        clone_repository
+        create_venv
+        install_package
+        create_wrapper
+    fi
+    
     check_path
     run_setup
 }

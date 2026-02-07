@@ -1,9 +1,11 @@
 """Interaktiver Setup-Wizard für die Ersteinrichtung.
 
 Führt den Benutzer durch die Konfiguration:
-1. Standort (PLZ/Ort → Koordinaten)
-2. Anlagenparameter (kWp, Name)
-3. Optional: XGBoost Installation
+1. Erkennung existierender Installation
+2. Standort (PLZ/Ort → Koordinaten)
+3. Anlagenparameter (kWp, Name)
+4. Wetterdaten-Quelle
+5. Modell-Auswahl und Tuning
 """
 
 from __future__ import annotations
@@ -13,7 +15,7 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-from pvforecast.config import Config, get_config_path
+from pvforecast.config import Config, WeatherConfig, get_config_path
 from pvforecast.geocoding import GeocodingError, geocode
 
 
@@ -25,11 +27,18 @@ class SetupResult:
         config: Die erstellte Konfiguration
         config_path: Pfad zur gespeicherten Config-Datei
         xgboost_installed: Ob XGBoost installiert wurde
+        model_type: Gewähltes Modell (rf oder xgb)
+        weather_source: Gewählte Wetterdaten-Quelle
+        run_tuning: Ob Tuning durchgeführt werden soll
     """
 
     config: Config
     config_path: Path
-    xgboost_installed: bool
+    xgboost_installed: bool = False
+    model_type: str = "rf"
+    weather_source: str = "open-meteo"
+    run_tuning: bool = False
+    existing_db_records: int = 0
 
 
 class SetupWizard:
@@ -37,6 +46,13 @@ class SetupWizard:
 
     Führt den Benutzer durch die Ersteinrichtung und erstellt
     eine Config-Datei mit allen notwendigen Parametern.
+
+    Features:
+    - Erkennung existierender Installation (Config, DB, Modell)
+    - Hilfetexte für alle Parameter
+    - Modell-Auswahl mit Vor-/Nachteilen
+    - Wetterdaten-Quelle Auswahl
+    - Optionales Tuning
     """
 
     def __init__(self, output_func=print, input_func=input):
@@ -48,6 +64,8 @@ class SetupWizard:
         """
         self.output = output_func
         self.input = input_func
+        self._existing_db_records = 0
+        self._existing_config = None
 
     def run_interactive(self) -> SetupResult:
         """Führt den interaktiven Setup-Wizard aus.
@@ -57,33 +75,52 @@ class SetupWizard:
         """
         self._print_header()
 
+        # 0. Existierende Installation prüfen
+        self._check_existing_installation()
+
         # 1. Standort
         latitude, longitude, location_name = self._prompt_location()
 
         # 2. Anlage
         peak_kwp, system_name = self._prompt_system(location_name)
 
-        # 3. Config erstellen
+        # 3. Wetterdaten-Quelle
+        weather_source = self._prompt_weather_source()
+
+        # 4. Modell-Auswahl
+        model_type, xgboost_installed = self._prompt_model()
+
+        # 5. Tuning
+        run_tuning = self._prompt_tuning(model_type)
+
+        # Config erstellen
+        weather_config = WeatherConfig(
+            forecast_provider=weather_source,
+            historical_provider="open-meteo",  # HOSTRADA nur für Training
+        )
+
         config = Config(
             latitude=latitude,
             longitude=longitude,
             peak_kwp=peak_kwp,
             system_name=system_name,
+            weather=weather_config,
         )
 
-        # 4. Config speichern
+        # Config speichern
         config_path = get_config_path()
         config.save(config_path)
 
-        # 5. Optional: XGBoost
-        xgboost_installed = self._prompt_xgboost()
-
-        self._print_success(config_path)
+        self._print_success(config_path, model_type, run_tuning)
 
         return SetupResult(
             config=config,
             config_path=config_path,
             xgboost_installed=xgboost_installed,
+            model_type=model_type,
+            weather_source=weather_source,
+            run_tuning=run_tuning,
+            existing_db_records=self._existing_db_records,
         )
 
     def _print_header(self) -> None:
@@ -93,32 +130,81 @@ class SetupWizard:
         self.output("═" * 50)
         self.output("")
 
-    def _print_success(self, config_path: Path) -> None:
-        """Gibt die Erfolgsmeldung aus."""
-        self.output("")
-        self.output("═" * 50)
-        self.output("✅ Einrichtung abgeschlossen!")
-        self.output("═" * 50)
-        self.output("")
-        self.output(f"   Config gespeichert: {config_path}")
-        self.output("")
-        self.output("   Nächste Schritte:")
-        self.output("   1. Daten importieren:  pvforecast import <csv-dateien>")
-        self.output("   2. Modell trainieren:  pvforecast train")
-        self.output("   3. Prognose erstellen: pvforecast today")
-        self.output("")
+    def _check_existing_installation(self) -> None:
+        """Prüft auf existierende Installation und informiert den Benutzer."""
+        from pvforecast.config import _default_db_path, _default_model_path
+
+        config_path = get_config_path()
+        db_path = _default_db_path()
+        model_path = _default_model_path()
+
+        found_items = []
+
+        # Config prüfen
+        if config_path.exists():
+            try:
+                self._existing_config = Config.load(config_path)
+                found_items.append(f"Config: {self._existing_config.system_name}")
+            except Exception:
+                found_items.append("Config: vorhanden (nicht lesbar)")
+
+        # DB prüfen
+        if db_path.exists():
+            try:
+                from pvforecast.db import Database
+
+                db = Database(db_path)
+                self._existing_db_records = db.get_pv_count()
+                weather_count = db.get_weather_count()
+                db_info = f"{self._existing_db_records:,} PV + {weather_count:,} Wetter"
+                found_items.append(f"Datenbank: {db_info}")
+            except Exception:
+                found_items.append("Datenbank: vorhanden")
+
+        # Modell prüfen
+        if model_path.exists():
+            try:
+                from pvforecast.model import load_model
+
+                model_data = load_model(model_path)
+                found_items.append(f"Modell: {model_data.model_type}, MAPE {model_data.mape:.1f}%")
+            except Exception:
+                found_items.append("Modell: vorhanden")
+
+        if found_items:
+            self.output("ℹ️  Existierende Installation gefunden:")
+            for item in found_items:
+                self.output(f"   • {item}")
+            self.output("")
+            self.output("   Die Daten bleiben erhalten. Nur die Config wird aktualisiert.")
+            self.output("")
 
     def _prompt_location(self) -> tuple[float, float, str]:
-        """Fragt nach dem Standort.
-
-        Returns:
-            Tuple (latitude, longitude, location_name)
-        """
+        """Fragt nach dem Standort."""
         self.output("1️⃣  Standort")
         self.output("")
+        self.output("   ℹ️  Der Standort wird für die Wettervorhersage benötigt.")
+        self.output("      Gib deine Postleitzahl oder deinen Ort ein.")
+        self.output("")
+
+        # Vorschlag aus existierender Config
+        default_hint = ""
+        if self._existing_config:
+            lat, lon = self._existing_config.latitude, self._existing_config.longitude
+            default_hint = f" [{lat:.2f}, {lon:.2f}]"
 
         while True:
-            query = self.input("   Postleitzahl oder Ort: ").strip()
+            query = self.input(f"   Postleitzahl oder Ort{default_hint}: ").strip()
+
+            # Enter bei existierender Config = übernehmen
+            if not query and self._existing_config:
+                self.output("   ✓ Übernehme existierenden Standort")
+                self.output("")
+                return (
+                    self._existing_config.latitude,
+                    self._existing_config.longitude,
+                    self._existing_config.system_name.replace(" PV", ""),
+                )
 
             if not query:
                 self.output("   ⚠️  Bitte einen Ort oder PLZ eingeben.")
@@ -135,7 +221,6 @@ class SetupWizard:
                     self.output("")
                     continue
 
-                # Bestätigung
                 self.output(
                     f"   → {result.short_name()} "
                     f"({result.latitude:.2f}°N, {result.longitude:.2f}°E)"
@@ -154,7 +239,6 @@ class SetupWizard:
                 self.output(f"   ⚠️  Geocoding-Fehler: {e}")
                 self.output("")
 
-                # Fallback: Manuelle Eingabe
                 if self._prompt_manual_location_fallback():
                     return self._prompt_manual_location()
 
@@ -167,6 +251,8 @@ class SetupWizard:
         """Manuelle Koordinaten-Eingabe."""
         self.output("")
         self.output("   Manuelle Eingabe:")
+        self.output("   ℹ️  Koordinaten findest du z.B. auf Google Maps (Rechtsklick → Koordinaten)")
+        self.output("")
 
         while True:
             try:
@@ -194,30 +280,37 @@ class SetupWizard:
                 self.output("   ⚠️  Bitte eine gültige Zahl eingeben.")
 
     def _prompt_system(self, default_name: str) -> tuple[float, str]:
-        """Fragt nach den Anlagenparametern.
-
-        Args:
-            default_name: Vorgeschlagener Anlagenname
-
-        Returns:
-            Tuple (peak_kwp, system_name)
-        """
-        self.output("2️⃣  Anlage")
+        """Fragt nach den Anlagenparametern."""
+        self.output("2️⃣  PV-Anlage")
+        self.output("")
+        self.output("   ℹ️  Die Peakleistung (kWp) findest du:")
+        self.output("      • Auf dem Typenschild deines Wechselrichters")
+        self.output("      • Im Anlagenpass oder Kaufvertrag")
+        self.output("      • Typische Werte: 5-15 kWp für Einfamilienhäuser")
         self.output("")
 
-        # Peak-Leistung
+        # Default aus existierender Config
+        default_kwp = ""
+        if self._existing_config:
+            default_kwp = f" [{self._existing_config.peak_kwp}]"
+
         while True:
             try:
-                kwp_str = self.input("   Peakleistung in kWp: ").strip()
-                peak_kwp = float(kwp_str)
+                kwp_str = self.input(f"   Peakleistung in kWp{default_kwp}: ").strip()
+
+                # Enter bei existierender Config = übernehmen
+                if not kwp_str and self._existing_config:
+                    peak_kwp = self._existing_config.peak_kwp
+                else:
+                    peak_kwp = float(kwp_str)
 
                 if peak_kwp <= 0:
                     self.output("   ⚠️  Leistung muss größer als 0 sein.")
                     continue
 
-                if peak_kwp > 1000:
-                    self.output("   ⚠️  Bist du sicher? Das sind 1 MW!")
-                    confirm = self.input("   Fortfahren? [j/N]: ").strip().lower()
+                if peak_kwp > 100:
+                    self.output(f"   ⚠️  {peak_kwp} kWp ist ungewöhnlich hoch für eine Hausanlage.")
+                    confirm = self.input("   Stimmt der Wert? [j/N]: ").strip().lower()
                     if confirm not in ("j", "ja", "y", "yes"):
                         continue
 
@@ -228,6 +321,9 @@ class SetupWizard:
 
         # Anlagenname
         default_system_name = f"{default_name} PV" if default_name else "Meine PV-Anlage"
+        if self._existing_config:
+            default_system_name = self._existing_config.system_name
+
         name = self.input(f"   Name (optional) [{default_system_name}]: ").strip()
         system_name = name if name else default_system_name
 
@@ -236,34 +332,99 @@ class SetupWizard:
 
         return peak_kwp, system_name
 
-    def _prompt_xgboost(self) -> bool:
-        """Fragt ob XGBoost installiert werden soll.
-
-        Returns:
-            True wenn XGBoost erfolgreich installiert wurde
-        """
-        self.output("3️⃣  XGBoost (bessere Prognose-Genauigkeit)")
+    def _prompt_weather_source(self) -> str:
+        """Fragt nach der Wetterdaten-Quelle."""
+        self.output("3️⃣  Wetterdaten-Quelle")
+        self.output("")
+        self.output("   Welche Quelle soll für Vorhersagen verwendet werden?")
+        self.output("")
+        self.output("   [1] Open-Meteo (Standard)")
+        self.output("       ✓ Kostenlos, weltweit verfügbar")
+        self.output("       ✓ Einfach, keine Konfiguration nötig")
+        self.output("       → Gut für den Einstieg")
+        self.output("")
+        self.output("   [2] DWD MOSMIX (Deutschland)")
+        self.output("       ✓ Offizielle Daten des Deutschen Wetterdienstes")
+        self.output("       ✓ Oft genauer für Deutschland")
+        self.output("       → Empfohlen wenn du in Deutschland wohnst")
         self.output("")
 
-        # Prüfe ob bereits installiert
+        while True:
+            choice = self.input("   Auswahl [1]: ").strip()
+
+            if choice in ("", "1"):
+                self.output("   ✓ Open-Meteo")
+                self.output("")
+                return "open-meteo"
+            elif choice == "2":
+                self.output("   ✓ DWD MOSMIX")
+                self.output("")
+                return "mosmix"
+            else:
+                self.output("   ⚠️  Bitte 1 oder 2 eingeben.")
+
+    def _prompt_model(self) -> tuple[str, bool]:
+        """Fragt nach dem Prognose-Modell.
+
+        Returns:
+            Tuple (model_type, xgboost_installed)
+        """
+        self.output("4️⃣  Prognose-Modell")
+        self.output("")
+        self.output("   Welches ML-Modell soll verwendet werden?")
+        self.output("")
+        self.output("   [1] RandomForest (Standard)")
+        self.output("       ✓ Keine zusätzliche Installation nötig")
+        self.output("       ✓ Schnelles Training")
+        self.output("       ○ Gute Genauigkeit (~30% MAPE)")
+        self.output("")
+        self.output("   [2] XGBoost (Empfohlen)")
+        self.output("       ✓ Beste Genauigkeit (~22% MAPE)")
+        self.output("       ✓ State-of-the-Art für Zeitreihen")
+        self.output("       ○ Benötigt zusätzliche Installation (~50 MB)")
+        self.output("")
+
+        # Prüfe ob XGBoost bereits installiert
+        xgboost_available = False
         try:
             import xgboost  # noqa: F401
 
-            self.output("   ✓ XGBoost ist bereits installiert")
+            xgboost_available = True
+            self.output("   ℹ️  XGBoost ist bereits installiert")
             self.output("")
-            return True
         except ImportError:
             pass
 
-        response = self.input("   XGBoost installieren? [J/n]: ").strip().lower()
+        while True:
+            default = "2" if xgboost_available else "1"
+            choice = self.input(f"   Auswahl [{default}]: ").strip()
 
-        if response in ("n", "no", "nein"):
-            self.output(
-                "   → Übersprungen (kann später mit 'pip install xgboost' installiert werden)"
-            )
-            self.output("")
-            return False
+            if not choice:
+                choice = default
 
+            if choice == "1":
+                self.output("   ✓ RandomForest")
+                self.output("")
+                return "rf", xgboost_available
+            elif choice == "2":
+                if xgboost_available:
+                    self.output("   ✓ XGBoost")
+                    self.output("")
+                    return "xgb", True
+                else:
+                    # XGBoost installieren
+                    xgboost_installed = self._install_xgboost()
+                    if xgboost_installed:
+                        return "xgb", True
+                    else:
+                        self.output("   → Fallback auf RandomForest")
+                        return "rf", False
+            else:
+                self.output("   ⚠️  Bitte 1 oder 2 eingeben.")
+
+    def _install_xgboost(self) -> bool:
+        """Installiert XGBoost."""
+        self.output("")
         self.output("   Installiere XGBoost...")
 
         try:
@@ -282,15 +443,110 @@ class SetupWizard:
             self.output(f"   ⚠️  Installation fehlgeschlagen: {error_msg}")
             self.output("")
 
-            # macOS-spezifischer Hinweis
             if sys.platform == "darwin":
                 self.output("   💡 Auf macOS benötigt XGBoost eventuell libomp:")
                 self.output("      brew install libomp")
                 self.output("")
 
-            self.output("   Du kannst XGBoost später manuell installieren.")
-            self.output("")
             return False
+
+    def _prompt_tuning(self, model_type: str) -> bool:
+        """Fragt ob Hyperparameter-Tuning durchgeführt werden soll."""
+        # Nur fragen wenn genug Daten vorhanden
+        if self._existing_db_records < 1000:
+            return False
+
+        self.output("5️⃣  Hyperparameter-Tuning")
+        self.output("")
+        self.output("   ℹ️  Tuning optimiert das Modell für deine Anlage.")
+        self.output("      Das verbessert die Genauigkeit um ~5-10%.")
+        self.output("")
+        self.output(f"      Du hast {self._existing_db_records:,} Datensätze - genug für Tuning!")
+        self.output("")
+        self.output("   Optionen:")
+        self.output("   [1] Kein Tuning (schnell, Standard-Parameter)")
+        self.output("   [2] Schnelles Tuning (~2 Min, 20 Versuche)")
+        self.output("   [3] Gründliches Tuning (~10 Min, 100 Versuche)")
+        self.output("")
+
+        # Prüfe ob Optuna verfügbar
+        optuna_available = False
+        try:
+            import optuna  # noqa: F401
+
+            optuna_available = True
+        except ImportError:
+            pass
+
+        if optuna_available:
+            self.output("   ℹ️  Optuna ist installiert - Bayesian Optimization verfügbar")
+        else:
+            self.output("   ℹ️  Für besseres Tuning: pip install optuna")
+        self.output("")
+
+        while True:
+            choice = self.input("   Auswahl [1]: ").strip()
+
+            if choice in ("", "1"):
+                self.output("   ✓ Kein Tuning")
+                self.output("")
+                return False
+            elif choice in ("2", "3"):
+                self.output("   ✓ Tuning wird nach dem Training durchgeführt")
+                self.output("")
+                # Speichere Tuning-Einstellung für später
+                self._tuning_trials = 20 if choice == "2" else 100
+                return True
+            else:
+                self.output("   ⚠️  Bitte 1, 2 oder 3 eingeben.")
+
+    def _print_success(self, config_path: Path, model_type: str, run_tuning: bool) -> None:
+        """Gibt die Erfolgsmeldung und nächste Schritte aus."""
+        self.output("")
+        self.output("═" * 50)
+        self.output("✅ Einrichtung abgeschlossen!")
+        self.output("═" * 50)
+        self.output("")
+        self.output(f"   Config gespeichert: {config_path}")
+        self.output("")
+        self.output("   Nächste Schritte:")
+        self.output("")
+
+        step = 1
+
+        # Datenimport nur wenn keine Daten vorhanden
+        if self._existing_db_records == 0:
+            self.output(f"   {step}. Daten importieren:")
+            self.output("      pvforecast import ~/Downloads/*.csv")
+            self.output("")
+            self.output("      ℹ️  Unterstützte Formate:")
+            self.output("         • E3DC Portal Export (CSV)")
+            self.output("         • Beliebige CSV mit Zeitstempel + Leistung")
+            self.output("")
+            step += 1
+        else:
+            self.output(f"   ℹ️  {self._existing_db_records:,} Datensätze bereits vorhanden")
+            self.output("")
+
+        # Training
+        model_flag = f" --model {model_type}" if model_type == "xgb" else ""
+        self.output(f"   {step}. Modell trainieren:")
+        self.output(f"      pvforecast train{model_flag}")
+        step += 1
+
+        # Tuning
+        if run_tuning:
+            trials = getattr(self, "_tuning_trials", 20)
+            self.output("")
+            self.output(f"   {step}. Tuning durchführen:")
+            self.output(f"      pvforecast tune --trials {trials}")
+            step += 1
+
+        # Prognose
+        self.output("")
+        self.output(f"   {step}. Prognose erstellen:")
+        self.output("      pvforecast today")
+        self.output("")
 
 
 def run_setup() -> SetupResult:
