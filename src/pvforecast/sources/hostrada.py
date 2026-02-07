@@ -7,8 +7,8 @@ Data source: DWD Open Data
 URL: https://opendata.dwd.de/climate_environment/CDC/grids_germany/hourly/hostrada/
 """
 
-import hashlib
 import logging
+import sys
 import tempfile
 from dataclasses import dataclass
 from datetime import date, datetime
@@ -53,25 +53,28 @@ class HOSTRADASource(HistoricalSource):
     Provides hourly gridded weather data for any location in Germany.
     Data is available from 1995 to approximately 1-2 months before present.
     
+    Downloads are processed in-memory (no disk cache) to minimize storage.
+    Each NetCDF file (~150 MB) is downloaded, the nearest grid point extracted,
+    and the data discarded immediately.
+    
     Args:
         latitude: Location latitude (46.68 - 55.53)
         longitude: Location longitude (4.63 - 16.35)
-        cache_dir: Directory for caching downloaded NetCDF files
         timeout: HTTP request timeout in seconds
+        show_progress: Show progress bar during downloads
     """
     
     def __init__(
         self,
         latitude: float,
         longitude: float,
-        cache_dir: Optional[Path] = None,
         timeout: float = 120.0,
+        show_progress: bool = True,
     ):
         self.latitude = latitude
         self.longitude = longitude
-        self.cache_dir = cache_dir or Path(tempfile.gettempdir()) / "hostrada_cache"
-        self.cache_dir.mkdir(parents=True, exist_ok=True)
         self.timeout = timeout
+        self.show_progress = show_progress
         self._grid_point: Optional[GridPoint] = None
         
     @property
@@ -91,36 +94,56 @@ class HOSTRADASource(HistoricalSource):
         filename = f"{var_name}_1hr_HOSTRADA-v1-0_BE_gn_{year}{month:02d}0100-{year}{month:02d}{last_day}23.nc"
         return f"{HOSTRADA_BASE_URL}/{param_dir}/{filename}"
     
-    def _get_cache_path(self, url: str) -> Path:
-        """Get cache path for a URL."""
-        url_hash = hashlib.md5(url.encode()).hexdigest()[:12]
-        filename = url.split("/")[-1]
-        return self.cache_dir / f"{url_hash}_{filename}"
-    
-    def _download_file(self, url: str) -> Path:
-        """Download file with caching."""
-        cache_path = self._get_cache_path(url)
+    def _download_and_extract(self, url: str, var_name: str) -> pd.Series:
+        """Download NetCDF, extract grid point, delete file immediately.
         
-        if cache_path.exists():
-            logger.debug(f"Using cached file: {cache_path}")
-            return cache_path
+        Uses a temporary file to minimize memory usage and support lazy loading.
+        The file is automatically deleted after extraction.
+        
+        Args:
+            url: URL of the NetCDF file
+            var_name: Variable name to extract
             
-        logger.info(f"Downloading: {url}")
+        Returns:
+            Time series for the nearest grid point
+            
+        Raises:
+            WeatherSourceError: On download or parse failure
+        """
+        logger.debug(f"Fetching: {url}")
+        
+        # Download to temporary file
         try:
             with httpx.Client(timeout=self.timeout, follow_redirects=True) as client:
                 response = client.get(url)
                 response.raise_for_status()
-                
-            cache_path.write_bytes(response.content)
-            logger.debug(f"Cached to: {cache_path}")
-            return cache_path
-            
         except httpx.HTTPStatusError as e:
             if e.response.status_code == 404:
                 raise WeatherSourceError(f"HOSTRADA file not found: {url}") from e
             raise WeatherSourceError(f"HTTP error downloading {url}: {e}") from e
         except httpx.RequestError as e:
             raise WeatherSourceError(f"Request error downloading {url}: {e}") from e
+        
+        # Write to temp file, extract, delete
+        with tempfile.NamedTemporaryFile(suffix='.nc', delete=True) as tmp:
+            tmp.write(response.content)
+            tmp.flush()
+            
+            # Extract time series from temp file
+            ds = xr.open_dataset(tmp.name)
+            try:
+                grid_point = self._find_grid_point(ds)
+                data = ds[var_name][:, grid_point.y_idx, grid_point.x_idx]
+                
+                series = pd.Series(
+                    data.values,
+                    index=pd.DatetimeIndex(data.time.values),
+                    name=var_name,
+                )
+                return series
+            finally:
+                ds.close()
+        # Temp file is automatically deleted when context exits
     
     def _find_grid_point(self, ds: xr.Dataset) -> GridPoint:
         """Find nearest grid point to target coordinates."""
@@ -153,28 +176,6 @@ class HOSTRADASource(HistoricalSource):
         )
         
         return self._grid_point
-    
-    def _extract_timeseries(
-        self,
-        file_path: Path,
-        var_name: str,
-    ) -> pd.Series:
-        """Extract time series for a single variable from NetCDF file."""
-        ds = xr.open_dataset(file_path)
-        
-        try:
-            grid_point = self._find_grid_point(ds)
-            data = ds[var_name][:, grid_point.y_idx, grid_point.x_idx]
-            
-            # Convert to pandas Series
-            series = pd.Series(
-                data.values,
-                index=pd.DatetimeIndex(data.time.values),
-                name=var_name,
-            )
-            return series
-        finally:
-            ds.close()
     
     def fetch_historical(self, start: date, end: date) -> pd.DataFrame:
         """Fetch historical weather data for a date range.
@@ -210,27 +211,69 @@ class HOSTRADASource(HistoricalSource):
             else:
                 current = datetime(current.year, current.month + 1, 1)
         
-        logger.info(f"Fetching {len(months)} months of HOSTRADA data for {len(parameters)} parameters")
+        total_files = len(months) * len(parameters)
+        logger.info(f"Fetching {len(months)} months × {len(parameters)} parameters = {total_files} files")
         
         # Fetch each parameter
         all_series = {}
+        success_count = 0
+        error_count = 0
         
-        for param in parameters:
-            param_dir, var_name = HOSTRADA_PARAMS[param]
-            param_data = []
+        # Build list of all downloads for progress bar
+        downloads = [
+            (param, year, month)
+            for param in parameters
+            for year, month in months
+        ]
+        
+        def process_downloads(items):
+            """Process downloads, yielding results."""
+            nonlocal success_count, error_count
             
-            for year, month in months:
+            for param, year, month in items:
+                param_dir, var_name = HOSTRADA_PARAMS[param]
                 try:
                     url = self._get_file_url(param_dir, var_name, year, month)
-                    file_path = self._download_file(url)
-                    series = self._extract_timeseries(file_path, var_name)
-                    param_data.append(series)
+                    series = self._download_and_extract(url, var_name)
+                    yield param, series
+                    success_count += 1
                 except WeatherSourceError as e:
-                    logger.warning(f"Failed to fetch {param} for {year}-{month:02d}: {e}")
-                    continue
-                    
-            if param_data:
-                all_series[param] = pd.concat(param_data)
+                    logger.debug(f"Failed to fetch {param} for {year}-{month:02d}: {e}")
+                    error_count += 1
+                    yield param, None
+        
+        # Process with or without progress indicator
+        current = 0
+        for param, series in process_downloads(downloads):
+            current += 1
+            if self.show_progress:
+                pct = (current * 100) // total_files
+                bar_len = 30
+                filled = (current * bar_len) // total_files
+                bar = "█" * filled + "░" * (bar_len - filled)
+                sys.stdout.write(f"\rFetching HOSTRADA [{bar}] {pct:3d}% ({current}/{total_files})")
+                sys.stdout.flush()
+            
+            if series is not None:
+                if param not in all_series:
+                    all_series[param] = []
+                all_series[param].append(series)
+        
+        if self.show_progress:
+            sys.stdout.write("\n")  # Newline after progress bar
+        
+        # Log summary
+        if error_count > 0:
+            logger.info(f"✓ {success_count}/{total_files} files loaded ({error_count} not available)")
+        else:
+            logger.info(f"✓ {success_count}/{total_files} files loaded")
+        
+        # Concatenate series for each parameter
+        for param in list(all_series.keys()):
+            if all_series[param]:
+                all_series[param] = pd.concat(all_series[param])
+            else:
+                del all_series[param]
         
         if not all_series:
             raise DownloadError("No data could be fetched for the specified range")

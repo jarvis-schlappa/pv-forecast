@@ -180,7 +180,7 @@ class TestHOSTRADASource:
         return HOSTRADASource(
             latitude=51.83,
             longitude=7.28,
-            cache_dir=Path(tempfile.mkdtemp()),
+            show_progress=False,
         )
 
     def test_source_name(self, hostrada_source):
@@ -220,14 +220,6 @@ class TestHOSTRADASource:
         )
         
         assert "20200229" in url  # Leap year has 29 days
-
-    def test_get_cache_path(self, hostrada_source):
-        """Test cache path generation."""
-        url = "https://example.com/data/file.nc"
-        cache_path = hostrada_source._get_cache_path(url)
-        
-        assert cache_path.parent == hostrada_source.cache_dir
-        assert "file.nc" in cache_path.name
 
     def test_estimate_dhi(self, hostrada_source):
         """Test DHI estimation from GHI."""
@@ -297,7 +289,7 @@ class TestHOSTRADAIntegration:
         return HOSTRADASource(
             latitude=51.83,
             longitude=7.28,
-            cache_dir=Path(tempfile.mkdtemp()),
+            show_progress=False,
         )
 
     def test_fetch_historical_real(self, hostrada_source):
