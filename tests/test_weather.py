@@ -173,13 +173,9 @@ class TestRequestWithRetry:
         with patch("pvforecast.weather.httpx.Client") as mock_client:
             mock_response = MagicMock()
             mock_response.json.return_value = {"data": "test"}
-            mock_client.return_value.__enter__.return_value.get.return_value = (
-                mock_response
-            )
+            mock_client.return_value.__enter__.return_value.get.return_value = mock_response
 
-            result = _request_with_retry(
-                "https://api.test.com", {"param": "value"}, max_retries=3
-            )
+            result = _request_with_retry("https://api.test.com", {"param": "value"}, max_retries=3)
 
             assert result == {"data": "test"}
             # Nur ein Aufruf
@@ -199,9 +195,7 @@ class TestRequestWithRetry:
             ]
 
             with patch("pvforecast.weather.time.sleep"):  # Skip delays
-                result = _request_with_retry(
-                    "https://api.test.com", {}, max_retries=3
-                )
+                result = _request_with_retry("https://api.test.com", {}, max_retries=3)
 
             assert result == {"data": "success"}
             assert mock_get.call_count == 2
@@ -221,9 +215,7 @@ class TestRequestWithRetry:
             ]
 
             with patch("pvforecast.weather.time.sleep"):
-                result = _request_with_retry(
-                    "https://api.test.com", {}, max_retries=3
-                )
+                result = _request_with_retry("https://api.test.com", {}, max_retries=3)
 
             assert result == {"data": "success"}
             assert mock_get.call_count == 3
@@ -236,9 +228,7 @@ class TestRequestWithRetry:
 
             with patch("pvforecast.weather.time.sleep"):
                 with pytest.raises(WeatherAPIError) as exc_info:
-                    _request_with_retry(
-                        "https://api.test.com", {}, max_retries=3
-                    )
+                    _request_with_retry("https://api.test.com", {}, max_retries=3)
 
             assert "Fehlgeschlagen nach 3 Versuchen" in str(exc_info.value)
             assert mock_get.call_count == 3
@@ -251,9 +241,7 @@ class TestRequestWithRetry:
             # 404 Fehler - sollte nicht wiederholt werden
             mock_response = MagicMock()
             mock_response.status_code = 404
-            error = httpx.HTTPStatusError(
-                "Not Found", request=MagicMock(), response=mock_response
-            )
+            error = httpx.HTTPStatusError("Not Found", request=MagicMock(), response=mock_response)
             mock_get.side_effect = error
 
             with pytest.raises(WeatherAPIError) as exc_info:
@@ -281,9 +269,7 @@ class TestRequestWithRetry:
             mock_get.side_effect = [error, mock_success_response]
 
             with patch("pvforecast.weather.time.sleep"):
-                result = _request_with_retry(
-                    "https://api.test.com", {}, max_retries=3
-                )
+                result = _request_with_retry("https://api.test.com", {}, max_retries=3)
 
             assert result == {"data": "success"}
             assert mock_get.call_count == 2
@@ -307,9 +293,7 @@ class TestRequestWithRetry:
 
             with patch("pvforecast.weather.time.sleep"):
                 with patch("pvforecast.weather.random.random", return_value=0.5):
-                    result = _request_with_retry(
-                        "https://api.test.com", {}, max_retries=3
-                    )
+                    result = _request_with_retry("https://api.test.com", {}, max_retries=3)
 
             assert result == {"data": "success"}
             assert mock_get.call_count == 2
@@ -328,7 +312,6 @@ class TestSaveWeatherToDb:
 
         db = Database(tmp_path / "test.db")
 
-
         df = pd.DataFrame(columns=["timestamp", "ghi_wm2", "cloud_cover_pct", "temperature_c"])
         result = save_weather_to_db(df, db)
 
@@ -341,13 +324,16 @@ class TestSaveWeatherToDb:
 
         db = Database(tmp_path / "test.db")
 
-
-        df = pd.DataFrame([{
-            "timestamp": 1704067200,  # 2024-01-01 00:00 UTC
-            "ghi_wm2": 100.0,
-            "cloud_cover_pct": 50,
-            "temperature_c": 10.0,
-        }])
+        df = pd.DataFrame(
+            [
+                {
+                    "timestamp": 1704067200,  # 2024-01-01 00:00 UTC
+                    "ghi_wm2": 100.0,
+                    "cloud_cover_pct": 50,
+                    "temperature_c": 10.0,
+                }
+            ]
+        )
         result = save_weather_to_db(df, db)
 
         assert result == 1
@@ -359,7 +345,6 @@ class TestSaveWeatherToDb:
         from pvforecast.weather import save_weather_to_db
 
         db = Database(tmp_path / "test.db")
-
 
         # 100 Datensätze
         records = [
@@ -384,23 +369,30 @@ class TestSaveWeatherToDb:
 
         db = Database(tmp_path / "test.db")
 
-
         # Erster Insert
-        df1 = pd.DataFrame([{
-            "timestamp": 1704067200,
-            "ghi_wm2": 100.0,
-            "cloud_cover_pct": 50,
-            "temperature_c": 10.0,
-        }])
+        df1 = pd.DataFrame(
+            [
+                {
+                    "timestamp": 1704067200,
+                    "ghi_wm2": 100.0,
+                    "cloud_cover_pct": 50,
+                    "temperature_c": 10.0,
+                }
+            ]
+        )
         save_weather_to_db(df1, db)
 
         # Zweiter Insert mit gleichem Timestamp, anderen Werten
-        df2 = pd.DataFrame([{
-            "timestamp": 1704067200,
-            "ghi_wm2": 200.0,  # Geändert
-            "cloud_cover_pct": 75,  # Geändert
-            "temperature_c": 15.0,  # Geändert
-        }])
+        df2 = pd.DataFrame(
+            [
+                {
+                    "timestamp": 1704067200,
+                    "ghi_wm2": 200.0,  # Geändert
+                    "cloud_cover_pct": 75,  # Geändert
+                    "temperature_c": 15.0,  # Geändert
+                }
+            ]
+        )
         save_weather_to_db(df2, db)
 
         # Sollte immer noch nur 1 Datensatz sein (ersetzt, nicht doppelt)
@@ -410,7 +402,7 @@ class TestSaveWeatherToDb:
         with db.connect() as conn:
             row = conn.execute(
                 "SELECT ghi_wm2, cloud_cover_pct FROM weather_history WHERE timestamp = ?",
-                (1704067200,)
+                (1704067200,),
             ).fetchone()
             assert row[0] == 200.0
             assert row[1] == 75
@@ -426,15 +418,19 @@ class TestExtendedWeatherFeatures:
 
         db = Database(tmp_path / "test.db")
 
-        df = pd.DataFrame([{
-            "timestamp": 1704067200,
-            "ghi_wm2": 500.0,
-            "cloud_cover_pct": 30,
-            "temperature_c": 15.0,
-            "wind_speed_ms": 5.5,
-            "humidity_pct": 65,
-            "dhi_wm2": 150.0,
-        }])
+        df = pd.DataFrame(
+            [
+                {
+                    "timestamp": 1704067200,
+                    "ghi_wm2": 500.0,
+                    "cloud_cover_pct": 30,
+                    "temperature_c": 15.0,
+                    "wind_speed_ms": 5.5,
+                    "humidity_pct": 65,
+                    "dhi_wm2": 150.0,
+                }
+            ]
+        )
         result = save_weather_to_db(df, db)
 
         assert result == 1
@@ -443,7 +439,7 @@ class TestExtendedWeatherFeatures:
             row = conn.execute(
                 """SELECT wind_speed_ms, humidity_pct, dhi_wm2
                    FROM weather_history WHERE timestamp = ?""",
-                (1704067200,)
+                (1704067200,),
             ).fetchone()
             assert row[0] == 5.5
             assert row[1] == 65
@@ -490,8 +486,8 @@ class TestExtendedWeatherFeatures:
 
         assert len(df) == 1
         assert df["wind_speed_ms"].iloc[0] == 0.0  # Default
-        assert df["humidity_pct"].iloc[0] == 50    # Default
-        assert df["dhi_wm2"].iloc[0] == 0.0        # Default
+        assert df["humidity_pct"].iloc[0] == 50  # Default
+        assert df["dhi_wm2"].iloc[0] == 0.0  # Default
 
     def test_db_migration_adds_columns(self, tmp_path):
         """Test: DB-Migration fügt neue Spalten hinzu."""
@@ -521,6 +517,7 @@ class TestExtendedWeatherFeatures:
 
         # Jetzt mit Database öffnen - sollte migrieren
         from pvforecast.db import Database
+
         db = Database(db_path)
 
         # Prüfe dass neue Spalten existieren
@@ -553,20 +550,24 @@ class TestFetchToday:
         # 2026-02-06 12:00 UTC als Unix-Timestamp
         ts_today = 1770379200
 
-        with patch("pvforecast.weather._request_with_retry") as mock_request, \
-             patch("pvforecast.weather._parse_weather_response") as mock_parse, \
-             patch("pvforecast.weather._get_now", return_value=mock_now):
+        with (
+            patch("pvforecast.weather._request_with_retry") as mock_request,
+            patch("pvforecast.weather._parse_weather_response") as mock_parse,
+            patch("pvforecast.weather._get_now", return_value=mock_now),
+        ):
             mock_request.return_value = {"hourly": {}}
-            mock_parse.return_value = pd.DataFrame({
-                "timestamp": [ts_today],
-                "ghi_wm2": [500.0],
-                "cloud_cover_pct": [30],
-                "temperature_c": [10.0],
-                "wind_speed_ms": [5.0],
-                "humidity_pct": [60],
-                "dhi_wm2": [100.0],
-                "dni_wm2": [400.0],
-            })
+            mock_parse.return_value = pd.DataFrame(
+                {
+                    "timestamp": [ts_today],
+                    "ghi_wm2": [500.0],
+                    "cloud_cover_pct": [30],
+                    "temperature_c": [10.0],
+                    "wind_speed_ms": [5.0],
+                    "humidity_pct": [60],
+                    "dhi_wm2": [100.0],
+                    "dni_wm2": [400.0],
+                }
+            )
 
             fetch_today(51.0, 7.0, tz)
 
@@ -596,24 +597,28 @@ class TestFetchToday:
         # 2026-02-06T12:00 UTC = 2026-02-06 13:00 Berlin (heute)
         # 2026-02-06T23:00 UTC = 2026-02-07 00:00 Berlin (morgen)
         ts_yesterday = 1770328800  # 2026-02-05 22:00 UTC
-        ts_today_1 = 1770332400    # 2026-02-05 23:00 UTC
-        ts_today_2 = 1770379200    # 2026-02-06 12:00 UTC
-        ts_tomorrow = 1770418800   # 2026-02-06 23:00 UTC
+        ts_today_1 = 1770332400  # 2026-02-05 23:00 UTC
+        ts_today_2 = 1770379200  # 2026-02-06 12:00 UTC
+        ts_tomorrow = 1770418800  # 2026-02-06 23:00 UTC
 
-        with patch("pvforecast.weather._request_with_retry") as mock_request, \
-             patch("pvforecast.weather._parse_weather_response") as mock_parse, \
-             patch("pvforecast.weather._get_now", return_value=mock_now):
+        with (
+            patch("pvforecast.weather._request_with_retry") as mock_request,
+            patch("pvforecast.weather._parse_weather_response") as mock_parse,
+            patch("pvforecast.weather._get_now", return_value=mock_now),
+        ):
             mock_request.return_value = {"hourly": {}}
-            mock_parse.return_value = pd.DataFrame({
-                "timestamp": [ts_yesterday, ts_today_1, ts_today_2, ts_tomorrow],
-                "ghi_wm2": [0.0, 100.0, 500.0, 0.0],
-                "cloud_cover_pct": [50, 30, 20, 60],
-                "temperature_c": [5.0, 6.0, 12.0, 4.0],
-                "wind_speed_ms": [3.0, 4.0, 5.0, 3.0],
-                "humidity_pct": [70, 65, 50, 75],
-                "dhi_wm2": [0.0, 50.0, 150.0, 0.0],
-                "dni_wm2": [0.0, 80.0, 400.0, 0.0],
-            })
+            mock_parse.return_value = pd.DataFrame(
+                {
+                    "timestamp": [ts_yesterday, ts_today_1, ts_today_2, ts_tomorrow],
+                    "ghi_wm2": [0.0, 100.0, 500.0, 0.0],
+                    "cloud_cover_pct": [50, 30, 20, 60],
+                    "temperature_c": [5.0, 6.0, 12.0, 4.0],
+                    "wind_speed_ms": [3.0, 4.0, 5.0, 3.0],
+                    "humidity_pct": [70, 65, 50, 75],
+                    "dhi_wm2": [0.0, 50.0, 150.0, 0.0],
+                    "dni_wm2": [0.0, 80.0, 400.0, 0.0],
+                }
+            )
 
             df = fetch_today(51.0, 7.0, tz)
 
@@ -632,20 +637,24 @@ class TestFetchToday:
         # 2026-02-04 10:00 UTC (zwei Tage vor "heute")
         ts_old = 1770199200
 
-        with patch("pvforecast.weather._request_with_retry") as mock_request, \
-             patch("pvforecast.weather._parse_weather_response") as mock_parse, \
-             patch("pvforecast.weather._get_now", return_value=mock_now):
+        with (
+            patch("pvforecast.weather._request_with_retry") as mock_request,
+            patch("pvforecast.weather._parse_weather_response") as mock_parse,
+            patch("pvforecast.weather._get_now", return_value=mock_now),
+        ):
             mock_request.return_value = {"hourly": {}}
-            mock_parse.return_value = pd.DataFrame({
-                "timestamp": [ts_old],
-                "ghi_wm2": [500.0],
-                "cloud_cover_pct": [30],
-                "temperature_c": [10.0],
-                "wind_speed_ms": [5.0],
-                "humidity_pct": [60],
-                "dhi_wm2": [100.0],
-                "dni_wm2": [400.0],
-            })
+            mock_parse.return_value = pd.DataFrame(
+                {
+                    "timestamp": [ts_old],
+                    "ghi_wm2": [500.0],
+                    "cloud_cover_pct": [30],
+                    "temperature_c": [10.0],
+                    "wind_speed_ms": [5.0],
+                    "humidity_pct": [60],
+                    "dhi_wm2": [100.0],
+                    "dni_wm2": [400.0],
+                }
+            )
 
             with pytest.raises(WeatherAPIError, match="Keine Wetterdaten für heute"):
                 fetch_today(51.0, 7.0, tz)
@@ -659,20 +668,24 @@ class TestFetchToday:
         # 2026-02-06 12:00 UTC
         ts_today = 1770379200
 
-        with patch("pvforecast.weather._request_with_retry") as mock_request, \
-             patch("pvforecast.weather._parse_weather_response") as mock_parse, \
-             patch("pvforecast.weather._get_now", return_value=mock_now):
+        with (
+            patch("pvforecast.weather._request_with_retry") as mock_request,
+            patch("pvforecast.weather._parse_weather_response") as mock_parse,
+            patch("pvforecast.weather._get_now", return_value=mock_now),
+        ):
             mock_request.return_value = {"hourly": {}}
-            mock_parse.return_value = pd.DataFrame({
-                "timestamp": [ts_today],
-                "ghi_wm2": [500.0],
-                "cloud_cover_pct": [30],
-                "temperature_c": [10.0],
-                "wind_speed_ms": [5.0],
-                "humidity_pct": [60],
-                "dhi_wm2": [100.0],
-                "dni_wm2": [400.0],
-            })
+            mock_parse.return_value = pd.DataFrame(
+                {
+                    "timestamp": [ts_today],
+                    "ghi_wm2": [500.0],
+                    "cloud_cover_pct": [30],
+                    "temperature_c": [10.0],
+                    "wind_speed_ms": [5.0],
+                    "humidity_pct": [60],
+                    "dhi_wm2": [100.0],
+                    "dni_wm2": [400.0],
+                }
+            )
 
             # String statt ZoneInfo
             df = fetch_today(51.0, 7.0, "Europe/Berlin")

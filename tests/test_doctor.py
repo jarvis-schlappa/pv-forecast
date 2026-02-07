@@ -122,6 +122,7 @@ class TestDoctorChecks:
             return original_import(name, *args, **kwargs)
 
         import builtins
+
         original_import = builtins.__import__
 
         with patch.object(builtins, "__import__", mock_import):
