@@ -111,7 +111,10 @@ class SetupWizard:
         config_path = get_config_path()
         config.save(config_path)
 
-        self._print_success(config_path, model_type, run_tuning)
+        # 6. Daten importieren
+        imported_count = self._prompt_import(config)
+
+        self._print_success(config_path, model_type, run_tuning, imported_count)
 
         return SetupResult(
             config=config,
@@ -500,7 +503,94 @@ class SetupWizard:
             else:
                 self.output("   ⚠️  Bitte 1, 2 oder 3 eingeben.")
 
-    def _print_success(self, config_path: Path, model_type: str, run_tuning: bool) -> None:
+    def _prompt_import(self, config: Config) -> int:
+        """Fragt nach CSV-Dateien zum Importieren.
+
+        Returns:
+            Anzahl importierter Datensätze
+        """
+        # Überspringe wenn schon Daten vorhanden
+        if self._existing_db_records > 0:
+            return 0
+
+        self.output("6️⃣  Daten importieren")
+        self.output("")
+        self.output("   ℹ️  Unterstützte Formate:")
+        self.output("      • E3DC Portal Export (CSV)")
+        self.output("      • CSV mit Spalten: Zeitstempel, PV-Leistung")
+        self.output("")
+
+        response = self.input("   Hast du CSV-Dateien zum Importieren? [j/N]: ").strip().lower()
+
+        if response not in ("j", "ja", "y", "yes"):
+            self.output("   → Übersprungen")
+            self.output("")
+            return 0
+
+        self.output("")
+        self.output("   Gib den Pfad ein (Ordner oder Datei):")
+        self.output("   💡 Tipp: Ziehe den Ordner ins Terminal für den Pfad")
+        self.output("")
+
+        while True:
+            path_str = self.input("   Pfad: ").strip()
+
+            if not path_str:
+                self.output("   → Übersprungen")
+                self.output("")
+                return 0
+
+            # Entferne Anführungszeichen (von Drag&Drop)
+            path_str = path_str.strip("'\"")
+            import_path = Path(path_str).expanduser()
+
+            if not import_path.exists():
+                self.output(f"   ⚠️  Pfad existiert nicht: {import_path}")
+                continue
+
+            # Import durchführen
+            try:
+                from pvforecast.data_loader import import_csv_files
+                from pvforecast.db import Database
+
+                db = Database(config.db_path)
+
+                if import_path.is_file():
+                    files = [import_path]
+                else:
+                    files = list(import_path.glob("*.csv")) + list(import_path.glob("*.CSV"))
+
+                if not files:
+                    self.output(f"   ⚠️  Keine CSV-Dateien gefunden in: {import_path}")
+                    continue
+
+                self.output(f"   Importiere {len(files)} Datei(en)...")
+
+                total_imported = 0
+                for csv_file in files:
+                    try:
+                        count = import_csv_files(db, [csv_file])
+                        total_imported += count
+                    except Exception as e:
+                        self.output(f"   ⚠️  {csv_file.name}: {e}")
+
+                if total_imported > 0:
+                    self.output(f"   ✓ {total_imported:,} Datensätze importiert")
+                    self._existing_db_records = total_imported
+                else:
+                    self.output("   ⚠️  Keine neuen Datensätze (evtl. Duplikate)")
+
+                self.output("")
+                return total_imported
+
+            except Exception as e:
+                self.output(f"   ❌ Import fehlgeschlagen: {e}")
+                self.output("")
+                return 0
+
+    def _print_success(
+        self, config_path: Path, model_type: str, run_tuning: bool, imported_count: int = 0
+    ) -> None:
         """Gibt die Erfolgsmeldung und nächste Schritte aus."""
         self.output("")
         self.output("═" * 50)
@@ -514,18 +604,15 @@ class SetupWizard:
 
         step = 1
 
-        # Datenimport nur wenn keine Daten vorhanden
-        if self._existing_db_records == 0:
+        # Datenimport nur wenn keine Daten vorhanden und nicht gerade importiert
+        if self._existing_db_records == 0 and imported_count == 0:
             self.output(f"   {step}. Daten importieren:")
             self.output("      pvforecast import ~/Downloads/*.csv")
             self.output("")
-            self.output("      ℹ️  Unterstützte Formate:")
-            self.output("         • E3DC Portal Export (CSV)")
-            self.output("         • Beliebige CSV mit Zeitstempel + Leistung")
-            self.output("")
             step += 1
-        else:
-            self.output(f"   ℹ️  {self._existing_db_records:,} Datensätze bereits vorhanden")
+        elif self._existing_db_records > 0 or imported_count > 0:
+            total = self._existing_db_records or imported_count
+            self.output(f"   ✓ {total:,} Datensätze vorhanden")
             self.output("")
 
         # Training
