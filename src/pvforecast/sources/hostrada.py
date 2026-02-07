@@ -7,12 +7,14 @@ Data source: DWD Open Data
 URL: https://opendata.dwd.de/climate_environment/CDC/grids_germany/hourly/hostrada/
 """
 
+from __future__ import annotations
+
 import logging
 import sys
 import tempfile
 from dataclasses import dataclass
 from datetime import date, datetime
-from typing import Optional
+from pathlib import Path
 
 import httpx
 import numpy as np
@@ -70,12 +72,14 @@ class HOSTRADASource(HistoricalSource):
         longitude: float,
         timeout: float = 120.0,
         show_progress: bool = True,
+        local_dir: str | Path | None = None,
     ):
         self.latitude = latitude
         self.longitude = longitude
         self.timeout = timeout
         self.show_progress = show_progress
-        self._grid_point: Optional[GridPoint] = None
+        self.local_dir = Path(local_dir).expanduser() if local_dir else None
+        self._grid_point: GridPoint | None = None
 
     @property
     def source_name(self) -> str:
@@ -96,11 +100,43 @@ class HOSTRADASource(HistoricalSource):
         filename = f"{var_name}_1hr_HOSTRADA-v1-0_BE_gn_{start}-{end}.nc"
         return f"{HOSTRADA_BASE_URL}/{param_dir}/{filename}"
 
+    def _get_local_path(self, url: str) -> Path | None:
+        """Check if file exists in local_dir."""
+        if not self.local_dir:
+            return None
+
+        # Extract filename from URL
+        filename = url.split("/")[-1]
+        local_path = self.local_dir / filename
+
+        if local_path.exists():
+            logger.debug(f"Found local file: {local_path}")
+            return local_path
+        return None
+
+    def _extract_from_file(self, file_path: Path, var_name: str) -> pd.Series:
+        """Extract time series from a local NetCDF file."""
+        ds = xr.open_dataset(file_path)
+        try:
+            grid_point = self._find_grid_point(ds)
+            data = ds[var_name][:, grid_point.y_idx, grid_point.x_idx]
+
+            series = pd.Series(
+                data.values,
+                index=pd.DatetimeIndex(data.time.values),
+                name=var_name,
+            )
+            return series
+        finally:
+            ds.close()
+
     def _download_and_extract(self, url: str, var_name: str) -> pd.Series:
         """Download NetCDF, extract grid point, delete file immediately.
 
         Uses a temporary file to minimize memory usage and support lazy loading.
         The file is automatically deleted after extraction.
+
+        If local_dir is set and file exists there, uses local file instead.
 
         Args:
             url: URL of the NetCDF file
@@ -112,7 +148,13 @@ class HOSTRADASource(HistoricalSource):
         Raises:
             WeatherSourceError: On download or parse failure
         """
-        logger.debug(f"Fetching: {url}")
+        # Check for local file first
+        local_path = self._get_local_path(url)
+        if local_path:
+            logger.info(f"Using local file: {local_path.name}")
+            return self._extract_from_file(local_path, var_name)
+
+        logger.debug(f"Downloading: {url}")
 
         # Download to temporary file
         try:
@@ -131,20 +173,7 @@ class HOSTRADASource(HistoricalSource):
             tmp.write(response.content)
             tmp.flush()
 
-            # Extract time series from temp file
-            ds = xr.open_dataset(tmp.name)
-            try:
-                grid_point = self._find_grid_point(ds)
-                data = ds[var_name][:, grid_point.y_idx, grid_point.x_idx]
-
-                series = pd.Series(
-                    data.values,
-                    index=pd.DatetimeIndex(data.time.values),
-                    name=var_name,
-                )
-                return series
-            finally:
-                ds.close()
+            return self._extract_from_file(Path(tmp.name), var_name)
         # Temp file is automatically deleted when context exits
 
     def _find_grid_point(self, ds: xr.Dataset) -> GridPoint:
@@ -385,7 +414,7 @@ class HOSTRADASource(HistoricalSource):
         dhi = df * ghi
         return np.clip(dhi, 0, ghi)
 
-    def get_available_range(self) -> Optional[tuple[date, date]]:
+    def get_available_range(self) -> tuple[date, date] | None:
         """Get the available date range for HOSTRADA data.
 
         Returns:

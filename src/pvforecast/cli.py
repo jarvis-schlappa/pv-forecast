@@ -96,9 +96,11 @@ def _get_historical_source(config: Config, source_override: str | None = None):
     source = source_override or config.weather.historical_provider
 
     if source == "hostrada":
+        local_dir = config.weather.hostrada.local_dir
         return HOSTRADASource(
             latitude=config.latitude,
             longitude=config.longitude,
+            local_dir=local_dir,
         )
     elif source == "open-meteo":
         return None  # Use legacy weather.py functions
