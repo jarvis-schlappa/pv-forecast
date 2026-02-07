@@ -2,7 +2,7 @@
 
 ## Projektkontext
 
-- **Anlage:** 10 kWp Photovoltaik mit E3DC-Inverter, Standort Dülmen (51.43°N, 7.28°E), Münsterland, NRW
+- **Anlage:** 10 kWp Photovoltaik mit E3DC-Inverter, Standort Dülmen (51.82°N, 7.31°E), Münsterland, NRW
 - **Ziel:** ML-Modell, das den Zusammenhang zwischen Wetterdaten und tatsächlichem Solarertrag lernt (stündliche Auflösung)
 - **Ansatz:** Wetter → Ertrag (OHNE Anlagengeometrie als Input). Das Modell lernt implizit alle standortspezifischen Faktoren aus den historischen Daten
 - **Bisheriger Stand:** Open-Meteo als Datenquelle, MAPE von 41.7% auf 30.1% reduziert durch Feature Engineering
@@ -59,7 +59,7 @@ import xarray as xr
 # Einzelne Stunde laden
 ds = xr.open_dataset("SIS_duett_2km_DE_60min_202501011250_007.nc")
 
-# Wert für Dülmen extrahieren (51.43°N, 7.28°E)
+# Wert für Dülmen extrahieren (51.82°N, 7.31°E)
 # Koordinaten müssen in die jeweilige Projektion umgerechnet werden
 ```
 
@@ -239,7 +239,7 @@ ds = xr.open_dataset("SIS_duett_2km_DE_60min_YYYYMMDDHHM_007.nc")
 # Für Koordinaten-Umrechnung (EPSG:3034 → Lat/Lon)
 from pyproj import Transformer
 transformer = Transformer.from_crs("EPSG:4326", "EPSG:3034", always_xy=True)
-x_duelmen, y_duelmen = transformer.transform(7.28, 51.43)
+x_duelmen, y_duelmen = transformer.transform(7.31, 51.82)
 
 # Nächsten Gitterpunkt finden
 ghi = ds['SIS'].sel(x=x_duelmen, y=y_duelmen, method='nearest')
@@ -287,7 +287,7 @@ url = "https://www.proplanta.de/Agrar-Wetter/Duelmen-AgrarWetter.html"
 import requests
 
 API_KEY = "your_key"
-lat, lon = 51.43, 7.28
+lat, lon = 51.82, 7.31
 
 # Forecast
 resp = requests.get(
