@@ -252,9 +252,7 @@ def prepare_features(
     features["dhi"] = features["dhi"].fillna(0.0).clip(lower=0)
 
     # Interaktions-Feature: Effektive Strahlung (GHI korrigiert um Bewölkung)
-    features["effective_irradiance"] = features["ghi"] * (
-        1 - features["cloud_cover"] / 100
-    )
+    features["effective_irradiance"] = features["ghi"] * (1 - features["cloud_cover"] / 100)
 
     # Sonnenhöhe berechnen
     features["sun_elevation"] = df["timestamp"].apply(
@@ -282,9 +280,7 @@ def prepare_features(
     # NOCT = 45°C (Nominal Operating Cell Temperature)
     NOCT = 45
     features["t_module"] = (
-        features["temperature"]
-        + (features["ghi"] / 800) * (NOCT - 20)
-        - features["wind_speed"] * 2
+        features["temperature"] + (features["ghi"] / 800) * (NOCT - 20) - features["wind_speed"] * 2
     )
 
     # Temperatur-Derating: Module verlieren ~0.4%/°C über 25°C
@@ -650,15 +646,19 @@ def tune(
     # Neue Pipeline mit besten Parametern erstellen
     # (search.best_estimator_ ist auf ALLEN Daten trainiert - Data Leakage!)
     if model_type == "xgb":
-        best_pipeline = Pipeline([
-            ("scaler", StandardScaler()),
-            ("model", XGBRegressor(**best_params, random_state=42, n_jobs=-1, verbosity=0)),
-        ])
+        best_pipeline = Pipeline(
+            [
+                ("scaler", StandardScaler()),
+                ("model", XGBRegressor(**best_params, random_state=42, n_jobs=-1, verbosity=0)),
+            ]
+        )
     else:
-        best_pipeline = Pipeline([
-            ("scaler", StandardScaler()),
-            ("model", RandomForestRegressor(**best_params, random_state=42, n_jobs=-1)),
-        ])
+        best_pipeline = Pipeline(
+            [
+                ("scaler", StandardScaler()),
+                ("model", RandomForestRegressor(**best_params, random_state=42, n_jobs=-1)),
+            ]
+        )
 
     # Split für Training/Test (80/20)
     split_idx = int(len(df) * 0.8)
@@ -906,15 +906,17 @@ def tune_optuna(
     # Finale Pipeline mit besten Parametern trainieren
     logger.info("Trainiere finales Modell mit besten Parametern...")
 
-    pipeline = Pipeline([
-        ("scaler", StandardScaler()),
-        (
-            "model",
-            XGBRegressor(**best_params, random_state=42, n_jobs=-1, verbosity=0)
-            if model_type == "xgb"
-            else RandomForestRegressor(**best_params, random_state=42, n_jobs=-1),
-        ),
-    ])
+    pipeline = Pipeline(
+        [
+            ("scaler", StandardScaler()),
+            (
+                "model",
+                XGBRegressor(**best_params, random_state=42, n_jobs=-1, verbosity=0)
+                if model_type == "xgb"
+                else RandomForestRegressor(**best_params, random_state=42, n_jobs=-1),
+            ),
+        ]
+    )
 
     # Auf allen Daten trainieren (für finales Modell)
     # Aber Test-Evaluation auf den letzten 20%
@@ -1213,17 +1215,19 @@ def evaluate(
             cat_mae = mean_absolute_error(y_true[cat_mask], y_pred[cat_mask])
             mape_mask = cat_mask & (y_true > mape_threshold)
             if mape_mask.sum() > 0:
-                cat_mape = mean_absolute_percentage_error(
-                    y_true[mape_mask], y_pred[mape_mask]
-                ) * 100
+                cat_mape = (
+                    mean_absolute_percentage_error(y_true[mape_mask], y_pred[mape_mask]) * 100
+                )
             else:
                 cat_mape = 0.0
-            weather_breakdown.append(WeatherBreakdown(
-                label=label,
-                mae=cat_mae,
-                mape=cat_mape,
-                count=int(cat_mask.sum()),
-            ))
+            weather_breakdown.append(
+                WeatherBreakdown(
+                    label=label,
+                    mae=cat_mae,
+                    mape=cat_mape,
+                    count=int(cat_mask.sum()),
+                )
+            )
 
     return EvaluationResult(
         mae=mae,

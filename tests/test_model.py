@@ -147,14 +147,26 @@ class TestPrepareFeatures:
         df = pd.DataFrame(
             [
                 # GHI 1000, keine Wolken → effektiv 1000
-                {"timestamp": 1704067200, "ghi_wm2": 1000, "cloud_cover_pct": 0,
-                 "temperature_c": 20},
+                {
+                    "timestamp": 1704067200,
+                    "ghi_wm2": 1000,
+                    "cloud_cover_pct": 0,
+                    "temperature_c": 20,
+                },
                 # GHI 1000, 50% Wolken → effektiv 500
-                {"timestamp": 1704110400, "ghi_wm2": 1000, "cloud_cover_pct": 50,
-                 "temperature_c": 20},
+                {
+                    "timestamp": 1704110400,
+                    "ghi_wm2": 1000,
+                    "cloud_cover_pct": 50,
+                    "temperature_c": 20,
+                },
                 # GHI 1000, 100% Wolken → effektiv 0
-                {"timestamp": 1704153600, "ghi_wm2": 1000, "cloud_cover_pct": 100,
-                 "temperature_c": 20},
+                {
+                    "timestamp": 1704153600,
+                    "ghi_wm2": 1000,
+                    "cloud_cover_pct": 100,
+                    "temperature_c": 20,
+                },
             ]
         )
 
@@ -168,10 +180,18 @@ class TestPrepareFeatures:
         """Test: peak_kwp wird als Feature hinzugefügt wenn angegeben."""
         df = pd.DataFrame(
             [
-                {"timestamp": 1704067200, "ghi_wm2": 500, "cloud_cover_pct": 20,
-                 "temperature_c": 15},
-                {"timestamp": 1704110400, "ghi_wm2": 800, "cloud_cover_pct": 10,
-                 "temperature_c": 20},
+                {
+                    "timestamp": 1704067200,
+                    "ghi_wm2": 500,
+                    "cloud_cover_pct": 20,
+                    "temperature_c": 15,
+                },
+                {
+                    "timestamp": 1704110400,
+                    "ghi_wm2": 800,
+                    "cloud_cover_pct": 10,
+                    "temperature_c": 20,
+                },
             ]
         )
 
@@ -189,14 +209,30 @@ class TestPrepareFeatures:
         """Test: Wetter-Lag-Features werden korrekt berechnet."""
         df = pd.DataFrame(
             [
-                {"timestamp": 1704067200, "ghi_wm2": 100, "cloud_cover_pct": 10,
-                 "temperature_c": 5},
-                {"timestamp": 1704070800, "ghi_wm2": 200, "cloud_cover_pct": 20,
-                 "temperature_c": 8},
-                {"timestamp": 1704074400, "ghi_wm2": 300, "cloud_cover_pct": 30,
-                 "temperature_c": 10},
-                {"timestamp": 1704078000, "ghi_wm2": 400, "cloud_cover_pct": 25,
-                 "temperature_c": 12},
+                {
+                    "timestamp": 1704067200,
+                    "ghi_wm2": 100,
+                    "cloud_cover_pct": 10,
+                    "temperature_c": 5,
+                },
+                {
+                    "timestamp": 1704070800,
+                    "ghi_wm2": 200,
+                    "cloud_cover_pct": 20,
+                    "temperature_c": 8,
+                },
+                {
+                    "timestamp": 1704074400,
+                    "ghi_wm2": 300,
+                    "cloud_cover_pct": 30,
+                    "temperature_c": 10,
+                },
+                {
+                    "timestamp": 1704078000,
+                    "ghi_wm2": 400,
+                    "cloud_cover_pct": 25,
+                    "temperature_c": 12,
+                },
             ]
         )
 
@@ -231,14 +267,34 @@ class TestPrepareFeatures:
         """Test: Produktions-Lags werden im train-Modus berechnet."""
         df = pd.DataFrame(
             [
-                {"timestamp": 1704067200, "ghi_wm2": 100, "cloud_cover_pct": 10,
-                 "temperature_c": 5, "production_w": 500},
-                {"timestamp": 1704070800, "ghi_wm2": 200, "cloud_cover_pct": 20,
-                 "temperature_c": 8, "production_w": 1000},
-                {"timestamp": 1704074400, "ghi_wm2": 300, "cloud_cover_pct": 30,
-                 "temperature_c": 10, "production_w": 1500},
-                {"timestamp": 1704078000, "ghi_wm2": 400, "cloud_cover_pct": 25,
-                 "temperature_c": 12, "production_w": 2000},
+                {
+                    "timestamp": 1704067200,
+                    "ghi_wm2": 100,
+                    "cloud_cover_pct": 10,
+                    "temperature_c": 5,
+                    "production_w": 500,
+                },
+                {
+                    "timestamp": 1704070800,
+                    "ghi_wm2": 200,
+                    "cloud_cover_pct": 20,
+                    "temperature_c": 8,
+                    "production_w": 1000,
+                },
+                {
+                    "timestamp": 1704074400,
+                    "ghi_wm2": 300,
+                    "cloud_cover_pct": 30,
+                    "temperature_c": 10,
+                    "production_w": 1500,
+                },
+                {
+                    "timestamp": 1704078000,
+                    "ghi_wm2": 400,
+                    "cloud_cover_pct": 25,
+                    "temperature_c": 12,
+                    "production_w": 2000,
+                },
             ]
         )
 
@@ -260,10 +316,20 @@ class TestPrepareFeatures:
         """Test: Produktions-Lags sind 0 im predict-Modus."""
         df = pd.DataFrame(
             [
-                {"timestamp": 1704067200, "ghi_wm2": 100, "cloud_cover_pct": 10,
-                 "temperature_c": 5, "production_w": 500},
-                {"timestamp": 1704070800, "ghi_wm2": 200, "cloud_cover_pct": 20,
-                 "temperature_c": 8, "production_w": 1000},
+                {
+                    "timestamp": 1704067200,
+                    "ghi_wm2": 100,
+                    "cloud_cover_pct": 10,
+                    "temperature_c": 5,
+                    "production_w": 500,
+                },
+                {
+                    "timestamp": 1704070800,
+                    "ghi_wm2": 200,
+                    "cloud_cover_pct": 20,
+                    "temperature_c": 8,
+                    "production_w": 1000,
+                },
             ]
         )
 
@@ -278,10 +344,18 @@ class TestPrepareFeatures:
         """Test: Produktions-Lags sind 0 wenn keine Produktionsdaten."""
         df = pd.DataFrame(
             [
-                {"timestamp": 1704067200, "ghi_wm2": 100, "cloud_cover_pct": 10,
-                 "temperature_c": 5},
-                {"timestamp": 1704070800, "ghi_wm2": 200, "cloud_cover_pct": 20,
-                 "temperature_c": 8},
+                {
+                    "timestamp": 1704067200,
+                    "ghi_wm2": 100,
+                    "cloud_cover_pct": 10,
+                    "temperature_c": 5,
+                },
+                {
+                    "timestamp": 1704070800,
+                    "ghi_wm2": 200,
+                    "cloud_cover_pct": 20,
+                    "temperature_c": 8,
+                },
             ]
         )
 
@@ -679,17 +753,19 @@ class TestEvaluate:
         mock_db.connect.return_value.__exit__ = MagicMock(return_value=False)
 
         # Simuliere Daten für ein Jahr (vereinfacht: 100 Datenpunkte)
-        test_data = pd.DataFrame({
-            "timestamp": [1704067200 + i * 3600 for i in range(100)],  # Stündlich
-            "production_w": [500 + i * 10 for i in range(100)],
-            "ghi_wm2": [300 + i * 5 for i in range(100)],
-            "cloud_cover_pct": [20 + (i % 60) for i in range(100)],
-            "temperature_c": [10 + (i % 20) for i in range(100)],
-            "wind_speed_ms": [5.0] * 100,
-            "humidity_pct": [60] * 100,
-            "dhi_wm2": [100.0] * 100,
-            "dni_wm2": [200.0] * 100,
-        })
+        test_data = pd.DataFrame(
+            {
+                "timestamp": [1704067200 + i * 3600 for i in range(100)],  # Stündlich
+                "production_w": [500 + i * 10 for i in range(100)],
+                "ghi_wm2": [300 + i * 5 for i in range(100)],
+                "cloud_cover_pct": [20 + (i % 60) for i in range(100)],
+                "temperature_c": [10 + (i % 20) for i in range(100)],
+                "wind_speed_ms": [5.0] * 100,
+                "humidity_pct": [60] * 100,
+                "dhi_wm2": [100.0] * 100,
+                "dni_wm2": [200.0] * 100,
+            }
+        )
 
         with patch("pandas.read_sql_query", return_value=test_data):
             # Mock Modell
@@ -752,17 +828,19 @@ class TestEvaluate:
         mock_db.connect.return_value.__enter__ = MagicMock(return_value=mock_conn)
         mock_db.connect.return_value.__exit__ = MagicMock(return_value=False)
 
-        test_data = pd.DataFrame({
-            "timestamp": [1704067200 + i * 3600 for i in range(50)],
-            "production_w": [500] * 50,
-            "ghi_wm2": [300] * 50,
-            "cloud_cover_pct": [30] * 50,
-            "temperature_c": [15] * 50,
-            "wind_speed_ms": [5.0] * 50,
-            "humidity_pct": [60] * 50,
-            "dhi_wm2": [100.0] * 50,
-            "dni_wm2": [200.0] * 50,
-        })
+        test_data = pd.DataFrame(
+            {
+                "timestamp": [1704067200 + i * 3600 for i in range(50)],
+                "production_w": [500] * 50,
+                "ghi_wm2": [300] * 50,
+                "cloud_cover_pct": [30] * 50,
+                "temperature_c": [15] * 50,
+                "wind_speed_ms": [5.0] * 50,
+                "humidity_pct": [60] * 50,
+                "dhi_wm2": [100.0] * 50,
+                "dni_wm2": [200.0] * 50,
+            }
+        )
 
         with patch("pandas.read_sql_query", return_value=test_data):
             mock_model = MagicMock()

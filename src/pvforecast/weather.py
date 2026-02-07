@@ -80,40 +80,31 @@ def _request_with_retry(
             # HTTP 429 (Rate Limited) - wiederholen mit längerem Backoff
             if status == 429:
                 last_error = e
-                logger.warning(
-                    f"Rate limited (429), Versuch {attempt + 1}/{max_retries}"
-                )
+                logger.warning(f"Rate limited (429), Versuch {attempt + 1}/{max_retries}")
             # Andere 4xx Fehler - nicht wiederholen
             elif status < 500:
                 raise WeatherAPIError(f"API-Fehler: {status}") from e
             # 5xx Server-Fehler - wiederholen
             else:
                 last_error = e
-                logger.warning(
-                    f"Server-Fehler {status}, "
-                    f"Versuch {attempt + 1}/{max_retries}"
-                )
+                logger.warning(f"Server-Fehler {status}, Versuch {attempt + 1}/{max_retries}")
 
         except (httpx.TimeoutException, httpx.ConnectError) as e:
             # Timeout oder Verbindungsfehler - wiederholen
             last_error = e
             logger.warning(
-                f"Verbindungsfehler: {type(e).__name__}, "
-                f"Versuch {attempt + 1}/{max_retries}"
+                f"Verbindungsfehler: {type(e).__name__}, Versuch {attempt + 1}/{max_retries}"
             )
 
         except httpx.RequestError as e:
             # Andere Request-Fehler
             last_error = e
-            logger.warning(
-                f"Request-Fehler: {e}, "
-                f"Versuch {attempt + 1}/{max_retries}"
-            )
+            logger.warning(f"Request-Fehler: {e}, Versuch {attempt + 1}/{max_retries}")
 
         # Warte vor nächstem Versuch (exponential backoff mit Jitter)
         if attempt < max_retries - 1:
             # Basis-Delay mit Exponential Backoff
-            base_delay = retry_delay * (2 ** attempt)
+            base_delay = retry_delay * (2**attempt)
             # Jitter: 50-150% des Basis-Delays (verhindert "Thundering Herd")
             jitter = 0.5 + random.random()  # 0.5 bis 1.5
             delay = base_delay * jitter
@@ -164,9 +155,7 @@ def fetch_historical(
         "timezone": "UTC",
     }
 
-    data = _request_with_retry(
-        HISTORICAL_API, params, timeout=timeout, max_retries=max_retries
-    )
+    data = _request_with_retry(HISTORICAL_API, params, timeout=timeout, max_retries=max_retries)
 
     if "hourly" not in data:
         raise WeatherAPIError(f"Unerwartete API-Antwort: {data}")
@@ -208,9 +197,7 @@ def fetch_forecast(
         "forecast_hours": min(hours, 384),
     }
 
-    data = _request_with_retry(
-        FORECAST_API, params, timeout=timeout, max_retries=max_retries
-    )
+    data = _request_with_retry(FORECAST_API, params, timeout=timeout, max_retries=max_retries)
 
     if "hourly" not in data:
         raise WeatherAPIError(f"Unerwartete API-Antwort: {data}")
@@ -277,9 +264,7 @@ def fetch_today(
         "forecast_hours": forecast_hours,
     }
 
-    data = _request_with_retry(
-        FORECAST_API, params, timeout=timeout, max_retries=max_retries
-    )
+    data = _request_with_retry(FORECAST_API, params, timeout=timeout, max_retries=max_retries)
 
     if "hourly" not in data:
         raise WeatherAPIError(f"Unerwartete API-Antwort: {data}")
@@ -424,14 +409,10 @@ def find_weather_gaps(
 
         # Timestamps für Abfrage
         check_start_ts = int(
-            datetime.combine(check_start, datetime.min.time())
-            .replace(tzinfo=UTC_TZ)
-            .timestamp()
+            datetime.combine(check_start, datetime.min.time()).replace(tzinfo=UTC_TZ).timestamp()
         )
         check_end_ts = int(
-            datetime.combine(check_end, datetime.max.time())
-            .replace(tzinfo=UTC_TZ)
-            .timestamp()
+            datetime.combine(check_end, datetime.max.time()).replace(tzinfo=UTC_TZ).timestamp()
         )
 
         # Zähle vorhandene Stunden in DB
@@ -450,8 +431,7 @@ def find_weather_gaps(
         if missing_hours >= min_gap_hours:
             gaps.append((check_start, check_end))
             logger.debug(
-                f"Lücke gefunden: {check_start} - {check_end} "
-                f"({missing_hours} Stunden fehlen)"
+                f"Lücke gefunden: {check_start} - {check_end} ({missing_hours} Stunden fehlen)"
             )
 
         current_month_start = next_month

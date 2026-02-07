@@ -35,6 +35,9 @@ from pvforecast.model import (
     tune_optuna,
 )
 from pvforecast.setup import SetupWizard
+from pvforecast.sources.base import WeatherSourceError
+from pvforecast.sources.hostrada import HOSTRADASource
+from pvforecast.sources.mosmix import MOSMIXConfig, MOSMIXSource
 from pvforecast.validation import (
     DependencyError,
     ValidationError,
@@ -50,6 +53,60 @@ from pvforecast.weather import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _get_forecast_source(config: Config, source_override: str | None = None):
+    """
+    Get the appropriate forecast source based on config or override.
+
+    Args:
+        config: Application config
+        source_override: Override source name (mosmix, open-meteo)
+
+    Returns:
+        ForecastSource instance or None for legacy open-meteo
+    """
+    source = source_override or config.weather.forecast_provider
+
+    if source == "mosmix":
+        mosmix_config = MOSMIXConfig(
+            station_id=config.weather.mosmix.station_id,
+            use_mosmix_l=config.weather.mosmix.use_mosmix_l,
+            lat=config.latitude,
+            lon=config.longitude,
+        )
+        return MOSMIXSource(mosmix_config)
+    elif source == "open-meteo":
+        return None  # Use legacy weather.py functions
+    else:
+        raise ValueError(f"Unknown forecast source: {source}")
+
+
+def _get_historical_source(config: Config, source_override: str | None = None):
+    """
+    Get the appropriate historical source based on config or override.
+
+    Args:
+        config: Application config
+        source_override: Override source name (hostrada, open-meteo)
+
+    Returns:
+        HistoricalSource instance or None for legacy open-meteo
+    """
+    source = source_override or config.weather.historical_provider
+
+    if source == "hostrada":
+        hostrada_cfg = config.weather.hostrada
+        cache_dir = Path(hostrada_cfg.cache_dir) if hostrada_cfg.cache_dir else None
+        return HOSTRADASource(
+            latitude=config.latitude,
+            longitude=config.longitude,
+            cache_dir=cache_dir,
+        )
+    elif source == "open-meteo":
+        return None  # Use legacy weather.py functions
+    else:
+        raise ValueError(f"Unknown historical source: {source}")
 
 
 def format_duration(seconds: float) -> str:
@@ -144,11 +201,194 @@ def format_forecast_json(forecast: Forecast) -> str:
     return json.dumps(data, indent=2)
 
 
+def cmd_fetch_forecast(args: argparse.Namespace, config: Config) -> int:
+    """Fetches weather forecast data from configured source."""
+    source_name = getattr(args, "source", None) or config.weather.forecast_provider
+    hours = getattr(args, "hours", 48)
+    output_format = getattr(args, "format", "table")
+
+    print(f"🌤️  Fetching forecast from {source_name}...")
+
+    try:
+        source = _get_forecast_source(config, source_name)
+
+        if source is None:
+            # Legacy open-meteo
+            weather_df = fetch_forecast(config.latitude, config.longitude, hours=hours)
+        else:
+            weather_df = source.fetch_forecast(hours=hours)
+
+    except WeatherSourceError as e:
+        print(f"❌ Fehler: {e}", file=sys.stderr)
+        return 1
+    except WeatherAPIError as e:
+        print(f"❌ Fehler: {e}", file=sys.stderr)
+        return 1
+
+    if len(weather_df) == 0:
+        print("❌ Keine Wetterdaten verfügbar.", file=sys.stderr)
+        return 1
+
+    # Output
+    if output_format == "json":
+        import json
+
+        records = weather_df.to_dict(orient="records")
+        # Convert timestamps to ISO format
+        for r in records:
+            if "timestamp" in r:
+                r["timestamp"] = datetime.fromtimestamp(r["timestamp"], ZoneInfo("UTC")).isoformat()
+        print(json.dumps(records, indent=2))
+    elif output_format == "csv":
+        print(weather_df.to_csv(index=False))
+    else:
+        # Table format
+        tz = ZoneInfo(config.timezone)
+        print()
+        print(f"Weather Forecast ({source_name})")
+        print(f"Station: {config.weather.mosmix.station_id}" if source_name == "mosmix" else "")
+        print("=" * 70)
+        print(f"{'Zeit':18} {'GHI':>8} {'Wolken':>8} {'Temp':>8} {'DHI':>8}")
+        print("-" * 70)
+
+        for _, row in weather_df.head(24).iterrows():
+            dt = datetime.fromtimestamp(row["timestamp"], tz)
+            time_str = dt.strftime("%d.%m. %H:%M")
+            ghi = row.get("ghi_wm2", 0)
+            cloud = row.get("cloud_cover_pct", 0)
+            temp = row.get("temperature_c", 0)
+            dhi = row.get("dhi_wm2", 0)
+            emoji = get_weather_emoji(int(cloud))
+
+            print(f"{time_str:18} {ghi:>7.0f}W {cloud:>6}% {emoji} {temp:>6.1f}°C {dhi:>7.1f}W")
+
+        if len(weather_df) > 24:
+            print(f"... ({len(weather_df) - 24} weitere Stunden)")
+        print()
+
+    print(f"✅ {len(weather_df)} Stunden Forecast geladen")
+    return 0
+
+
+def cmd_fetch_historical(args: argparse.Namespace, config: Config) -> int:
+    """Fetches historical weather data from configured source."""
+    from datetime import date
+
+    source_name = getattr(args, "source", None) or config.weather.historical_provider
+    output_format = getattr(args, "format", "table")
+
+    # Parse date range
+    start_str = getattr(args, "start", None)
+    end_str = getattr(args, "end", None)
+
+    if not start_str or not end_str:
+        # Default: last 7 days
+        end_date = date.today() - timedelta(days=60)  # HOSTRADA ~2 months behind
+        start_date = end_date - timedelta(days=6)
+    else:
+        start_date = date.fromisoformat(start_str)
+        end_date = date.fromisoformat(end_str)
+
+    print(f"🌤️  Fetching historical data from {source_name}...")
+    print(f"   Range: {start_date} to {end_date}")
+
+    # Warning for HOSTRADA due to massive download size
+    if source_name == "hostrada":
+        days = (end_date - start_date).days + 1
+        months = max(1, days // 30)
+        est_gb = months * 0.15 * 5  # ~150 MB per month per parameter, 5 parameters
+
+        print()
+        print("⚠️  HOSTRADA lädt komplette Deutschland-Raster herunter.")
+        print(f"    Geschätzter Download: ~{est_gb:.1f} GB ({months} Monate × 5 Parameter)")
+        lat, lon = config.latitude, config.longitude
+        print(f"    Extrahierte Daten: wenige MB (nur Gridpunkt {lat:.2f}°N, {lon:.2f}°E)")
+        print()
+        print("    Für regelmäßige Updates empfehlen wir Open-Meteo.")
+        print("    HOSTRADA eignet sich für einmaliges Training mit historischen Daten.")
+        print()
+
+        skip_confirm = getattr(args, "yes", False)
+        if not skip_confirm:
+            try:
+                confirm = input("Fortfahren? [y/N]: ").strip().lower()
+                if confirm not in ("y", "yes", "j", "ja"):
+                    print("Abgebrochen.")
+                    return 0
+            except (EOFError, KeyboardInterrupt):
+                print("\nAbgebrochen.")
+                return 0
+
+    try:
+        source = _get_historical_source(config, source_name)
+
+        if source is None:
+            print("❌ Open-Meteo historical not implemented via this command yet.", file=sys.stderr)
+            print("   Use 'pvforecast import' instead.", file=sys.stderr)
+            return 1
+
+        weather_df = source.fetch_historical(start_date, end_date)
+
+    except WeatherSourceError as e:
+        print(f"❌ Fehler: {e}", file=sys.stderr)
+        return 1
+
+    if len(weather_df) == 0:
+        print("❌ Keine Wetterdaten verfügbar.", file=sys.stderr)
+        return 1
+
+    # Output
+    if output_format == "json":
+        records = weather_df.reset_index().to_dict(orient="records")
+        # Convert timestamps
+        for r in records:
+            if "timestamp" in r:
+                r["timestamp"] = datetime.fromtimestamp(r["timestamp"], ZoneInfo("UTC")).isoformat()
+            if "index" in r:
+                r["time"] = str(r.pop("index"))
+        print(json.dumps(records, indent=2, default=str))
+    elif output_format == "csv":
+        print(weather_df.to_csv())
+    else:
+        # Table format
+        ZoneInfo(config.timezone)
+        print()
+        print(f"Historical Weather ({source_name})")
+        print("=" * 80)
+        print(f"{'Zeit':18} {'GHI':>8} {'Wolken':>8} {'Temp':>8} {'Feuchte':>8} {'Wind':>8}")
+        print("-" * 80)
+
+        # Show daily summaries
+        weather_df_display = weather_df.copy()
+        weather_df_display["date"] = weather_df_display.index.date
+
+        for dt, day_df in weather_df_display.groupby("date"):
+            ghi_sum = day_df["ghi_wm2"].sum() / 1000  # kWh/m²
+            cloud_avg = day_df["cloud_cover_pct"].mean()
+            temp_avg = day_df["temperature_c"].mean()
+            humid_avg = day_df["humidity_pct"].mean()
+            wind_avg = day_df["wind_speed_ms"].mean()
+            emoji = get_weather_emoji(int(cloud_avg))
+
+            print(
+                f"{str(dt):18} {ghi_sum:>6.1f}kWh {cloud_avg:>6.0f}% {emoji} "
+                f"{temp_avg:>6.1f}°C {humid_avg:>6.0f}% {wind_avg:>6.1f}m/s"
+            )
+
+        print()
+
+    total_hours = len(weather_df)
+    total_days = total_hours / 24
+    print(f"✅ {total_hours} Stunden ({total_days:.0f} Tage) historische Daten geladen")
+    return 0
+
+
 def cmd_predict(args: argparse.Namespace, config: Config) -> int:
     """Führt Prognose aus."""
     import pandas as pd
 
     tz = ZoneInfo(config.timezone)
+    source_name = getattr(args, "source", None)
 
     # Modell laden
     try:
@@ -167,7 +407,15 @@ def cmd_predict(args: argparse.Namespace, config: Config) -> int:
 
     # Wettervorhersage holen
     try:
-        weather_df = fetch_forecast(config.latitude, config.longitude, hours=hours_needed)
+        source = _get_forecast_source(config, source_name)
+        if source is None:
+            # Legacy open-meteo
+            weather_df = fetch_forecast(config.latitude, config.longitude, hours=hours_needed)
+        else:
+            weather_df = source.fetch_forecast(hours=hours_needed)
+    except WeatherSourceError as e:
+        print(f"❌ Fehler bei Wetterabfrage: {e}", file=sys.stderr)
+        return 1
     except WeatherAPIError as e:
         print(f"❌ Fehler bei Wetterabfrage: {e}", file=sys.stderr)
         return 1
@@ -188,8 +436,7 @@ def cmd_predict(args: argparse.Namespace, config: Config) -> int:
 
     # Prognose erstellen (mode="predict" für Zukunftsprognose ohne Produktions-Lags)
     forecast = predict(
-        model, weather_df, config.latitude, config.longitude, config.peak_kwp,
-        mode="predict"
+        model, weather_df, config.latitude, config.longitude, config.peak_kwp, mode="predict"
     )
 
     # Ausgabe formatieren
@@ -208,6 +455,7 @@ def cmd_predict(args: argparse.Namespace, config: Config) -> int:
 def cmd_today(args: argparse.Namespace, config: Config) -> int:
     """Zeigt Prognose für heute (ganzer Tag)."""
     tz = ZoneInfo(config.timezone)
+    source_name = getattr(args, "source", None)
 
     # Modell laden
     try:
@@ -219,9 +467,18 @@ def cmd_today(args: argparse.Namespace, config: Config) -> int:
 
     today = datetime.now(tz).date()
 
-    # Wetterdaten für heute holen (nutzt Retry-Logic aus weather.py)
+    # Wetterdaten für heute holen
     try:
-        weather_df = fetch_today(config.latitude, config.longitude, tz)
+        source = _get_forecast_source(config, source_name)
+        if source is None:
+            # Legacy open-meteo (nutzt Retry-Logic aus weather.py)
+            weather_df = fetch_today(config.latitude, config.longitude, tz)
+        else:
+            # DWD source - fetch_today returns full day
+            weather_df = source.fetch_today(str(tz))
+    except WeatherSourceError as e:
+        print(f"❌ Fehler bei Wetterabfrage: {e}", file=sys.stderr)
+        return 1
     except WeatherAPIError as e:
         print(f"❌ Fehler bei Wetterabfrage: {e}", file=sys.stderr)
         return 1
@@ -230,8 +487,7 @@ def cmd_today(args: argparse.Namespace, config: Config) -> int:
     # und mit weather_df mergen, dann mode="today" verwenden.
     # Aktuell: mode="predict" (ohne Produktions-Lags)
     forecast = predict(
-        model, weather_df, config.latitude, config.longitude, config.peak_kwp,
-        mode="predict"
+        model, weather_df, config.latitude, config.longitude, config.peak_kwp, mode="predict"
     )
 
     # Ausgabe
@@ -327,8 +583,12 @@ def cmd_train(args: argparse.Namespace, config: Config) -> int:
     train_start = time.perf_counter()
     try:
         model, metrics = train(
-            db, config.latitude, config.longitude, model_type,
-            since_year=since_year, peak_kwp=config.peak_kwp
+            db,
+            config.latitude,
+            config.longitude,
+            model_type,
+            since_year=since_year,
+            peak_kwp=config.peak_kwp,
         )
     except ValueError as e:
         print(f"❌ Training fehlgeschlagen: {e}", file=sys.stderr)
@@ -522,9 +782,9 @@ def cmd_status(args: argparse.Namespace, config: Config) -> int:
             if metrics:
                 print(f"   MAPE: {metrics.get('mape', '?')}%")
                 print(f"   MAE: {metrics.get('mae', '?')} W")
-                if metrics.get('rmse'):
+                if metrics.get("rmse"):
                     print(f"   RMSE: {metrics.get('rmse')} W")
-                if metrics.get('r2'):
+                if metrics.get("r2"):
                     print(f"   R²: {metrics.get('r2')}")
                 print(f"   Trainiert auf: {metrics.get('n_samples', '?')} Datensätze")
             else:
@@ -616,8 +876,20 @@ def _print_evaluation_result(result: EvaluationResult) -> None:
 
     # Monatsübersicht
     print("📅 Monatliche Abweichung:")
-    month_names = ["Jan", "Feb", "Mär", "Apr", "Mai", "Jun",
-                   "Jul", "Aug", "Sep", "Okt", "Nov", "Dez"]
+    month_names = [
+        "Jan",
+        "Feb",
+        "Mär",
+        "Apr",
+        "Mai",
+        "Jun",
+        "Jul",
+        "Aug",
+        "Sep",
+        "Okt",
+        "Nov",
+        "Dez",
+    ]
 
     for month in range(1, 13):
         month_data = result.monthly[result.monthly["month"] == month]
@@ -682,9 +954,7 @@ def cmd_reset(args: argparse.Namespace, config: Config) -> int:
             try:
                 db = Database(db_path)
                 with db.connect() as conn:
-                    pv_count = conn.execute(
-                        "SELECT COUNT(*) FROM pv_readings"
-                    ).fetchone()[0]
+                    pv_count = conn.execute("SELECT COUNT(*) FROM pv_readings").fetchone()[0]
                 db_info = f"{pv_count:,} PV-Datensätze"
             except Exception:
                 db_info = "vorhanden"
@@ -864,6 +1134,60 @@ def create_parser() -> argparse.ArgumentParser:
 
     subparsers = parser.add_subparsers(dest="command", required=True)
 
+    # fetch-forecast (new)
+    p_fetch = subparsers.add_parser("fetch-forecast", help="Holt Wettervorhersage")
+    p_fetch.add_argument(
+        "--source",
+        choices=["mosmix", "open-meteo"],
+        default=None,
+        help="Datenquelle (default: aus Config)",
+    )
+    p_fetch.add_argument(
+        "--hours",
+        type=int,
+        default=48,
+        help="Anzahl Stunden (default: 48)",
+    )
+    p_fetch.add_argument(
+        "--format",
+        choices=["table", "json", "csv"],
+        default="table",
+        help="Ausgabeformat (default: table)",
+    )
+
+    # fetch-historical (new)
+    p_fetch_hist = subparsers.add_parser("fetch-historical", help="Holt historische Wetterdaten")
+    p_fetch_hist.add_argument(
+        "--source",
+        choices=["hostrada", "open-meteo"],
+        default=None,
+        help="Datenquelle (default: aus Config)",
+    )
+    p_fetch_hist.add_argument(
+        "--start",
+        type=str,
+        default=None,
+        help="Startdatum (YYYY-MM-DD)",
+    )
+    p_fetch_hist.add_argument(
+        "--end",
+        type=str,
+        default=None,
+        help="Enddatum (YYYY-MM-DD)",
+    )
+    p_fetch_hist.add_argument(
+        "--format",
+        choices=["table", "json", "csv"],
+        default="table",
+        help="Ausgabeformat (default: table)",
+    )
+    p_fetch_hist.add_argument(
+        "-y",
+        "--yes",
+        action="store_true",
+        help="Bestätigung überspringen (für Automatisierung)",
+    )
+
     # predict
     p_predict = subparsers.add_parser("predict", help="Erstellt PV-Prognose")
     p_predict.add_argument(
@@ -878,6 +1202,12 @@ def create_parser() -> argparse.ArgumentParser:
         default="table",
         help="Ausgabeformat (default: table)",
     )
+    p_predict.add_argument(
+        "--source",
+        choices=["mosmix", "open-meteo"],
+        default=None,
+        help="Wetter-Datenquelle (default: aus Config)",
+    )
 
     # import
     p_import = subparsers.add_parser("import", help="Importiert E3DC CSV-Dateien")
@@ -888,7 +1218,13 @@ def create_parser() -> argparse.ArgumentParser:
     )
 
     # today
-    subparsers.add_parser("today", help="Prognose für heute")
+    p_today = subparsers.add_parser("today", help="Prognose für heute")
+    p_today.add_argument(
+        "--source",
+        choices=["mosmix", "open-meteo"],
+        default=None,
+        help="Wetter-Datenquelle (default: aus Config)",
+    )
 
     # train
     p_train = subparsers.add_parser("train", help="Trainiert das ML-Modell")
@@ -1059,6 +1395,9 @@ def main() -> int:
     except WeatherAPIError as e:
         print(f"❌ Wetter-API-Fehler: {e}", file=sys.stderr)
         return 1
+    except WeatherSourceError as e:
+        print(f"❌ Wetter-Source-Fehler: {e}", file=sys.stderr)
+        return 1
     except ModelNotFoundError as e:
         print(f"❌ {e}", file=sys.stderr)
         print("   Tipp: Führe erst 'pvforecast train' aus.", file=sys.stderr)
@@ -1093,6 +1432,8 @@ def _run_command(args: argparse.Namespace, parser: argparse.ArgumentParser) -> i
 
     # Command ausführen
     commands = {
+        "fetch-forecast": cmd_fetch_forecast,
+        "fetch-historical": cmd_fetch_historical,
         "predict": cmd_predict,
         "today": cmd_today,
         "import": cmd_import,

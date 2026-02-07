@@ -10,6 +10,8 @@ Vollständige Dokumentation aller `pvforecast`-Befehle.
 | [`doctor`](#pvforecast-doctor) | System-Diagnose und Healthcheck |
 | [`today`](#pvforecast-today) | Prognose für heute |
 | [`predict`](#pvforecast-predict) | Prognose für kommende Tage |
+| [`fetch-forecast`](#pvforecast-fetch-forecast) | Wettervorhersage abrufen |
+| [`fetch-historical`](#pvforecast-fetch-historical) | Historische Wetterdaten abrufen |
 | [`import`](#pvforecast-import) | E3DC CSV importieren |
 | [`train`](#pvforecast-train) | Modell trainieren |
 | [`tune`](#pvforecast-tune) | Hyperparameter-Tuning |
@@ -149,10 +151,25 @@ pvforecast doctor
 Prognose für den heutigen Tag (vergangene + kommende Stunden).
 
 ```bash
-pvforecast today
+pvforecast today [OPTIONEN]
 ```
 
-**Keine zusätzlichen Optionen.**
+| Option | Beschreibung | Default |
+|--------|--------------|---------|
+| `--source SOURCE` | Wetterdaten-Quelle: `mosmix`, `open-meteo` | aus Config |
+
+**Beispiele:**
+
+```bash
+# Standard (aus Config)
+pvforecast today
+
+# Mit DWD MOSMIX
+pvforecast today --source mosmix
+
+# Mit Open-Meteo
+pvforecast today --source open-meteo
+```
 
 ---
 
@@ -168,6 +185,7 @@ pvforecast predict [OPTIONEN]
 |--------|--------------|---------|
 | `--days N` | Anzahl Tage ab morgen | 2 |
 | `--format FORMAT` | Ausgabeformat: `table`, `json`, `csv` | `table` |
+| `--source SOURCE` | Wetterdaten-Quelle: `mosmix`, `open-meteo` | aus Config |
 
 **Beispiele:**
 
@@ -178,12 +196,113 @@ pvforecast predict
 # 5 Tage Prognose
 pvforecast predict --days 5
 
+# Mit DWD MOSMIX (Station Dülmen)
+pvforecast predict --source mosmix --days 3
+
 # Als JSON (für Weiterverarbeitung)
 pvforecast predict --format json
 
 # Als CSV
 pvforecast predict --format csv > forecast.csv
 ```
+
+**Datenquellen:**
+
+| Quelle | Beschreibung | Horizont |
+|--------|--------------|----------|
+| `mosmix` | DWD MOSMIX (Station P0051 Dülmen) | +10 Tage |
+| `open-meteo` | Open-Meteo API | +16 Tage |
+
+---
+
+### `pvforecast fetch-forecast`
+
+Ruft Wettervorhersage-Daten ab und zeigt sie an (ohne Prognose).
+
+```bash
+pvforecast fetch-forecast [OPTIONEN]
+```
+
+| Option | Beschreibung | Default |
+|--------|--------------|---------|
+| `--source SOURCE` | Datenquelle: `mosmix`, `open-meteo` | aus Config |
+| `--hours N` | Anzahl Stunden | 48 |
+| `--format FORMAT` | Ausgabeformat: `table`, `json`, `csv` | `table` |
+
+**Beispiele:**
+
+```bash
+# MOSMIX Vorhersage anzeigen
+pvforecast fetch-forecast --source mosmix
+
+# 72 Stunden als JSON
+pvforecast fetch-forecast --source mosmix --hours 72 --format json
+```
+
+---
+
+### `pvforecast fetch-historical`
+
+Ruft historische Wetterdaten ab (für Training oder Analyse).
+
+```bash
+pvforecast fetch-historical [OPTIONEN]
+```
+
+| Option | Beschreibung | Default |
+|--------|--------------|---------|
+| `--source SOURCE` | Datenquelle: `hostrada`, `open-meteo` | aus Config |
+| `--start YYYY-MM-DD` | Startdatum | 7 Tage vor Ende |
+| `--end YYYY-MM-DD` | Enddatum | ~2 Monate vor heute |
+| `--format FORMAT` | Ausgabeformat: `table`, `json`, `csv` | `table` |
+| `-y, --yes` | Bestätigung überspringen | aus |
+
+**Beispiele:**
+
+```bash
+# HOSTRADA für 2024
+pvforecast fetch-historical --source hostrada --start 2024-01-01 --end 2024-12-31
+
+# Ohne Bestätigung (für Automatisierung)
+pvforecast fetch-historical --source hostrada --start 2020-01-01 --end 2024-12-31 --yes
+
+# Als CSV exportieren
+pvforecast fetch-historical --source hostrada --start 2024-01-01 --end 2024-12-31 --format csv > weather.csv
+```
+
+**Datenquellen:**
+
+| Quelle | Beschreibung | Zeitraum | Auflösung |
+|--------|--------------|----------|-----------|
+| `hostrada` | DWD HOSTRADA (Rasterdaten) | 1995 - heute | 1 km, stündlich |
+| `open-meteo` | Open-Meteo Historical | 1940 - heute | ~11 km, stündlich |
+
+**⚠️ HOSTRADA Warnung:**
+
+Bei HOSTRADA erscheint vor dem Download eine Warnung wegen der Datenmenge:
+
+```
+⚠️  HOSTRADA lädt komplette Deutschland-Raster herunter.
+    Geschätzter Download: ~40.0 GB (7 Jahre × 5 Parameter)
+    Extrahierte Daten: wenige MB (nur Gridpunkt 51.85°N, 7.26°E)
+
+    Für regelmäßige Updates empfehlen wir Open-Meteo.
+    HOSTRADA eignet sich für einmaliges Training mit historischen Daten.
+
+Fortfahren? [y/N]: 
+```
+
+Mit `--yes` wird diese Bestätigung übersprungen.
+
+**Performance-Vergleich:**
+
+HOSTRADA liefert bessere Trainingsdaten als Open-Meteo:
+
+| Metrik | Open-Meteo | HOSTRADA | Verbesserung |
+|--------|------------|----------|--------------|
+| MAE | 126 W | 105 W | -17% |
+| MAPE | 31.3% | 21.9% | -9.4 PP |
+| R² | 0.948 | 0.974 | +0.026 |
 
 ---
 
