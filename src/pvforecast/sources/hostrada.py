@@ -127,6 +127,41 @@ class HOSTRADASource(HistoricalSource):
 
         return None
 
+    def get_local_months(self, start_date: date, end_date: date) -> set[tuple[int, int]]:
+        """Return set of (year, month) tuples that have local files for all 5 parameters.
+
+        A month is only considered "local" if ALL required parameters are present.
+        """
+        if not self.local_dir or not self.local_dir.exists():
+            return set()
+
+        local_months: set[tuple[int, int]] = set()
+
+        current = date(start_date.year, start_date.month, 1)
+        end_month = date(end_date.year, end_date.month, 1)
+
+        while current <= end_month:
+            year, month = current.year, current.month
+
+            # Check if ALL 5 parameters exist locally for this month
+            all_params_local = True
+            for param_dir, var_name in HOSTRADA_PARAMS.values():
+                url = self._get_file_url(param_dir, var_name, year, month)
+                if self._get_local_path(url) is None:
+                    all_params_local = False
+                    break
+
+            if all_params_local:
+                local_months.add((year, month))
+
+            # Next month
+            if month == 12:
+                current = date(year + 1, 1, 1)
+            else:
+                current = date(year, month + 1, 1)
+
+        return local_months
+
     def _extract_from_file(self, file_path: Path, var_name: str) -> pd.Series:
         """Extract time series from a local NetCDF file."""
         ds = xr.open_dataset(file_path)

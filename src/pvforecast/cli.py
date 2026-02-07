@@ -299,7 +299,7 @@ def cmd_fetch_historical(args: argparse.Namespace, config: Config) -> int:
         from pvforecast.db import Database
 
         db = Database(config.db_path)
-        existing_months = db.get_weather_months_with_data() if not force_download else set()
+        existing_db_months = db.get_weather_months_with_data() if not force_download else set()
 
         # Calculate requested months
         requested_months: set[tuple[int, int]] = set()
@@ -313,44 +313,68 @@ def cmd_fetch_historical(args: argparse.Namespace, config: Config) -> int:
             else:
                 current = date(current.year, current.month + 1, 1)
 
-        # Find missing months
-        missing_months = requested_months - existing_months
+        # Find months missing from DB
+        missing_from_db = requested_months - existing_db_months
 
-        if not missing_months:
+        if not missing_from_db:
             print("✅ Alle angeforderten Monate sind bereits in der Datenbank.")
             return 0
 
-        # Sort for display
-        missing_sorted = sorted(missing_months)
-        months = len(missing_months)
-        est_gb = months * 0.75  # ~750 MB per month (5 parameters × ~150 MB each)
+        # Check which of the missing months have local files
+        local_dir = config.weather.hostrada.local_dir
+        source = HOSTRADASource(
+            latitude=config.latitude,
+            longitude=config.longitude,
+            local_dir=local_dir,
+        )
+        local_months = source.get_local_months(start_date, end_date) if local_dir else set()
 
+        # Months available locally (but not in DB yet)
+        local_not_in_db = missing_from_db & local_months
+
+        # Months that need download
+        need_download = missing_from_db - local_months
+
+        # Show status
         print()
-        if existing_months & requested_months:
-            skipped = len(requested_months) - len(missing_months)
+        if existing_db_months & requested_months:
+            skipped = len(requested_months) - len(missing_from_db)
             print(f"ℹ️  {skipped} Monate bereits in DB, überspringe diese.")
-        print("⚠️  HOSTRADA lädt komplette Deutschland-Raster herunter.")
-        print(f"    Fehlende Monate: {months}")
-        print(f"    Geschätzter Download: ~{est_gb:.1f} GB (~750 MB/Monat)")
-        lat, lon = config.latitude, config.longitude
-        print(f"    Extrahierte Daten: wenige MB (nur Gridpunkt {lat:.2f}°N, {lon:.2f}°E)")
-        print()
-        print("    Für regelmäßige Updates empfehlen wir Open-Meteo.")
-        print("    HOSTRADA eignet sich für einmaliges Training mit historischen Daten.")
-        print()
 
-        skip_confirm = getattr(args, "yes", False)
-        if not skip_confirm:
-            try:
-                confirm = input("Fortfahren? [y/N]: ").strip().lower()
-                if confirm not in ("y", "yes", "j", "ja"):
-                    print("Abgebrochen.")
+        if local_not_in_db:
+            print(f"📁 {len(local_not_in_db)} Monate lokal vorhanden → werden importiert (kein Download)")
+
+        if need_download:
+            months = len(need_download)
+            est_gb = months * 0.75  # ~750 MB per month (5 parameters × ~150 MB each)
+
+            print("⚠️  HOSTRADA lädt komplette Deutschland-Raster herunter.")
+            print(f"    Fehlende Monate: {months}")
+            print(f"    Geschätzter Download: ~{est_gb:.1f} GB (~750 MB/Monat)")
+            lat, lon = config.latitude, config.longitude
+            print(f"    Extrahierte Daten: wenige MB (nur Gridpunkt {lat:.2f}°N, {lon:.2f}°E)")
+            print()
+            print("    Für regelmäßige Updates empfehlen wir Open-Meteo.")
+            print("    HOSTRADA eignet sich für einmaliges Training mit historischen Daten.")
+            print()
+
+            skip_confirm = getattr(args, "yes", False)
+            if not skip_confirm:
+                try:
+                    confirm = input("Fortfahren? [y/N]: ").strip().lower()
+                    if confirm not in ("y", "yes", "j", "ja"):
+                        print("Abgebrochen.")
+                        return 0
+                except (EOFError, KeyboardInterrupt):
+                    print("\nAbgebrochen.")
                     return 0
-            except (EOFError, KeyboardInterrupt):
-                print("\nAbgebrochen.")
-                return 0
+        else:
+            # All missing months are available locally - no download needed
+            print("✅ Alle fehlenden Monate sind lokal verfügbar, kein Download nötig.")
+            print()
 
-        # Adjust date range to only fetch missing months
+        # Adjust date range to only fetch months missing from DB
+        missing_sorted = sorted(missing_from_db)
         first_missing = min(missing_sorted)
         last_missing = max(missing_sorted)
         start_date = date(first_missing[0], first_missing[1], 1)
