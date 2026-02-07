@@ -5,7 +5,7 @@ description = "PV-Ertragsprognose auf Basis historischer Daten und Wettervorhers
 readme = "README.md"
 requires-python = ">=3.9"
 license = { text = "MIT" }
-authors = [{ name = "Marcus", email = "marcus@schlappa.de" }]
+authors = [{ name = "Marcus" }]
 keywords = ["pv", "solar", "forecast", "photovoltaic", "energy"]
 classifiers = [
     "Development Status :: 3 - Alpha",
