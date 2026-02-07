@@ -2,7 +2,7 @@
 
 > **Issue:** [#123 - Refactor: Einheitliche DWD-Architektur](https://github.com/jarvis-schlappa/pv-forecast/issues/123)
 > **Branch:** `feature/dwd-architecture-123`
-> **Letztes Update:** 2026-02-07
+> **Letztes Update:** 2026-02-07 17:05
 
 ## Übersicht
 
@@ -14,8 +14,10 @@ Umstellung von Open-Meteo auf DWD-native Datenquellen:
 
 ```
 Fachexperte → Architekt → Entwickler → Tester → Security → Real-Test → Merge
-    ✅           ✅          ⏳          ⏳         ⏳          ⏳        ⏳
+    ✅           ✅          🔄          ⏳         ⏳          ⏳        ⏳
 ```
+
+**Legende:** ✅ Abgeschlossen | 🔄 In Arbeit | ⏳ Ausstehend
 
 ## Phasen-Status
 
@@ -69,8 +71,9 @@ src/pvforecast/sources/
 
 | Task | Status | Datei |
 |------|--------|-------|
-| Source Interfaces | ⏳ | `sources/base.py` |
-| MOSMIX KML-Parser | ⏳ | `sources/mosmix.py` |
+| Source Interfaces | ✅ | `sources/base.py` |
+| MOSMIX KML-Parser | ✅ | `sources/mosmix.py` |
+| DHI-Schätzung (Erbs-Modell) | ✅ | `sources/mosmix.py` |
 | Config-Erweiterung | ⏳ | `config.py` |
 | DB-Schema (mosmix_forecast) | ⏳ | `db.py` |
 | CLI MOSMIX Integration | ⏳ | `cli.py` |
