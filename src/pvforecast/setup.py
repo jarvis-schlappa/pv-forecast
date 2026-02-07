@@ -84,8 +84,8 @@ class SetupWizard:
         # 2. Anlage
         peak_kwp, system_name = self._prompt_system(location_name)
 
-        # 3. Wetterdaten-Quelle
-        weather_source = self._prompt_weather_source()
+        # 3. Wetterdaten-Quellen
+        forecast_source, historical_source = self._prompt_weather_source()
 
         # 4. Modell-Auswahl
         model_type, xgboost_installed = self._prompt_model()
@@ -95,8 +95,8 @@ class SetupWizard:
 
         # Config erstellen
         weather_config = WeatherConfig(
-            forecast_provider=weather_source,
-            historical_provider="open-meteo",  # HOSTRADA nur für Training
+            forecast_provider=forecast_source,
+            historical_provider=historical_source,
         )
 
         config = Config(
@@ -121,7 +121,7 @@ class SetupWizard:
             config_path=config_path,
             xgboost_installed=xgboost_installed,
             model_type=model_type,
-            weather_source=weather_source,
+            weather_source=forecast_source,
             run_tuning=run_tuning,
             existing_db_records=self._existing_db_records,
         )
@@ -335,36 +335,68 @@ class SetupWizard:
 
         return peak_kwp, system_name
 
-    def _prompt_weather_source(self) -> str:
-        """Fragt nach der Wetterdaten-Quelle."""
-        self.output("3️⃣  Wetterdaten-Quelle")
+    def _prompt_weather_source(self) -> tuple[str, str]:
+        """Fragt nach der Wetterdaten-Quelle.
+
+        Returns:
+            Tuple (forecast_source, historical_source)
+        """
+        self.output("3️⃣  Wetterdaten-Quellen")
         self.output("")
-        self.output("   Welche Quelle soll für Vorhersagen verwendet werden?")
+
+        # Forecast-Quelle
+        self.output("   A) Vorhersagen (für Prognosen)")
         self.output("")
         self.output("   [1] Open-Meteo (Standard)")
         self.output("       ✓ Kostenlos, weltweit verfügbar")
-        self.output("       ✓ Einfach, keine Konfiguration nötig")
-        self.output("       → Gut für den Einstieg")
         self.output("")
         self.output("   [2] DWD MOSMIX (Deutschland)")
-        self.output("       ✓ Offizielle Daten des Deutschen Wetterdienstes")
-        self.output("       ✓ Oft genauer für Deutschland")
-        self.output("       → Empfohlen wenn du in Deutschland wohnst")
+        self.output("       ✓ Offizielle DWD-Daten, oft genauer")
         self.output("")
 
         while True:
             choice = self.input("   Auswahl [1]: ").strip()
-
             if choice in ("", "1"):
-                self.output("   ✓ Open-Meteo")
-                self.output("")
-                return "open-meteo"
+                forecast_source = "open-meteo"
+                self.output("   ✓ Open-Meteo für Vorhersagen")
+                break
             elif choice == "2":
-                self.output("   ✓ DWD MOSMIX")
-                self.output("")
-                return "mosmix"
+                forecast_source = "mosmix"
+                self.output("   ✓ MOSMIX für Vorhersagen")
+                break
             else:
                 self.output("   ⚠️  Bitte 1 oder 2 eingeben.")
+
+        self.output("")
+
+        # Historical-Quelle
+        self.output("   B) Historische Daten (für Training)")
+        self.output("")
+        self.output("   [1] Open-Meteo (Standard)")
+        self.output("       ✓ Schnell, keine großen Downloads")
+        self.output("       ○ Gute Genauigkeit (~30% MAPE)")
+        self.output("")
+        self.output("   [2] DWD HOSTRADA (Deutschland, empfohlen)")
+        self.output("       ✓ Beste Genauigkeit (~22% MAPE)")
+        self.output("       ⚠ Großer Download (~150 MB/Monat)")
+        self.output("       → Einmalig für Training, lohnt sich!")
+        self.output("")
+
+        while True:
+            choice = self.input("   Auswahl [1]: ").strip()
+            if choice in ("", "1"):
+                historical_source = "open-meteo"
+                self.output("   ✓ Open-Meteo für Training")
+                break
+            elif choice == "2":
+                historical_source = "hostrada"
+                self.output("   ✓ HOSTRADA für Training (bessere Genauigkeit)")
+                break
+            else:
+                self.output("   ⚠️  Bitte 1 oder 2 eingeben.")
+
+        self.output("")
+        return forecast_source, historical_source
 
     def _prompt_model(self) -> tuple[str, bool]:
         """Fragt nach dem Prognose-Modell.
