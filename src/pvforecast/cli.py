@@ -291,11 +291,13 @@ def cmd_fetch_historical(args: argparse.Namespace, config: Config) -> int:
 
     # Warning for HOSTRADA due to massive download size
     if source_name == "hostrada":
-        # Check which months already exist in DB
+        force_download = getattr(args, "force", False)
+
+        # Check which months already exist in DB (skip if --force)
         from pvforecast.db import Database
 
         db = Database(config.db_path)
-        existing_months = db.get_weather_months_with_data()
+        existing_months = db.get_weather_months_with_data() if not force_download else set()
 
         # Calculate requested months
         requested_months: set[tuple[int, int]] = set()
@@ -1223,6 +1225,11 @@ def create_parser() -> argparse.ArgumentParser:
         "--yes",
         action="store_true",
         help="Bestätigung überspringen (für Automatisierung)",
+    )
+    p_fetch_hist.add_argument(
+        "--force",
+        action="store_true",
+        help="Existierende Daten ignorieren und neu herunterladen",
     )
 
     # predict
