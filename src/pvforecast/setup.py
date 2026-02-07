@@ -85,7 +85,7 @@ class SetupWizard:
         peak_kwp, system_name = self._prompt_system(location_name)
 
         # 3. Wetterdaten-Quellen
-        forecast_source, historical_source = self._prompt_weather_source()
+        forecast_source, historical_source, hostrada_local_dir = self._prompt_weather_source()
 
         # 4. Modell-Auswahl
         model_type, xgboost_installed = self._prompt_model()
@@ -94,9 +94,13 @@ class SetupWizard:
         run_tuning = self._prompt_tuning(model_type)
 
         # Config erstellen
+        from pvforecast.config import HOSTRADAConfig
+
+        hostrada_config = HOSTRADAConfig(local_dir=hostrada_local_dir)
         weather_config = WeatherConfig(
             forecast_provider=forecast_source,
             historical_provider=historical_source,
+            hostrada=hostrada_config,
         )
 
         config = Config(
@@ -399,7 +403,63 @@ class SetupWizard:
                 self.output("   ⚠️  Bitte 1 oder 2 eingeben.")
 
         self.output("")
-        return forecast_source, historical_source
+
+        # Bei HOSTRADA: Nach lokalem Verzeichnis fragen
+        hostrada_local_dir = None
+        if historical_source == "hostrada":
+            hostrada_local_dir = self._prompt_hostrada_path()
+
+        return forecast_source, historical_source, hostrada_local_dir
+
+    def _prompt_hostrada_path(self) -> str | None:
+        """Fragt nach lokalem HOSTRADA-Verzeichnis."""
+        self.output("   Hast du bereits HOSTRADA-Dateien heruntergeladen?")
+        self.output("   (NetCDF-Dateien von einem früheren Download)")
+        self.output("")
+
+        response = self.input("   Lokales Verzeichnis angeben? [j/N]: ").strip().lower()
+
+        if response not in ("j", "ja", "y", "yes"):
+            self.output("   → Dateien werden bei Bedarf heruntergeladen")
+            self.output("")
+            return None
+
+        self.output("")
+        self.output("   💡 Standard auf diesem Mac: /Users/Shared/hostrada")
+        self.output("")
+
+        while True:
+            path_str = self.input("   Pfad [/Users/Shared/hostrada]: ").strip()
+
+            if not path_str:
+                path_str = "/Users/Shared/hostrada"
+
+            # Expandiere ~
+            path_str = path_str.strip("'\"")
+            local_path = Path(path_str).expanduser()
+
+            if not local_path.exists():
+                self.output(f"   ⚠️  Verzeichnis existiert nicht: {local_path}")
+                create = self.input("   Erstellen? [j/N]: ").strip().lower()
+                if create in ("j", "ja", "y", "yes"):
+                    try:
+                        local_path.mkdir(parents=True, exist_ok=True)
+                        self.output(f"   ✓ Erstellt: {local_path}")
+                    except Exception as e:
+                        self.output(f"   ❌ Fehler: {e}")
+                        continue
+                else:
+                    continue
+
+            # Prüfe ob NetCDF-Dateien vorhanden
+            nc_files = list(local_path.glob("*.nc"))
+            if nc_files:
+                self.output(f"   ✓ {len(nc_files)} NetCDF-Dateien gefunden")
+            else:
+                self.output("   ℹ️  Noch keine Dateien vorhanden (werden bei Bedarf geladen)")
+
+            self.output("")
+            return str(local_path)
 
     def _prompt_model(self) -> tuple[str, bool]:
         """Fragt nach dem Prognose-Modell.
