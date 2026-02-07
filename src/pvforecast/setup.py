@@ -170,7 +170,7 @@ class SetupWizard:
                 from pvforecast.model import load_model
 
                 model_data = load_model(model_path)
-                found_items.append(f"Modell: {model_data.model_type}, MAPE {model_data.mape:.1f}%")
+                found_items.append(f"Modell: {model_data.model_type}, ~{model_data.mape:.0f}% Abweichung")
             except Exception:
                 found_items.append("Modell: vorhanden")
 
@@ -374,10 +374,10 @@ class SetupWizard:
         self.output("")
         self.output("   [1] Open-Meteo (Standard)")
         self.output("       ✓ Schnell, keine großen Downloads")
-        self.output("       ○ Gute Genauigkeit (~30% MAPE)")
+        self.output("       ○ Typische Abweichung: ~30%")
         self.output("")
         self.output("   [2] DWD HOSTRADA (Deutschland, empfohlen)")
-        self.output("       ✓ Beste Genauigkeit (~22% MAPE)")
+        self.output("       ✓ Typische Abweichung: nur ~22%")
         self.output("       ⚠ Download: ~750 MB/Monat (5 Jahre ≈ 45 GB)")
         self.output("       ✓ Speicher: nur wenige MB (Stream-Processing)")
         self.output("       ⏱ Dauer: ~30 Min bei 50 Mbit/s (5 Jahre)")
@@ -413,10 +413,10 @@ class SetupWizard:
         self.output("   [1] RandomForest (Standard)")
         self.output("       ✓ Keine zusätzliche Installation nötig")
         self.output("       ✓ Schnelles Training")
-        self.output("       ○ Gute Genauigkeit (~30% MAPE)")
+        self.output("       ○ Typische Abweichung: ~30%")
         self.output("")
         self.output("   [2] XGBoost (Empfohlen)")
-        self.output("       ✓ Beste Genauigkeit (~22% MAPE)")
+        self.output("       ✓ Typische Abweichung: nur ~22%")
         self.output("       ✓ State-of-the-Art für Zeitreihen")
         self.output("       ○ Benötigt zusätzliche Installation (~50 MB)")
         self.output("")
