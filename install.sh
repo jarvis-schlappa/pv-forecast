@@ -206,7 +206,8 @@ check_existing_installation() {
         if [[ $has_git -eq 1 && $has_venv -eq 1 && $has_package -eq 1 ]]; then
             echo "   [U] Update (git pull + pip upgrade)"
             echo "   [R] Reparieren (venv neu erstellen)"
-            echo "   [N] Neu installieren (alles löschen)"
+            echo "   [N] Neu installieren (Code löschen, Daten behalten)"
+            echo "   [X] Komplett zurücksetzen (Code + Daten löschen)"
             echo "   [A] Abbrechen"
             echo ""
             read -p "   Auswahl [U]: " -r response
@@ -225,6 +226,10 @@ check_existing_installation() {
                 N)
                     print_info "Lösche $INSTALL_DIR..."
                     rm -rf "$INSTALL_DIR"
+                    return 0  # Signal: Clone nötig
+                    ;;
+                X)
+                    confirm_full_reset
                     return 0  # Signal: Clone nötig
                     ;;
                 A)
@@ -399,6 +404,45 @@ check_wrapper() {
     elif ! "$WRAPPER_PATH" --version &>/dev/null; then
         print_warning "Wrapper funktioniert nicht, erstelle neu..."
         create_wrapper
+    fi
+}
+
+confirm_full_reset() {
+    local config_path="$HOME/.config/pvforecast"
+    local data_path="$HOME/.local/share/pvforecast"
+    
+    echo ""
+    echo -e "   ${RED}⚠️  WARNUNG: Alle Daten werden gelöscht!${NC}"
+    echo ""
+    
+    # Zeige was gelöscht wird
+    if [[ -d "$data_path" ]]; then
+        local db_size=""
+        if [[ -f "$data_path/data.db" ]]; then
+            db_size=$(du -h "$data_path/data.db" 2>/dev/null | cut -f1)
+            echo "   • Datenbank: $data_path/data.db ($db_size)"
+        fi
+        if [[ -f "$data_path/model.pkl" ]]; then
+            echo "   • Modell: $data_path/model.pkl"
+        fi
+    fi
+    if [[ -d "$config_path" ]]; then
+        echo "   • Config: $config_path/"
+    fi
+    echo "   • Code: $INSTALL_DIR/"
+    echo ""
+    
+    read -p "   Wirklich ALLES löschen? [j/N]: " -r response
+    if [[ "$response" =~ ^[jJyY]$ ]]; then
+        print_info "Lösche Daten..."
+        rm -rf "$data_path" 2>/dev/null
+        rm -rf "$config_path" 2>/dev/null
+        print_info "Lösche Code..."
+        rm -rf "$INSTALL_DIR"
+        print_success "Alles gelöscht"
+    else
+        echo "   Abgebrochen."
+        exit 0
     fi
 }
 
