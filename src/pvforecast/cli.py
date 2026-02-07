@@ -594,17 +594,35 @@ def cmd_train(args: argparse.Namespace, config: Config) -> int:
     print(f"📅 Zeitraum: {datetime.fromtimestamp(pv_start)} bis {datetime.fromtimestamp(pv_end)}")
 
     # Historische Wetterdaten laden
-    print("🌤️  Lade historische Wetterdaten...")
-    weather_start = time.perf_counter()
-    try:
-        loaded = ensure_weather_history(db, config.latitude, config.longitude, pv_start, pv_end)
-        weather_elapsed = time.perf_counter() - weather_start
-        if loaded > 0:
-            duration = format_duration(weather_elapsed)
-            print(f"   {loaded} neue Wetterdatensätze geladen in {duration}")
-    except WeatherAPIError as e:
-        print(f"⚠️  Wetter-API Fehler: {e}", file=sys.stderr)
-        print("   Versuche Training mit vorhandenen Daten...", file=sys.stderr)
+    historical_provider = config.weather.historical_provider
+
+    if historical_provider == "hostrada":
+        # HOSTRADA muss separat geladen werden (große Downloads)
+        weather_count_before = db.get_weather_count()
+        if weather_count_before == 0:
+            print("⚠️  HOSTRADA als Quelle konfiguriert, aber keine Wetterdaten vorhanden.")
+            print("   Lade zuerst historische Daten:")
+            print("   pvforecast fetch-historical --source hostrada \\")
+            print("       --start 2019-01-01 --end 2024-12-31")
+            print()
+            print("   Oder nutze Open-Meteo für schnellen Start:")
+            print("   pvforecast train --model xgb  (lädt automatisch von Open-Meteo)")
+            return 1
+        else:
+            print(f"🌤️  Verwende vorhandene Wetterdaten ({weather_count_before:,} Datensätze)")
+    else:
+        # Open-Meteo: Automatisch nachladen
+        print("🌤️  Lade historische Wetterdaten (Open-Meteo)...")
+        weather_start = time.perf_counter()
+        try:
+            loaded = ensure_weather_history(db, config.latitude, config.longitude, pv_start, pv_end)
+            weather_elapsed = time.perf_counter() - weather_start
+            if loaded > 0:
+                duration = format_duration(weather_elapsed)
+                print(f"   {loaded} neue Wetterdatensätze geladen in {duration}")
+        except WeatherAPIError as e:
+            print(f"⚠️  Wetter-API Fehler: {e}", file=sys.stderr)
+            print("   Versuche Training mit vorhandenen Daten...", file=sys.stderr)
 
     weather_count = db.get_weather_count()
     print(f"🌡️  Wetterdatensätze: {weather_count}")
