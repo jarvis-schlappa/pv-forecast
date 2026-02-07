@@ -33,7 +33,7 @@ class ParseError(WeatherSourceError):
 class WeatherRecord:
     """
     Unified weather data record.
-    
+
     All sources convert their native format to this structure.
     """
 
@@ -50,7 +50,7 @@ class WeatherRecord:
 class ForecastSource(ABC):
     """
     Abstract interface for forecast data sources.
-    
+
     Implementations: MOSMIXSource, (legacy: OpenMeteoForecastSource)
     """
 
@@ -58,10 +58,10 @@ class ForecastSource(ABC):
     def fetch_forecast(self, hours: int = 240) -> pd.DataFrame:
         """
         Fetch weather forecast for the next N hours.
-        
+
         Args:
             hours: Number of hours to forecast (max depends on source)
-        
+
         Returns:
             DataFrame with columns:
                 - timestamp: Unix timestamp (UTC)
@@ -72,7 +72,7 @@ class ForecastSource(ABC):
                 - humidity_pct: Humidity [%]
                 - dhi_wm2: Diffuse irradiance [W/m²]
                 - dni_wm2: Direct normal irradiance [W/m²]
-        
+
         Raises:
             DownloadError: If data cannot be fetched
             ParseError: If data format is invalid
@@ -83,13 +83,13 @@ class ForecastSource(ABC):
     def fetch_today(self, tz: str) -> pd.DataFrame:
         """
         Fetch weather data for today (past hours + forecast).
-        
+
         Args:
             tz: Timezone string (e.g., "Europe/Berlin")
-        
+
         Returns:
             DataFrame with same schema as fetch_forecast()
-        
+
         Raises:
             DownloadError: If data cannot be fetched
             ParseError: If data format is invalid
@@ -100,7 +100,7 @@ class ForecastSource(ABC):
 class HistoricalSource(ABC):
     """
     Abstract interface for historical weather data sources.
-    
+
     Implementations: HOSTRADASource, (legacy: OpenMeteoArchiveSource)
     """
 
@@ -108,14 +108,14 @@ class HistoricalSource(ABC):
     def fetch_historical(self, start: date, end: date) -> pd.DataFrame:
         """
         Fetch historical weather data for a date range.
-        
+
         Args:
             start: Start date (inclusive)
             end: End date (inclusive)
-        
+
         Returns:
             DataFrame with same schema as ForecastSource.fetch_forecast()
-        
+
         Raises:
             DownloadError: If data cannot be fetched
             ParseError: If data format is invalid
@@ -126,7 +126,7 @@ class HistoricalSource(ABC):
     def get_available_range(self) -> tuple[date, date] | None:
         """
         Get the available date range for this source.
-        
+
         Returns:
             Tuple of (earliest_date, latest_date) or None if unknown
         """

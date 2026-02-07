@@ -5,8 +5,8 @@ from __future__ import annotations
 import io
 import logging
 import zipfile
-from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from dataclasses import dataclass
+from datetime import datetime
 from math import asin, cos, pi, radians, sin
 from typing import TYPE_CHECKING
 from xml.etree import ElementTree as ET
@@ -54,12 +54,12 @@ DEFAULT_RETRY_DELAY = 2.0
 def _calculate_sun_elevation(timestamp: int, lat: float, lon: float) -> float:
     """
     Calculate sun elevation angle for a given timestamp and location.
-    
+
     Args:
         timestamp: Unix timestamp (UTC)
         lat: Latitude in degrees
         lon: Longitude in degrees
-    
+
     Returns:
         Sun elevation in degrees (-90 to 90, negative = below horizon)
     """
@@ -79,9 +79,7 @@ def _calculate_sun_elevation(timestamp: int, lat: float, lon: float) -> float:
     dec_rad = radians(declination)
     ha_rad = radians(hour_angle)
 
-    sin_elevation = sin(lat_rad) * sin(dec_rad) + cos(lat_rad) * cos(dec_rad) * cos(
-        ha_rad
-    )
+    sin_elevation = sin(lat_rad) * sin(dec_rad) + cos(lat_rad) * cos(dec_rad) * cos(ha_rad)
     sin_elevation = max(-1, min(1, sin_elevation))
 
     return asin(sin_elevation) * 180 / pi
@@ -90,15 +88,15 @@ def _calculate_sun_elevation(timestamp: int, lat: float, lon: float) -> float:
 def estimate_dhi(ghi: float, cloud_cover_pct: float, sun_elevation: float) -> float:
     """
     Estimate DHI from GHI and cloud cover using simplified Erbs model.
-    
+
     MOSMIX doesn't provide DHI, so we estimate it for the ML model's
     diffuse_fraction feature.
-    
+
     Args:
         ghi: Global Horizontal Irradiance [W/m²]
         cloud_cover_pct: Cloud cover [0-100%]
         sun_elevation: Sun elevation angle [degrees]
-    
+
     Returns:
         Estimated Diffuse Horizontal Irradiance [W/m²]
     """
@@ -113,13 +111,7 @@ def estimate_dhi(ghi: float, cloud_cover_pct: float, sun_elevation: float) -> fl
     if kt <= 0.22:
         diffuse_fraction = 1.0 - 0.09 * kt
     elif kt <= 0.80:
-        diffuse_fraction = (
-            0.9511
-            - 0.1604 * kt
-            + 4.388 * kt**2
-            - 16.638 * kt**3
-            + 12.336 * kt**4
-        )
+        diffuse_fraction = 0.9511 - 0.1604 * kt + 4.388 * kt**2 - 16.638 * kt**3 + 12.336 * kt**4
     else:
         diffuse_fraction = 0.165
 
@@ -129,15 +121,15 @@ def estimate_dhi(ghi: float, cloud_cover_pct: float, sun_elevation: float) -> fl
 class MOSMIXSource(ForecastSource):
     """
     DWD MOSMIX weather forecast data source.
-    
+
     MOSMIX provides statistical post-processed forecasts for ~5400 stations
     worldwide, with hourly resolution up to 240 hours (10 days).
-    
+
     Data is published as KMZ files (zipped KML/XML).
-    
+
     Attributes:
         config: MOSMIXConfig with station and connection settings
-    
+
     Example:
         >>> source = MOSMIXSource(MOSMIXConfig(station_id="P0051"))
         >>> forecast = source.fetch_forecast(hours=48)
@@ -159,7 +151,7 @@ class MOSMIXSource(ForecastSource):
     def __init__(self, config: MOSMIXConfig | None = None):
         """
         Initialize MOSMIX source.
-        
+
         Args:
             config: Optional MOSMIXConfig, uses defaults if not provided
         """
@@ -183,13 +175,13 @@ class MOSMIXSource(ForecastSource):
     def _download_kmz(self, url: str) -> bytes:
         """
         Download KMZ file with retry logic.
-        
+
         Args:
             url: URL to download
-        
+
         Returns:
             Raw KMZ bytes
-        
+
         Raises:
             DownloadError: If download fails after retries
         """
@@ -204,9 +196,7 @@ class MOSMIXSource(ForecastSource):
 
             except httpx.HTTPStatusError as e:
                 if e.response.status_code == 404:
-                    raise DownloadError(
-                        f"MOSMIX station {self.config.station_id} not found"
-                    ) from e
+                    raise DownloadError(f"MOSMIX station {self.config.station_id} not found") from e
                 last_error = e
                 logger.warning(f"HTTP error {e.response.status_code}, retry {attempt + 1}")
 
@@ -225,13 +215,13 @@ class MOSMIXSource(ForecastSource):
     def _extract_kml(self, kmz_data: bytes) -> str:
         """
         Extract KML content from KMZ (ZIP) archive.
-        
+
         Args:
             kmz_data: Raw KMZ bytes
-        
+
         Returns:
             KML XML string
-        
+
         Raises:
             ParseError: If KMZ cannot be extracted
         """
@@ -251,14 +241,14 @@ class MOSMIXSource(ForecastSource):
     def _parse_kml(self, kml_content: str, max_hours: int | None = None) -> pd.DataFrame:
         """
         Parse MOSMIX KML to DataFrame.
-        
+
         Args:
             kml_content: KML XML string
             max_hours: Maximum hours to return (None = all)
-        
+
         Returns:
             DataFrame with weather data
-        
+
         Raises:
             ParseError: If KML structure is invalid
         """
@@ -332,15 +322,12 @@ class MOSMIXSource(ForecastSource):
 
         # Calculate sun elevation and estimate DHI
         sun_elevations = [
-            _calculate_sun_elevation(ts, self.config.lat, self.config.lon)
-            for ts in df["timestamp"]
+            _calculate_sun_elevation(ts, self.config.lat, self.config.lon) for ts in df["timestamp"]
         ]
 
         df["dhi_wm2"] = [
             estimate_dhi(ghi, cloud, elev)
-            for ghi, cloud, elev in zip(
-                df["ghi_wm2"], df["cloud_cover_pct"], sun_elevations
-            )
+            for ghi, cloud, elev in zip(df["ghi_wm2"], df["cloud_cover_pct"], sun_elevations)
         ]
 
         # DNI estimation (simplified: DNI = (GHI - DHI) / cos(zenith))
@@ -368,13 +355,13 @@ class MOSMIXSource(ForecastSource):
     def fetch_forecast(self, hours: int = 240) -> pd.DataFrame:
         """
         Fetch MOSMIX forecast for the next N hours.
-        
+
         Args:
             hours: Number of hours (max 240 for MOSMIX)
-        
+
         Returns:
             DataFrame with forecast data
-        
+
         Raises:
             DownloadError: If download fails
             ParseError: If parsing fails
@@ -395,13 +382,13 @@ class MOSMIXSource(ForecastSource):
     def fetch_today(self, tz: str) -> pd.DataFrame:
         """
         Fetch forecast data for today.
-        
+
         Filters the full forecast to only include hours from today
         in the specified timezone.
-        
+
         Args:
             tz: Timezone string (e.g., "Europe/Berlin")
-        
+
         Returns:
             DataFrame with today's forecast
         """
@@ -424,7 +411,7 @@ class MOSMIXSource(ForecastSource):
     def get_issue_time(self) -> datetime | None:
         """
         Get the issue time of the latest MOSMIX forecast.
-        
+
         Returns:
             Issue time as datetime, or None if not available
         """
