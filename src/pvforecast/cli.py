@@ -7,7 +7,7 @@ import json
 import logging
 import sys
 import time
-from datetime import datetime, time as dt_time, timedelta
+from datetime import datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -342,7 +342,7 @@ def cmd_fetch_historical(args: argparse.Namespace, config: Config) -> int:
             print(f"ℹ️  {skipped} Monate bereits in DB, überspringe diese.")
 
         if local_not_in_db:
-            print(f"📁 {len(local_not_in_db)} Monate lokal vorhanden → werden importiert (kein Download)")
+            print(f"📁 {len(local_not_in_db)} Monate lokal → Import (kein Download)")
 
         if need_download:
             months = len(need_download)
@@ -526,7 +526,6 @@ def cmd_predict(args: argparse.Namespace, config: Config) -> int:
 
 def cmd_today(args: argparse.Namespace, config: Config) -> int:
     """Zeigt Prognose für heute (ganzer Tag)."""
-    import pandas as pd
 
     tz = ZoneInfo(config.timezone)
     source_name = getattr(args, "source", None)
@@ -553,7 +552,10 @@ def cmd_today(args: argparse.Namespace, config: Config) -> int:
             # MOSMIX: liefert nur Prognose ab jetzt
             weather_df = source.fetch_today(str(tz))
             if full_day and now_hour > 6:
-                print("ℹ️  MOSMIX liefert nur Prognosen ab jetzt (kein --full möglich).", file=sys.stderr)
+                print(
+                    "ℹ️  MOSMIX liefert nur Prognosen ab jetzt (kein --full möglich).",
+                    file=sys.stderr,
+                )
     except WeatherSourceError as e:
         print(f"❌ Fehler bei Wetterabfrage: {e}", file=sys.stderr)
         return 1
