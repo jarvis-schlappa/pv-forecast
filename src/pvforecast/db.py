@@ -157,3 +157,14 @@ class Database:
                 "SELECT MIN(timestamp), MAX(timestamp) FROM weather_history"
             ).fetchone()
             return (result[0], result[1]) if result else (None, None)
+
+    def get_weather_months_with_data(self) -> set[tuple[int, int]]:
+        """Returns set of (year, month) tuples that have weather data."""
+        with self.connect() as conn:
+            result = conn.execute("""
+                SELECT DISTINCT
+                    CAST(strftime('%Y', timestamp, 'unixepoch') AS INTEGER) as year,
+                    CAST(strftime('%m', timestamp, 'unixepoch') AS INTEGER) as month
+                FROM weather_history
+            """).fetchall()
+            return {(row[0], row[1]) for row in result}
