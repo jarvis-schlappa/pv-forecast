@@ -363,12 +363,14 @@ class TestRunInteractive:
 
         # Mock XGBoost als bereits installiert
         with patch.dict("sys.modules", {"xgboost": MagicMock()}):
-            inputs = iter([
-                "48249",  # PLZ
-                "j",  # Bestätigen
-                "9.92",  # kWp
-                "",  # Name (default)
-            ])
+            inputs = iter(
+                [
+                    "48249",  # PLZ
+                    "j",  # Bestätigen
+                    "9.92",  # kWp
+                    "",  # Name (default)
+                ]
+            )
 
             wizard = SetupWizard(
                 output_func=lambda x: None,
