@@ -46,6 +46,18 @@ system:
   name: "Meine PV-Anlage"   # Name für Anzeige
   peak_kwp: 9.92            # Peak-Leistung in kWp
 
+# Wetterdaten-Quellen
+weather:
+  forecast_provider: open-meteo   # Für Vorhersagen: mosmix | open-meteo
+  historical_provider: open-meteo # Für historische Daten: hostrada | open-meteo
+  
+  # MOSMIX-Einstellungen (DWD Vorhersage)
+  mosmix:
+    station: P0051  # Dülmen - siehe Stationsliste unten
+  
+  # HOSTRADA-Einstellungen (DWD historische Rasterdaten)
+  hostrada: {}  # Nutzt automatisch latitude/longitude
+
 # Zeitzone für Ausgabe
 timezone: Europe/Berlin
 
@@ -79,6 +91,14 @@ paths:
 |-----------|-----|--------|---------|--------------|
 | Datenbank | `--db` | `paths.db` | `~/.local/share/pvforecast/data.db` | SQLite-Datenbank |
 | Modell | - | `paths.model` | `~/.local/share/pvforecast/model.pkl` | Trainiertes Modell |
+
+### Wetterdaten
+
+| Parameter | CLI | Config | Default | Beschreibung |
+|-----------|-----|--------|---------|--------------|
+| Forecast-Provider | `--source` | `weather.forecast_provider` | open-meteo | `mosmix` oder `open-meteo` |
+| Historical-Provider | `--source` | `weather.historical_provider` | open-meteo | `hostrada` oder `open-meteo` |
+| MOSMIX-Station | - | `weather.mosmix.station` | P0051 | MOSMIX-Stationskennung |
 
 ### Sonstige
 
@@ -142,3 +162,68 @@ pvforecast --db ~/pv/anlage2.db --lat 52.52 --lon 13.41 train
 | Modell | `~/.local/share/pvforecast/model.pkl` | Trainiertes ML-Modell |
 
 Die Verzeichnisse werden bei Bedarf automatisch erstellt.
+
+---
+
+## Wetterdaten-Quellen
+
+### Übersicht
+
+| Quelle | Typ | Beschreibung | Auflösung |
+|--------|-----|--------------|-----------|
+| **MOSMIX** | Forecast | DWD Vorhersage für lokale Stationen | Stündlich, 10 Tage |
+| **HOSTRADA** | Historical | DWD Rasterdaten Deutschland | 1 km, stündlich, ab 1995 |
+| **Open-Meteo** | Beides | API-Service (ERA5/ECMWF) | ~11 km, stündlich |
+
+### MOSMIX-Stationen
+
+MOSMIX-Vorhersagen sind für einzelne Stationen verfügbar. Die Station wird über die Kennung konfiguriert:
+
+```yaml
+weather:
+  mosmix:
+    station: P0051  # Dülmen
+```
+
+**Stationsliste:** https://opendata.dwd.de/weather/local_forecasts/mos/MOSMIX_L/single_stations/
+
+**Beispielstationen:**
+
+| Station | Ort |
+|---------|-----|
+| P0051 | Dülmen |
+| 10315 | Berlin-Tegel |
+| 10382 | Berlin-Schönefeld |
+| 10513 | Hamburg-Fuhlsbüttel |
+| 10865 | München-Flughafen |
+
+### HOSTRADA vs Open-Meteo (Performance)
+
+HOSTRADA liefert bessere Trainingsdaten als Open-Meteo:
+
+| Metrik | Open-Meteo | HOSTRADA | Verbesserung |
+|--------|------------|----------|--------------|
+| **MAE** | 126 W | 105 W | -17% |
+| **MAPE** | 31.3% | 21.9% | -9.4 PP |
+| **R²** | 0.948 | 0.974 | +0.026 |
+
+**Empfehlung:**
+- **Training:** HOSTRADA (einmalig, beste Qualität)
+- **Updates:** Open-Meteo (schnell, geringere Latenz)
+- **Forecasts:** MOSMIX oder Open-Meteo (beides gut)
+
+### HOSTRADA Download-Warnung
+
+HOSTRADA lädt komplette Deutschland-Raster herunter (~150 MB/Monat/Parameter). Bei 7 Jahren Daten sind das ~50 GB Download für wenige MB Nutzdaten (nur ein Gridpunkt).
+
+Vor dem Download erscheint eine Warnung:
+
+```
+⚠️  HOSTRADA lädt komplette Deutschland-Raster herunter.
+    Geschätzter Download: ~40.0 GB (7 Jahre × 5 Parameter)
+    Extrahierte Daten: wenige MB (nur Gridpunkt 51.85°N, 7.26°E)
+
+Fortfahren? [y/N]: 
+```
+
+Mit `--yes` wird diese Bestätigung übersprungen (für Automatisierung).
