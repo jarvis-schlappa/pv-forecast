@@ -1,11 +1,14 @@
 # PV-Forecast – Projektstatus
 
-> Letzte Aktualisierung: 2026-02-06
+> Letzte Aktualisierung: 2026-02-07
 
-## 🎯 Aktueller Stand: Feature Engineering abgeschlossen ✅
+## 🎯 Aktueller Stand: DWD-Integration abgeschlossen ✅
 
-MVP + Feature Engineering + Optuna Tuning implementiert.
-MAPE von 41.7% auf 30.1% verbessert (-11.6%).
+MVP + Feature Engineering + Optuna Tuning + **DWD-Datenquellen** implementiert.
+
+**Performance (Open-Meteo → HOSTRADA):**
+- MAPE: 30.1% → **21.9%** (-8.2 PP)
+- MAE: 126 W → **105 W** (-17%)
 
 ---
 
@@ -39,6 +42,7 @@ MAPE von 41.7% auf 30.1% verbessert (-11.6%).
 | #82 | Lag-Features | #86 | ✅ |
 | #83 | peak_kwp Normalisierung | #85 | ✅ |
 | #109 | CI: fetch_today Tests Python 3.11+ | - | ✅ |
+| #123 | DWD-Integration (MOSMIX + HOSTRADA) | - | ✅ |
 
 ## 🔓 Offene Issues
 
@@ -73,12 +77,13 @@ MAPE von 41.7% auf 30.1% verbessert (-11.6%).
 
 ## 🤖 Modell-Performance
 
-| Modell | MAE | MAPE | Anmerkung |
-|--------|-----|------|-----------|
-| XGBoost (tuned) | **144 W** | **30.1%** | ⭐ Empfohlen |
-| RandomForest | ~180 W | ~45% | Basis |
+| Datenquelle | Modell | MAE | MAPE | R² |
+|-------------|--------|-----|------|-----|
+| **DWD HOSTRADA** | XGBoost | **105 W** | **21.9%** | **0.974** |
+| Open-Meteo | XGBoost | 126 W | 30.1% | 0.950 |
+| Open-Meteo | RandomForest | ~180 W | ~45% | ~0.90 |
 
-*MAPE nur für Stunden >100W. Mit Feature Engineering (#80-#83).*
+*Stand: Februar 2026. HOSTRADA liefert +9% bessere MAPE durch höhere räumliche Auflösung (1 km Raster).*
 
 ---
 

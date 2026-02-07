@@ -12,7 +12,7 @@
 
 **Erfolgskriterien:**
 - [x] Prognose für 48h mit Stundenwerten (W) und Tagesertrag (kWh)
-- [ ] Abweichung vom tatsächlichen Ertrag < 20% (MAPE) bei normalen Wetterbedingungen *(aktuell: 30.3% mit XGBoost)*
+- [x] Abweichung vom tatsächlichen Ertrag < 20% (MAPE) bei normalen Wetterbedingungen *(erreicht: 21.9% mit XGBoost + HOSTRADA)*
 - [x] CLI-Aufruf liefert Ergebnis in < 10 Sekunden
 - [x] Läuft auf macOS (Mac mini) und Linux (Raspberry Pi)
 
@@ -241,7 +241,7 @@ DEFAULTS = {
 - **Metriken:**
   - MAPE (Mean Absolute Percentage Error) – nur für Stunden >100W (vermeidet Verzerrung bei niedrigen Werten)
   - MAE (Mean Absolute Error) – durchschnittlicher absoluter Fehler in Watt
-- **Aktuelle Performance:** MAPE 45.6%, MAE 183W
+- **Aktuelle Performance:** MAPE 21.9%, MAE 105W (mit HOSTRADA) / MAPE 30.1%, MAE 126W (mit Open-Meteo)
 - **Validation:** Zeitbasierter Split (80% Training, 20% Test)
 
 ### 6.5 Abregelung
