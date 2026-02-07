@@ -129,7 +129,7 @@ class Config:
                     "use_mosmix_l": self.weather.mosmix.use_mosmix_l,
                 },
                 "hostrada": {
-                    "cache_dir": str(self.weather.hostrada.cache_dir),
+                    "local_dir": self.weather.hostrada.local_dir,
                 },
             },
             # Legacy (deprecated)
@@ -195,8 +195,8 @@ class Config:
 
             if "hostrada" in w:
                 h = w["hostrada"]
-                if "cache_dir" in h:
-                    hostrada_cfg.cache_dir = Path(h["cache_dir"]).expanduser()
+                if "local_dir" in h:
+                    hostrada_cfg.local_dir = h["local_dir"]
 
             kwargs["weather"] = WeatherConfig(
                 forecast_provider=str(w.get("forecast_provider", "mosmix")),
