@@ -229,7 +229,59 @@ pvforecast config --show
 - Tests anpassen
 - Docs aktualisieren
 
-## 6. Neue Dependencies
+## 6. DHI-Schätzung für MOSMIX
+
+MOSMIX liefert kein DHI (Diffusstrahlung). Da das ML-Modell `diffuse_fraction` als Feature nutzt,
+schätzen wir DHI aus GHI + Bewölkung mit dem **Erbs-Modell**.
+
+### 6.1 Implementierung
+
+```python
+# sources/mosmix.py
+
+def estimate_dhi(ghi: float, cloud_cover_pct: float, sun_elevation: float) -> float:
+    """
+    Schätzt DHI aus GHI und Bewölkung (Erbs-Modell, vereinfacht).
+    
+    Args:
+        ghi: Globalstrahlung W/m²
+        cloud_cover_pct: Bewölkung 0-100%
+        sun_elevation: Sonnenhöhe in Grad
+    
+    Returns:
+        Geschätzte Diffusstrahlung W/m² (0 wenn Sonne unter Horizont)
+    """
+    if sun_elevation <= 0 or ghi <= 0:
+        return 0.0
+    
+    # Clearness Index (kt): Verhältnis GHI zu extraterrestrischer Strahlung
+    # Vereinfacht: kt ~ 1 - cloud_cover/100
+    kt = max(0.1, 1.0 - cloud_cover_pct / 100 * 0.8)
+    
+    # Erbs-Modell: Diffuse Fraction basierend auf kt
+    if kt <= 0.22:
+        diffuse_fraction = 1.0 - 0.09 * kt
+    elif kt <= 0.80:
+        diffuse_fraction = 0.9511 - 0.1604 * kt + 4.388 * kt**2 \
+                          - 16.638 * kt**3 + 12.336 * kt**4
+    else:
+        diffuse_fraction = 0.165
+    
+    return ghi * diffuse_fraction
+```
+
+### 6.2 Integration
+
+- DHI-Schätzung erfolgt in `MOSMIXSource._parse_kml()` nach GHI-Konvertierung
+- Wird als `dhi_wm2` im DataFrame zurückgegeben
+- Feature `diffuse_fraction` im ML-Modell funktioniert wie gewohnt
+
+### 6.3 Validierung
+
+Nach Implementierung: Vergleich geschätztes DHI vs. HOSTRADA-echtes DHI für historische Tage.
+Akzeptable Abweichung: MAPE < 30% (DHI ist naturgemäß schwerer vorherzusagen).
+
+## 7. Neue Dependencies
 
 ```toml
 # pyproject.toml
@@ -243,7 +295,7 @@ dependencies = [
 ]
 ```
 
-## 7. Implementierungs-Reihenfolge
+## 8. Implementierungs-Reihenfolge
 
 | Phase | Task | Aufwand | Abhängigkeiten |
 |-------|------|---------|----------------|
@@ -259,7 +311,7 @@ dependencies = [
 | 10 | Docs aktualisieren | 1h | Phase 9 |
 | **Gesamt** | | **~17h** | |
 
-## 8. Risiken & Mitigationen
+## 9. Risiken & Mitigationen
 
 | Risiko | Mitigation |
 |--------|------------|
@@ -268,7 +320,7 @@ dependencies = [
 | NetCDF-Files sehr groß | Chunk-weise laden, lokaler Cache |
 | HOSTRADA-Server langsam | Retry-Logik, Background-Download |
 
-## 9. Design-Entscheidungen
+## 10. Design-Entscheidungen
 
 | Frage | Entscheidung | Begründung |
 |-------|--------------|------------|
@@ -276,7 +328,7 @@ dependencies = [
 | HOSTRADA Granularität | ✅ Monatsweise laden | Einfacher, weniger Requests, besseres Caching |
 | DHI-Schätzung | ⏳ Später (separates Issue) | Modell funktioniert ohne (Fallback 0.0), Feature-Engineering-Optimierung |
 
-## 10. Referenzen
+## 11. Referenzen
 
 - Issue: https://github.com/jarvis-schlappa/pv-forecast/issues/123
 - DWD MOSMIX: https://www.dwd.de/DE/leistungen/met_verfahren_mosmix/met_verfahren_mosmix.html
