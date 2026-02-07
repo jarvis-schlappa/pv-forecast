@@ -278,6 +278,7 @@ update_existing_installation() {
         print_success "git pull"
     else
         print_warning "git pull fehlgeschlagen (evtl. lokale Änderungen)"
+        print_info "Versuche trotzdem pip upgrade..."
     fi
     
     # Pip upgrade
@@ -286,11 +287,33 @@ update_existing_installation() {
         print_success "pip upgrade"
     else
         print_error "pip upgrade fehlgeschlagen"
-        return 1
+        echo ""
+        echo "   Versuche Reparatur mit: install.sh (Option R)"
+        exit 1
+    fi
+    
+    # Wrapper prüfen
+    check_wrapper
+    
+    # Validierung
+    print_info "Prüfe Installation..."
+    if "$WRAPPER_PATH" --version &>/dev/null; then
+        local version
+        version=$("$WRAPPER_PATH" --version 2>/dev/null)
+        print_success "pvforecast $version"
+    else
+        print_error "pvforecast funktioniert nicht"
+        echo ""
+        echo "   Versuche Reparatur mit: install.sh (Option R)"
+        exit 1
     fi
     
     echo ""
     print_success "Update abgeschlossen!"
+    
+    # PATH prüfen
+    check_path
+    
     echo ""
     
     # Frage ob Setup laufen soll
@@ -308,6 +331,12 @@ update_existing_installation() {
 repair_installation() {
     print_step "Repariere Installation..."
     cd "$INSTALL_DIR"
+    
+    # Git aktualisieren falls möglich
+    if [[ -d ".git" ]]; then
+        print_info "Aktualisiere Repository..."
+        git pull --quiet 2>/dev/null || print_warning "git pull übersprungen"
+    fi
     
     # Alte venv löschen
     if [[ -d ".venv" ]]; then
@@ -336,11 +365,25 @@ repair_installation() {
         exit 1
     fi
     
+    # Wrapper prüfen
+    check_wrapper
+    
+    # Validierung
+    print_info "Prüfe Installation..."
+    if "$WRAPPER_PATH" --version &>/dev/null; then
+        local version
+        version=$("$WRAPPER_PATH" --version 2>/dev/null)
+        print_success "pvforecast $version"
+    else
+        print_error "pvforecast funktioniert nicht nach Reparatur"
+        exit 1
+    fi
+    
     echo ""
     print_success "Reparatur abgeschlossen!"
     
-    # Wrapper prüfen
-    check_wrapper
+    # PATH prüfen
+    check_path
     
     echo ""
     run_setup
@@ -468,16 +511,33 @@ run_setup() {
 # Main
 #######################################
 
+validate_installation() {
+    print_step "Prüfe Installation..."
+    if "$WRAPPER_PATH" --version &>/dev/null; then
+        local version
+        version=$("$WRAPPER_PATH" --version 2>/dev/null)
+        print_success "pvforecast $version"
+    else
+        print_error "Installation fehlgeschlagen - pvforecast nicht ausführbar"
+        echo ""
+        echo "   Versuche erneut oder melde einen Bug:"
+        echo "   https://github.com/jarvis-schlappa/pv-forecast/issues"
+        exit 1
+    fi
+}
+
 main() {
     print_header
     check_dependencies
     
     # check_existing_installation gibt 1 zurück wenn Update/Repair durchgeführt wurde
+    # In dem Fall wurde bereits alles erledigt (inkl. exit)
     if check_existing_installation; then
         clone_repository
         create_venv
         install_package
         create_wrapper
+        validate_installation
     fi
     
     check_path
