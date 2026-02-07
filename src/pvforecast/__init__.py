@@ -9,4 +9,7 @@ import warnings
 
 warnings.filterwarnings("ignore", message="urllib3 v2 only supports OpenSSL")
 
-__version__ = "0.2.2-dev"
+try:
+    from pvforecast._version import __version__
+except ImportError:
+    __version__ = "0.0.0+unknown"
