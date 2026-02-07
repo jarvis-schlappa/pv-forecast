@@ -5,6 +5,22 @@ Alle wichtigen Änderungen an diesem Projekt werden hier dokumentiert.
 Das Format basiert auf [Keep a Changelog](https://keepachangelog.com/de/1.0.0/),
 und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
+## [0.2.1] - 2026-02-07
+
+### Behoben
+
+- **HOSTRADA:** `cache_dir` Parameter entfernt (Stream-Processing braucht keinen Cache)
+- **HOSTRADA:** Duplikat-Erkennung - bereits geladene Monate werden übersprungen
+- **CLI:** `--force` Flag für `fetch-historical` um Duplikat-Check zu umgehen
+
+### Hinzugefügt
+
+- **Testkonzept:** `docs/TESTING_REAL_SYSTEM.md` mit 70+ Testfällen
+  - Funktionale Tests für alle CLI-Befehle
+  - Robustheitstests (Datenintegrität, Zeitzonen, Parallelität, Interrupts)
+
+---
+
 ## [0.2.0] - 2026-02-07
 
 ### Hinzugefügt
@@ -106,6 +122,7 @@ Erstes Release von PV-Forecast. 🎉
 
 ---
 
+[0.2.1]: https://github.com/jarvis-schlappa/pv-forecast/releases/tag/v0.2.1
 [0.2.0]: https://github.com/jarvis-schlappa/pv-forecast/releases/tag/v0.2.0
 [0.1.1]: https://github.com/jarvis-schlappa/pv-forecast/releases/tag/v0.1.1
 [0.1.0]: https://github.com/jarvis-schlappa/pv-forecast/releases/tag/v0.1.0
