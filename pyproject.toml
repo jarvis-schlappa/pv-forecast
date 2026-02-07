@@ -58,6 +58,7 @@ packages = ["src/pvforecast"]
 target-version = "py39"
 line-length = 100
 src = ["src", "tests"]
+exclude = ["src/pvforecast/_version.py"]
 
 [tool.ruff.lint]
 select = [
