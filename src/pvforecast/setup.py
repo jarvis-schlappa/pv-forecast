@@ -378,8 +378,10 @@ class SetupWizard:
         self.output("")
         self.output("   [2] DWD HOSTRADA (Deutschland, empfohlen)")
         self.output("       ✓ Beste Genauigkeit (~22% MAPE)")
-        self.output("       ⚠ Großer Download (~150 MB/Monat)")
-        self.output("       → Einmalig für Training, lohnt sich!")
+        self.output("       ⚠ Download: ~750 MB/Monat (5 Jahre ≈ 45 GB)")
+        self.output("       ✓ Speicher: nur wenige MB (Stream-Processing)")
+        self.output("       ⏱ Dauer: ~30 Min bei 50 Mbit/s (5 Jahre)")
+        self.output("       → Einmalig, lohnt sich für bessere Prognosen!")
         self.output("")
 
         while True:
