@@ -569,7 +569,7 @@ class SetupWizard:
                 total_imported = 0
                 for csv_file in files:
                     try:
-                        count = import_csv_files(db, [csv_file])
+                        count = import_csv_files([csv_file], db)
                         total_imported += count
                     except Exception as e:
                         self.output(f"   ⚠️  {csv_file.name}: {e}")
