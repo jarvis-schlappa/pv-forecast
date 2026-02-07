@@ -249,6 +249,7 @@ class SetupWizard:
 
                 if self._prompt_manual_location_fallback():
                     return self._prompt_manual_location()
+                # User declined manual entry, continue loop to retry
 
     def _prompt_manual_location_fallback(self) -> bool:
         """Fragt ob manuelle Eingabe gewünscht ist."""
@@ -526,8 +527,9 @@ class SetupWizard:
         self.output("   Installiere XGBoost...")
 
         try:
+            # Use version constraint from pyproject.toml
             subprocess.run(
-                [sys.executable, "-m", "pip", "install", "xgboost"],
+                [sys.executable, "-m", "pip", "install", "xgboost>=2.0"],
                 check=True,
                 capture_output=True,
                 text=True,

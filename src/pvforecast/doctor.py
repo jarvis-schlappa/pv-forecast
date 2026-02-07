@@ -333,9 +333,10 @@ class Doctor:
             pass
 
     def _check_network(self) -> None:
-        """Prüft Netzwerk-Konnektivität zu Open-Meteo."""
+        """Prüft Netzwerk-Konnektivität zu Wetter-APIs."""
         import httpx
 
+        # Check Open-Meteo
         try:
             with httpx.Client(timeout=5) as client:
                 response = client.get(
@@ -344,25 +345,69 @@ class Doctor:
                 if response.status_code == 200:
                     self._add_result(
                         CheckResult(
-                            name="Netzwerk",
+                            name="Open-Meteo",
                             status="ok",
-                            message="Open-Meteo API erreichbar",
+                            message="API erreichbar",
                         )
                     )
                 else:
                     self._add_result(
                         CheckResult(
-                            name="Netzwerk",
+                            name="Open-Meteo",
                             status="warning",
-                            message=f"Open-Meteo: HTTP {response.status_code}",
+                            message=f"HTTP {response.status_code}",
                         )
                     )
         except httpx.RequestError as e:
             self._add_result(
                 CheckResult(
-                    name="Netzwerk",
+                    name="Open-Meteo",
                     status="warning",
-                    message="Open-Meteo nicht erreichbar",
+                    message="Nicht erreichbar",
+                    detail=str(e)[:50],
+                )
+            )
+
+        # Check DWD (MOSMIX) - only if configured
+        try:
+            config = load_config()
+            if config.weather.forecast_provider == "mosmix":
+                self._check_dwd_mosmix()
+        except Exception:
+            pass  # Config not available, skip DWD check
+
+    def _check_dwd_mosmix(self) -> None:
+        """Prüft DWD MOSMIX Erreichbarkeit."""
+        import httpx
+
+        try:
+            with httpx.Client(timeout=10) as client:
+                # Check if DWD OpenData is reachable
+                response = client.head(
+                    "https://opendata.dwd.de/weather/local_forecasts/mos/MOSMIX_S/"
+                )
+                if response.status_code in (200, 301, 302):
+                    self._add_result(
+                        CheckResult(
+                            name="DWD MOSMIX",
+                            status="ok",
+                            message="OpenData erreichbar",
+                        )
+                    )
+                else:
+                    self._add_result(
+                        CheckResult(
+                            name="DWD MOSMIX",
+                            status="warning",
+                            message=f"HTTP {response.status_code}",
+                        )
+                    )
+        except httpx.RequestError as e:
+            self._add_result(
+                CheckResult(
+                    name="DWD MOSMIX",
+                    status="warning",
+                    message="Nicht erreichbar",
                     detail=str(e)[:50],
                 )
             )

@@ -323,7 +323,7 @@ def cmd_fetch_historical(args: argparse.Namespace, config: Config) -> int:
         # Sort for display
         missing_sorted = sorted(missing_months)
         months = len(missing_months)
-        est_gb = months * 0.15 * 5  # ~150 MB per month per parameter, 5 parameters
+        est_gb = months * 0.75  # ~750 MB per month (5 parameters × ~150 MB each)
 
         print()
         if existing_months & requested_months:
@@ -331,7 +331,7 @@ def cmd_fetch_historical(args: argparse.Namespace, config: Config) -> int:
             print(f"ℹ️  {skipped} Monate bereits in DB, überspringe diese.")
         print("⚠️  HOSTRADA lädt komplette Deutschland-Raster herunter.")
         print(f"    Fehlende Monate: {months}")
-        print(f"    Geschätzter Download: ~{est_gb:.1f} GB ({months} Monate × 5 Parameter)")
+        print(f"    Geschätzter Download: ~{est_gb:.1f} GB (~750 MB/Monat)")
         lat, lon = config.latitude, config.longitude
         print(f"    Extrahierte Daten: wenige MB (nur Gridpunkt {lat:.2f}°N, {lon:.2f}°E)")
         print()
