@@ -9,4 +9,4 @@ import warnings
 
 warnings.filterwarnings("ignore", message="urllib3 v2 only supports OpenSSL")
 
-__version__ = "0.1.0"
+__version__ = "0.2.2-dev"
