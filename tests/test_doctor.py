@@ -155,7 +155,7 @@ class TestDoctorChecks:
             doctor._check_network()
 
         result = doctor.results[0]
-        assert result.name == "Netzwerk"
+        assert result.name == "Open-Meteo"
         assert result.status == "ok"
 
     def test_check_network_error(self):
@@ -172,7 +172,7 @@ class TestDoctorChecks:
             doctor._check_network()
 
         result = doctor.results[0]
-        assert result.name == "Netzwerk"
+        assert result.name == "Open-Meteo"
         assert result.status == "warning"
 
 

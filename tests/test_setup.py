@@ -267,78 +267,101 @@ class TestPromptSystem:
         kwp, _ = wizard._prompt_system("Test")
 
         assert kwp == 2000
-        assert any("1 MW" in str(o) for o in outputs)
+        assert any("ungewöhnlich hoch" in str(o) for o in outputs)
 
 
-class TestPromptXGBoost:
-    """Tests für _prompt_xgboost."""
+class TestPromptModel:
+    """Tests für _prompt_model."""
 
-    @patch("pvforecast.setup.subprocess.run")
-    def test_install_xgboost(self, mock_run):
-        """Test: XGBoost wird installiert."""
-        mock_run.return_value = MagicMock(returncode=0)
+    def test_choose_randomforest(self):
+        """Test: RandomForest wird gewählt."""
+        inputs = iter(["1"])
 
-        inputs = iter(["j"])
+        wizard = SetupWizard(
+            output_func=lambda x: None,
+            input_func=lambda _: next(inputs),
+        )
 
-        # Simuliere dass xgboost nicht installiert ist
-        with patch.dict("sys.modules", {"xgboost": None}):
-            # Force ImportError
-            import sys
+        model_type, xgb_installed = wizard._prompt_model()
 
-            original = sys.modules.get("xgboost")
-            if "xgboost" in sys.modules:
-                del sys.modules["xgboost"]
+        assert model_type == "rf"
 
+    def test_choose_xgboost_when_available(self):
+        """Test: XGBoost wird gewählt wenn bereits installiert."""
+        inputs = iter(["2"])
+
+        # Mock XGBoost als installiert
+        with patch.dict("sys.modules", {"xgboost": MagicMock()}):
             wizard = SetupWizard(
                 output_func=lambda x: None,
                 input_func=lambda _: next(inputs),
             )
 
-            # Mock den Import-Check
-            with patch("builtins.__import__", side_effect=ImportError("No module")):
-                result = wizard._prompt_xgboost()
+            model_type, xgb_installed = wizard._prompt_model()
 
-            # Restore
+        assert model_type == "xgb"
+        assert xgb_installed is True
+
+    @patch("pvforecast.setup.subprocess.run")
+    def test_install_xgboost_on_demand(self, mock_run):
+        """Test: XGBoost wird bei Bedarf installiert."""
+        mock_run.return_value = MagicMock(returncode=0)
+
+        inputs = iter(["2"])  # Wähle XGBoost
+
+        # Simuliere dass xgboost nicht installiert ist
+        import sys
+
+        original = sys.modules.get("xgboost")
+        if "xgboost" in sys.modules:
+            del sys.modules["xgboost"]
+
+        try:
+            with patch("builtins.__import__", side_effect=ImportError("No module")):
+                wizard = SetupWizard(
+                    output_func=lambda x: None,
+                    input_func=lambda _: next(inputs),
+                )
+
+                model_type, xgb_installed = wizard._prompt_model()
+        finally:
             if original:
                 sys.modules["xgboost"] = original
 
-        assert result is True
+        assert model_type == "xgb"
+        assert xgb_installed is True
         mock_run.assert_called_once()
 
-    def test_skip_xgboost(self):
-        """Test: XGBoost-Installation überspringen."""
-        inputs = iter(["n"])
-
-        # Force ImportError für xgboost check
-        with patch("builtins.__import__", side_effect=ImportError("No module")):
-            wizard = SetupWizard(
-                output_func=lambda x: None,
-                input_func=lambda _: next(inputs),
-            )
-
-            result = wizard._prompt_xgboost()
-
-        assert result is False
-
     @patch("pvforecast.setup.subprocess.run")
-    def test_xgboost_install_failure(self, mock_run):
-        """Test: XGBoost-Installation schlägt fehl."""
+    def test_xgboost_install_failure_fallback(self, mock_run):
+        """Test: Bei XGBoost-Installationsfehler Fallback auf RF."""
         import subprocess
 
         mock_run.side_effect = subprocess.CalledProcessError(1, "pip", stderr="Error")
 
-        inputs = iter(["j"])
+        inputs = iter(["2"])  # Wähle XGBoost
 
-        with patch("builtins.__import__", side_effect=ImportError("No module")):
-            outputs = []
-            wizard = SetupWizard(
-                output_func=lambda x: outputs.append(x),
-                input_func=lambda _: next(inputs),
-            )
+        import sys
 
-            result = wizard._prompt_xgboost()
+        original = sys.modules.get("xgboost")
+        if "xgboost" in sys.modules:
+            del sys.modules["xgboost"]
 
-        assert result is False
+        try:
+            with patch("builtins.__import__", side_effect=ImportError("No module")):
+                outputs = []
+                wizard = SetupWizard(
+                    output_func=lambda x: outputs.append(x),
+                    input_func=lambda _: next(inputs),
+                )
+
+                model_type, xgb_installed = wizard._prompt_model()
+        finally:
+            if original:
+                sys.modules["xgboost"] = original
+
+        assert model_type == "rf"  # Fallback
+        assert xgb_installed is False
         assert any("fehlgeschlagen" in str(o) for o in outputs)
 
 
@@ -347,11 +370,18 @@ class TestRunInteractive:
 
     @patch("pvforecast.setup.geocode")
     @patch("pvforecast.setup.get_config_path")
+    @patch("pvforecast.config._default_db_path")
+    @patch("pvforecast.config._default_model_path")
     @patch.object(Path, "mkdir", return_value=None)
-    def test_full_wizard_flow(self, mock_mkdir, mock_config_path, mock_geocode, tmp_path):
+    def test_full_wizard_flow(
+        self, mock_mkdir, mock_model_path, mock_db_path, mock_config_path, mock_geocode, tmp_path
+    ):
         """Test: Vollständiger Wizard-Durchlauf."""
         config_file = tmp_path / "config.yaml"
         mock_config_path.return_value = config_file
+        # Mock DB/Model paths to non-existent locations to avoid finding real data
+        mock_db_path.return_value = tmp_path / "nonexistent.db"
+        mock_model_path.return_value = tmp_path / "nonexistent.pkl"
 
         mock_geocode.return_value = GeoResult(
             latitude=51.83,
@@ -365,10 +395,14 @@ class TestRunInteractive:
         with patch.dict("sys.modules", {"xgboost": MagicMock()}):
             inputs = iter(
                 [
-                    "48249",  # PLZ
+                    "48249",  # 1. PLZ
                     "j",  # Bestätigen
-                    "9.92",  # kWp
+                    "9.92",  # 2. kWp
                     "",  # Name (default)
+                    "1",  # 3. Wetterdaten-Quelle Forecast: Open-Meteo
+                    "1",  # 3. Wetterdaten-Quelle Historical: Open-Meteo
+                    "2",  # 4. Modell: XGBoost
+                    "n",  # 6. Daten importieren: nein
                 ]
             )
 
@@ -384,6 +418,7 @@ class TestRunInteractive:
         assert result.config.peak_kwp == 9.92
         assert "Dülmen" in result.config.system_name
         assert result.config_path == config_file
+        assert result.model_type == "xgb"
 
 
 class TestSetupResult:

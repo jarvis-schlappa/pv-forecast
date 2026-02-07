@@ -474,11 +474,21 @@ install_package() {
     # Upgrade pip first (required for PEP 517 editable installs)
     .venv/bin/pip install --quiet --upgrade pip 2>/dev/null
     
-    # Install package
-    if .venv/bin/pip install --quiet -e . 2>/dev/null; then
+    # Install package (capture stderr for error reporting)
+    local pip_output
+    local pip_exit_code
+    pip_output=$(.venv/bin/pip install --quiet -e . 2>&1)
+    pip_exit_code=$?
+    
+    if [[ $pip_exit_code -eq 0 ]]; then
         print_success "pip install"
     else
         print_error "Installation fehlgeschlagen"
+        if [[ -n "$pip_output" ]]; then
+            echo ""
+            echo "   Fehlerdetails:"
+            echo "$pip_output" | head -10 | sed 's/^/   /'
+        fi
         exit 1
     fi
 }
@@ -489,11 +499,11 @@ create_wrapper() {
     # Create directory if needed
     mkdir -p "$WRAPPER_DIR"
     
-    # Create wrapper script
-    cat > "$WRAPPER_PATH" << 'WRAPPER'
+    # Create wrapper script with dynamic install path
+    cat > "$WRAPPER_PATH" << WRAPPER
 #!/bin/bash
 # pvforecast wrapper - runs pvforecast from venv without activation
-exec "$HOME/pv-forecast/.venv/bin/python" -m pvforecast "$@"
+exec "$INSTALL_DIR/.venv/bin/python" -m pvforecast "\$@"
 WRAPPER
     
     chmod +x "$WRAPPER_PATH"
@@ -540,16 +550,35 @@ run_setup() {
     print_step "Starte Einrichtung..."
     echo ""
     
+    # Check if TTY is available (required for interactive setup)
+    if [[ ! -t 0 ]] && [[ ! -e /dev/tty ]]; then
+        print_warning "Kein interaktives Terminal verfügbar."
+        echo "   Setup später nachholen: pvforecast setup"
+        echo ""
+        return 0
+    fi
+    
     # Run setup wizard with stdin from terminal (not from pipe)
     # This is required when running via: curl ... | bash
     # The wizard shows its own completion message, so we don't need print_completion
-    if "$INSTALL_DIR/.venv/bin/python" -m pvforecast setup < /dev/tty; then
-        # Wizard erfolgreich, zeigt eigene Meldung
-        :
-    else
-        echo ""
-        echo -e "${YELLOW}⚠️  Setup nicht abgeschlossen.${NC}"
-        echo "   Später nachholen: pvforecast setup"
+    if [[ -t 0 ]]; then
+        # Already have TTY
+        if "$INSTALL_DIR/.venv/bin/python" -m pvforecast setup; then
+            :
+        else
+            echo ""
+            echo -e "${YELLOW}⚠️  Setup nicht abgeschlossen.${NC}"
+            echo "   Später nachholen: pvforecast setup"
+        fi
+    elif [[ -e /dev/tty ]]; then
+        # Redirect from /dev/tty (pipe install)
+        if "$INSTALL_DIR/.venv/bin/python" -m pvforecast setup < /dev/tty; then
+            :
+        else
+            echo ""
+            echo -e "${YELLOW}⚠️  Setup nicht abgeschlossen.${NC}"
+            echo "   Später nachholen: pvforecast setup"
+        fi
     fi
 }
 
