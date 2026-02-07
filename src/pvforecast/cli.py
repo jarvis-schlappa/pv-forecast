@@ -356,6 +356,7 @@ def cmd_predict(args: argparse.Namespace, config: Config) -> int:
     import pandas as pd
 
     tz = ZoneInfo(config.timezone)
+    source_name = getattr(args, "source", None)
 
     # Modell laden
     try:
@@ -374,7 +375,15 @@ def cmd_predict(args: argparse.Namespace, config: Config) -> int:
 
     # Wettervorhersage holen
     try:
-        weather_df = fetch_forecast(config.latitude, config.longitude, hours=hours_needed)
+        source = _get_forecast_source(config, source_name)
+        if source is None:
+            # Legacy open-meteo
+            weather_df = fetch_forecast(config.latitude, config.longitude, hours=hours_needed)
+        else:
+            weather_df = source.fetch_forecast(hours=hours_needed)
+    except WeatherSourceError as e:
+        print(f"❌ Fehler bei Wetterabfrage: {e}", file=sys.stderr)
+        return 1
     except WeatherAPIError as e:
         print(f"❌ Fehler bei Wetterabfrage: {e}", file=sys.stderr)
         return 1
@@ -415,6 +424,7 @@ def cmd_predict(args: argparse.Namespace, config: Config) -> int:
 def cmd_today(args: argparse.Namespace, config: Config) -> int:
     """Zeigt Prognose für heute (ganzer Tag)."""
     tz = ZoneInfo(config.timezone)
+    source_name = getattr(args, "source", None)
 
     # Modell laden
     try:
@@ -426,9 +436,18 @@ def cmd_today(args: argparse.Namespace, config: Config) -> int:
 
     today = datetime.now(tz).date()
 
-    # Wetterdaten für heute holen (nutzt Retry-Logic aus weather.py)
+    # Wetterdaten für heute holen
     try:
-        weather_df = fetch_today(config.latitude, config.longitude, tz)
+        source = _get_forecast_source(config, source_name)
+        if source is None:
+            # Legacy open-meteo (nutzt Retry-Logic aus weather.py)
+            weather_df = fetch_today(config.latitude, config.longitude, tz)
+        else:
+            # DWD source - fetch_today returns full day
+            weather_df = source.fetch_today(str(tz))
+    except WeatherSourceError as e:
+        print(f"❌ Fehler bei Wetterabfrage: {e}", file=sys.stderr)
+        return 1
     except WeatherAPIError as e:
         print(f"❌ Fehler bei Wetterabfrage: {e}", file=sys.stderr)
         return 1
@@ -1133,6 +1152,12 @@ def create_parser() -> argparse.ArgumentParser:
         default="table",
         help="Ausgabeformat (default: table)",
     )
+    p_predict.add_argument(
+        "--source",
+        choices=["mosmix", "open-meteo"],
+        default=None,
+        help="Wetter-Datenquelle (default: aus Config)",
+    )
 
     # import
     p_import = subparsers.add_parser("import", help="Importiert E3DC CSV-Dateien")
@@ -1143,7 +1168,13 @@ def create_parser() -> argparse.ArgumentParser:
     )
 
     # today
-    subparsers.add_parser("today", help="Prognose für heute")
+    p_today = subparsers.add_parser("today", help="Prognose für heute")
+    p_today.add_argument(
+        "--source",
+        choices=["mosmix", "open-meteo"],
+        default=None,
+        help="Wetter-Datenquelle (default: aus Config)",
+    )
 
     # train
     p_train = subparsers.add_parser("train", help="Trainiert das ML-Modell")
