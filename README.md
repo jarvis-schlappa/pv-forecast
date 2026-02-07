@@ -5,7 +5,7 @@ Ertragsprognose für Photovoltaik-Anlagen auf Basis historischer Daten und Wette
 ## Funktionen
 
 - 📊 **Prognosen** für heute, morgen und beliebig viele Tage
-- 🌤️ **Wetterintegration** via Open-Meteo API (kostenlos)
+- 🌤️ **Wetterdaten** aus DWD MOSMIX, HOSTRADA oder Open-Meteo
 - 🧠 **ML-basiert** mit RandomForest oder XGBoost
 - 🔧 **Hyperparameter-Tuning** für optimale Ergebnisse
 - 💾 **E3DC Import** (CSV-Export direkt verwendbar)
@@ -160,8 +160,14 @@ ruff check src/
 
 MIT
 
-## Datenquellen
+## Wetterdaten
 
-- **DWD MOSMIX**: Vorhersagen (10 Tage, stündlich)
-- **DWD HOSTRADA**: Historische Daten (ab 1995, 1 km Raster)
-- **Open-Meteo**: Vorhersagen + Historie (Fallback)
+| Quelle | Typ | Beschreibung |
+|--------|-----|--------------|
+| **DWD MOSMIX** | Prognose | 10-Tage-Vorhersage, stündlich, offizielle DWD-Daten |
+| **DWD HOSTRADA** | Historie | Seit 1995, 1 km Raster, ideal für Training |
+| **Open-Meteo** | Beides | Kostenlose API, Fallback, gut für schnelle Updates |
+
+**Empfehlung:**
+- Training: HOSTRADA (beste Datenqualität)
+- Prognose: MOSMIX (offizielle DWD-Vorhersage) oder Open-Meteo (schneller)
