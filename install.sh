@@ -60,6 +60,27 @@ print_info() {
     echo -e "   $1"
 }
 
+# Read from terminal even when piped (curl | bash)
+# Usage: read_tty "prompt" variable_name
+read_tty() {
+    local prompt="$1"
+    local varname="$2"
+    
+    if [[ -t 0 ]]; then
+        # stdin is a terminal
+        read -p "$prompt" -r "$varname"
+    elif [[ -e /dev/tty ]]; then
+        # stdin is piped, but /dev/tty exists
+        read -p "$prompt" -r "$varname" < /dev/tty
+    else
+        # No TTY available - can't get interactive input
+        print_error "Keine interaktive Eingabe möglich."
+        print_info "Führe das Script direkt aus (ohne Pipe):"
+        print_info "  bash <(curl -sSL https://...)"
+        exit 1
+    fi
+}
+
 #######################################
 # Dependency checks
 #######################################
@@ -210,7 +231,7 @@ check_existing_installation() {
             echo "   [X] Komplett zurücksetzen (Code + Daten löschen)"
             echo "   [A] Abbrechen"
             echo ""
-            read -p "   Auswahl [U]: " -r response
+            read_tty "   Auswahl [U]: " response
             response=${response:-U}
             
             response=$(echo "$response" | tr '[:lower:]' '[:upper:]')
@@ -245,7 +266,7 @@ check_existing_installation() {
         elif [[ $has_git -eq 1 ]]; then
             # Git vorhanden aber venv fehlt oder kaputt
             echo "   Installation ist unvollständig. Reparieren?"
-            read -p "   [J/n]: " -r response
+            read_tty "   [J/n]: " response
             if [[ ! "$response" =~ ^[nN]$ ]]; then
                 repair_installation
                 return 1
@@ -258,7 +279,7 @@ check_existing_installation() {
             echo "   [N] Neu installieren (Verzeichnis löschen)"
             echo "   [A] Abbrechen"
             echo ""
-            read -p "   Auswahl [N]: " -r response
+            read_tty "   Auswahl [N]: " response
             response=${response:-N}
             
             response=$(echo "$response" | tr '[:lower:]' '[:upper:]')
@@ -324,7 +345,7 @@ update_existing_installation() {
     echo ""
     
     # Frage ob Setup laufen soll
-    read -p "   Setup-Wizard starten? [j/N]: " -r response
+    read_tty "   Setup-Wizard starten? [j/N]: " response
     if [[ "$response" =~ ^[jJyY]$ ]]; then
         run_setup
     else
@@ -432,7 +453,7 @@ confirm_full_reset() {
     echo "   • Code: $INSTALL_DIR/"
     echo ""
     
-    read -p "   Wirklich ALLES löschen? [j/N]: " -r response
+    read_tty "   Wirklich ALLES löschen? [j/N]: " response
     if [[ "$response" =~ ^[jJyY]$ ]]; then
         print_info "Lösche Daten..."
         rm -rf "$data_path" 2>/dev/null
