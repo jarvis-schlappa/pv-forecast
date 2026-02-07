@@ -77,8 +77,8 @@ src/pvforecast/sources/
 | Config-Erweiterung | ✅ | `config.py` |
 | CLI MOSMIX Integration | ✅ | `cli.py` (`fetch-forecast --source mosmix`) |
 | DB-Schema (mosmix_forecast) | ⏳ | `db.py` |
-| HOSTRADA NetCDF-Parser | ⏳ | `sources/hostrada.py` |
-| CLI HOSTRADA Integration | ⏳ | `cli.py` |
+| HOSTRADA Integration | ⚠️ BLOCKED | Daten erst ab 2024-04 verfügbar! |
+| Hybrid-Strategie | 🔄 | Open-Meteo für Historie, MOSMIX für Forecast |
 | Open-Meteo entfernen | ⏳ | `weather.py` |
 
 ### ⏳ Phase 4: Tests

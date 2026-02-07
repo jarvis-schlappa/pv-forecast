@@ -213,21 +213,33 @@ pvforecast today
 pvforecast config --show
 ```
 
-## 5. Migration: Open-Meteo Entfernung
+## 5. Migration: Hybrid-Strategie
 
-### Phase 1: Parallelbetrieb (optional, 2-4 Wochen)
-- MOSMIX implementieren
-- Beide Sources parallel betreiben
-- Forecasts vergleichen
+### ⚠️ HOSTRADA Einschränkung
+HOSTRADA (DUETT) Strahlungsdaten sind erst **ab April 2024** verfügbar.
+Für historische Daten (2019-2024) muss Open-Meteo beibehalten werden.
 
-### Phase 2: Umstellung
-- Default auf MOSMIX/HOSTRADA
-- Open-Meteo als `--source open-meteo` noch verfügbar
+### Finale Architektur
 
-### Phase 3: Entfernung
-- `weather.py` löschen (oder zu Compatibility-Layer umbauen)
-- Tests anpassen
-- Docs aktualisieren
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    Weather Sources                          │
+├─────────────────────────────────────────────────────────────┤
+│  FORECAST:                                                  │
+│    MOSMIX (Primary) ──────────► 10-Tage Vorhersage         │
+│                                                             │
+│  HISTORICAL:                                                │
+│    Open-Meteo Archive ────────► Training-Daten (2019+)     │
+│    (HOSTRADA optional ab 2024)                              │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### Migration
+
+1. **Phase 1 (done):** MOSMIX für Forecasts implementieren
+2. **Phase 2:** Default forecast_provider auf "mosmix" setzen
+3. **Phase 3:** Open-Meteo für historische Daten behalten (nicht entfernen!)
+4. **Optional:** HOSTRADA als zusätzliche Quelle für Daten ab 2024
 
 ## 6. DHI-Schätzung für MOSMIX
 
