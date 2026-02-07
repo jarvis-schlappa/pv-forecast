@@ -101,17 +101,30 @@ class HOSTRADASource(HistoricalSource):
         return f"{HOSTRADA_BASE_URL}/{param_dir}/{filename}"
 
     def _get_local_path(self, url: str) -> Path | None:
-        """Check if file exists in local_dir."""
+        """Check if file exists in local_dir.
+
+        Supports both exact filenames and prefixed filenames
+        (e.g. from temp downloads: 038739e1cdec_rsds_1hr_...).
+        """
         if not self.local_dir:
             return None
 
         # Extract filename from URL
         filename = url.split("/")[-1]
-        local_path = self.local_dir / filename
 
+        # Try exact match first
+        local_path = self.local_dir / filename
         if local_path.exists():
             logger.debug(f"Found local file: {local_path}")
             return local_path
+
+        # Try with prefix pattern (from temp downloads)
+        # Pattern: *_<original_filename>
+        matches = list(self.local_dir.glob(f"*_{filename}"))
+        if matches:
+            logger.debug(f"Found prefixed local file: {matches[0]}")
+            return matches[0]
+
         return None
 
     def _extract_from_file(self, file_path: Path, var_name: str) -> pd.Series:
