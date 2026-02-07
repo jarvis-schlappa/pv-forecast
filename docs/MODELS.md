@@ -225,16 +225,17 @@ pvforecast evaluate --year 2024
 
 ### Aktuelle Performance
 
-*Mit Feature-Engineering (Issues #80-#83):*
+*Mit Feature-Engineering (Issues #80-#83) und DWD-Integration (#123):*
 
-| Modell | MAE | MAPE | Anmerkung |
-|--------|-----|------|-----------|
-| **XGBoost (tuned)** | **144 W** | **30.1%** | ⭐ Empfohlen |
-| RandomForest | ~180 W | ~45% | Basis |
+| Datenquelle | Modell | MAE | MAPE | R² |
+|-------------|--------|-----|------|-----|
+| **DWD HOSTRADA** | XGBoost | **105 W** | **21.9%** | **0.974** |
+| Open-Meteo | XGBoost | 126 W | 30.1% | 0.950 |
+| Open-Meteo | RandomForest | ~180 W | ~45% | ~0.90 |
 
-**Jahresabweichung:** +3.4% (Prognose vs. tatsächlicher Ertrag 2025)
+**Empfehlung:** HOSTRADA für Training (beste Qualität, 1 km Raster), Open-Meteo für Updates.
 
-*Stand: 2026-02-06, 62k Datensätze (2019-2026)*
+*Stand: 2026-02-07, 62k Datensätze (2019-2026)*
 
 ### Feature-Engineering Fortschritt
 

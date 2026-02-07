@@ -29,6 +29,38 @@ class ConfigValidationError(ValueError):
     pass
 
 
+def _default_hostrada_cache() -> Path:
+    return Path.home() / ".cache" / "pvforecast" / "hostrada"
+
+
+@dataclass
+class MOSMIXConfig:
+    """MOSMIX-spezifische Konfiguration."""
+
+    station_id: str = "P0051"  # Default: Dülmen
+    use_mosmix_l: bool = True  # MOSMIX_L (115 params) vs MOSMIX_S (40 params)
+
+
+@dataclass
+class HOSTRADAConfig:
+    """HOSTRADA-spezifische Konfiguration."""
+
+    cache_dir: Path = field(default_factory=_default_hostrada_cache)
+
+
+@dataclass
+class WeatherConfig:
+    """Weather sources configuration."""
+
+    # Provider selection: "mosmix" | "open-meteo"
+    forecast_provider: str = "mosmix"
+    historical_provider: str = "hostrada"
+
+    # Source-specific configs
+    mosmix: MOSMIXConfig = field(default_factory=MOSMIXConfig)
+    hostrada: HOSTRADAConfig = field(default_factory=HOSTRADAConfig)
+
+
 @dataclass
 class Config:
     """Konfiguration für pvforecast."""
@@ -46,7 +78,10 @@ class Config:
     db_path: Path = field(default_factory=_default_db_path)
     model_path: Path = field(default_factory=_default_model_path)
 
-    # API
+    # Weather sources (new)
+    weather: WeatherConfig = field(default_factory=WeatherConfig)
+
+    # Legacy: weather_provider (deprecated, use weather.forecast_provider)
     weather_provider: str = "open-meteo"
 
     def __post_init__(self) -> None:
@@ -60,9 +95,7 @@ class Config:
                 f"longitude muss zwischen -180 und 180 liegen, ist: {self.longitude}"
             )
         if self.peak_kwp <= 0:
-            raise ConfigValidationError(
-                f"peak_kwp muss positiv sein, ist: {self.peak_kwp}"
-            )
+            raise ConfigValidationError(f"peak_kwp muss positiv sein, ist: {self.peak_kwp}")
         if not self.system_name or not self.system_name.strip():
             raise ConfigValidationError("system_name darf nicht leer sein")
 
@@ -87,6 +120,18 @@ class Config:
                 "db_path": str(self.db_path),
                 "model_path": str(self.model_path),
             },
+            "weather": {
+                "forecast_provider": self.weather.forecast_provider,
+                "historical_provider": self.weather.historical_provider,
+                "mosmix": {
+                    "station_id": self.weather.mosmix.station_id,
+                    "use_mosmix_l": self.weather.mosmix.use_mosmix_l,
+                },
+                "hostrada": {
+                    "cache_dir": str(self.weather.hostrada.cache_dir),
+                },
+            },
+            # Legacy (deprecated)
             "api": {
                 "weather_provider": self.weather_provider,
             },
@@ -134,11 +179,45 @@ class Config:
             if "model_path" in d:
                 kwargs["model_path"] = Path(d["model_path"]).expanduser()
 
-        # API
+        # Weather sources (new format)
+        if "weather" in data:
+            w = data["weather"]
+            mosmix_cfg = MOSMIXConfig()
+            hostrada_cfg = HOSTRADAConfig()
+
+            if "mosmix" in w:
+                m = w["mosmix"]
+                if "station_id" in m:
+                    mosmix_cfg.station_id = str(m["station_id"])
+                if "use_mosmix_l" in m:
+                    mosmix_cfg.use_mosmix_l = bool(m["use_mosmix_l"])
+
+            if "hostrada" in w:
+                h = w["hostrada"]
+                if "cache_dir" in h:
+                    hostrada_cfg.cache_dir = Path(h["cache_dir"]).expanduser()
+
+            kwargs["weather"] = WeatherConfig(
+                forecast_provider=str(w.get("forecast_provider", "mosmix")),
+                historical_provider=str(w.get("historical_provider", "hostrada")),
+                mosmix=mosmix_cfg,
+                hostrada=hostrada_cfg,
+            )
+
+        # Legacy API section (deprecated, for backwards compatibility)
         if "api" in data:
             api = data["api"]
             if "weather_provider" in api:
                 kwargs["weather_provider"] = str(api["weather_provider"])
+                # Also set new config if weather section not present
+                if "weather" not in data:
+                    provider = str(api["weather_provider"])
+                    kwargs["weather"] = WeatherConfig(
+                        forecast_provider=provider,
+                        historical_provider=(
+                            "open-meteo" if provider == "open-meteo" else "hostrada"
+                        ),
+                    )
 
         return cls(**kwargs)
 

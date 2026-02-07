@@ -1,7 +1,5 @@
 """Tests für db.py."""
 
-
-
 from pvforecast.db import Database
 
 
