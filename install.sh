@@ -212,7 +212,8 @@ check_existing_installation() {
             read -p "   Auswahl [U]: " -r response
             response=${response:-U}
             
-            case "${response^^}" in
+            response=$(echo "$response" | tr '[:lower:]' '[:upper:]')
+            case "$response" in
                 U)
                     update_existing_installation
                     return 1  # Signal: kein Clone nötig
@@ -255,7 +256,8 @@ check_existing_installation() {
             read -p "   Auswahl [N]: " -r response
             response=${response:-N}
             
-            if [[ "${response^^}" == "N" ]]; then
+            response=$(echo "$response" | tr '[:lower:]' '[:upper:]')
+            if [[ "$response" == "N" ]]; then
                 print_info "Lösche $INSTALL_DIR..."
                 rm -rf "$INSTALL_DIR"
                 return 0
