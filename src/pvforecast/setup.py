@@ -170,7 +170,8 @@ class SetupWizard:
                 from pvforecast.model import load_model
 
                 model_data = load_model(model_path)
-                found_items.append(f"Modell: {model_data.model_type}, ~{model_data.mape:.0f}% Abweichung")
+                mtype, mape = model_data.model_type, model_data.mape
+                found_items.append(f"Modell: {mtype}, ~{mape:.0f}% Abweichung")
             except Exception:
                 found_items.append("Modell: vorhanden")
 
@@ -576,11 +577,33 @@ class SetupWizard:
 
             # Entferne Anführungszeichen (von Drag&Drop)
             path_str = path_str.strip("'\"")
-            import_path = Path(path_str).expanduser()
 
-            if not import_path.exists():
-                self.output(f"   ⚠️  Pfad existiert nicht: {import_path}")
-                continue
+            # Expandiere ~ und Wildcards
+            import glob as glob_module
+
+            expanded_path = str(Path(path_str).expanduser())
+
+            # Prüfe ob Wildcards vorhanden
+            if "*" in expanded_path or "?" in expanded_path:
+                # Glob-Expansion für Wildcards
+                matched_paths = glob_module.glob(expanded_path)
+                if not matched_paths:
+                    self.output(f"   ⚠️  Keine Dateien gefunden für: {path_str}")
+                    continue
+                files = [Path(p) for p in matched_paths if p.endswith((".csv", ".CSV"))]
+                if not files:
+                    self.output(f"   ⚠️  Keine CSV-Dateien gefunden für: {path_str}")
+                    continue
+            else:
+                import_path = Path(expanded_path)
+                if not import_path.exists():
+                    self.output(f"   ⚠️  Pfad existiert nicht: {import_path}")
+                    continue
+
+                if import_path.is_file():
+                    files = [import_path]
+                else:
+                    files = list(import_path.glob("*.csv")) + list(import_path.glob("*.CSV"))
 
             # Import durchführen
             try:
@@ -588,11 +611,6 @@ class SetupWizard:
                 from pvforecast.db import Database
 
                 db = Database(config.db_path)
-
-                if import_path.is_file():
-                    files = [import_path]
-                else:
-                    files = list(import_path.glob("*.csv")) + list(import_path.glob("*.CSV"))
 
                 if not files:
                     self.output(f"   ⚠️  Keine CSV-Dateien gefunden in: {import_path}")
