@@ -545,16 +545,15 @@ def cmd_today(args: argparse.Namespace, config: Config) -> int:
 
     # Wetterdaten für heute holen
     try:
-        if full_day:
-            # Bei --full: Open-Meteo verwenden (hat past_hours für vergangene Stunden)
-            # MOSMIX liefert nur Prognosen ab jetzt
+        source = _get_forecast_source(config, source_name)
+        if source is None:
+            # Open-Meteo: fetch_today liefert ganzen Tag (mit past_hours)
             weather_df = fetch_today(config.latitude, config.longitude, tz)
         else:
-            source = _get_forecast_source(config, source_name)
-            if source is None:
-                weather_df = fetch_today(config.latitude, config.longitude, tz)
-            else:
-                weather_df = source.fetch_today(str(tz))
+            # MOSMIX: liefert nur Prognose ab jetzt
+            weather_df = source.fetch_today(str(tz))
+            if full_day and now_hour > 6:
+                print("ℹ️  MOSMIX liefert nur Prognosen ab jetzt (kein --full möglich).", file=sys.stderr)
     except WeatherSourceError as e:
         print(f"❌ Fehler bei Wetterabfrage: {e}", file=sys.stderr)
         return 1
@@ -571,8 +570,6 @@ def cmd_today(args: argparse.Namespace, config: Config) -> int:
     print()
     print(f"PV-Prognose für heute ({today.strftime('%d.%m.%Y')})")
     print(f"{config.system_name} ({config.peak_kwp} kWp)")
-    if full_day:
-        print("  (--full: inkl. vergangener Stunden)")
     print()
     print("═" * 50)
     print(f"  Erwarteter Tagesertrag:  {forecast.total_kwh:>6.1f} kWh")
@@ -588,7 +585,7 @@ def cmd_today(args: argparse.Namespace, config: Config) -> int:
         if local.hour == now_hour:
             marker = " ◄"
         elif local.hour < now_hour:
-            marker = " (vergangen)"
+            marker = " ○"  # vergangen (kurz)
         else:
             marker = ""
         if h.production_w > 0 or 6 <= local.hour <= 20:
