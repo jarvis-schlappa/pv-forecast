@@ -37,11 +37,15 @@
 - Format: Semikolon-CSV, deutsches Datumsformat
 - Key-Spalte: `Solarproduktion [W]`
 
-**Wetterdaten:**
-- Quelle: Open-Meteo API (kostenlos)
-- Historisch: Archive API (ERA5, ab 1940)
-- Vorhersage: Forecast API (bis 16 Tage)
-- Relevante Parameter: siehe Abschnitt 6.2
+**Wetterdaten (Multi-Source):**
+
+| Quelle | Typ | Beschreibung |
+|--------|-----|--------------|
+| **DWD MOSMIX** | Forecast | Offizielle DWD-Vorhersage, +10 Tage, stündlich |
+| **DWD HOSTRADA** | Historisch | Strahlungsdaten 1km-Raster, ab 1995 |
+| **Open-Meteo** | Beide | Fallback, kostenlos, weltweit |
+
+Konfigurierbar via `config.yaml` (forecast_provider, historical_provider).
 
 ---
 
@@ -51,19 +55,22 @@
 ┌─────────────────────────────────────────────────────────────┐
 │                        CLI Interface                         │
 │                     pvforecast [command]                     │
+│   (cli/__init__.py, cli/commands.py, cli/parser.py, ...)    │
 └─────────────────────┬───────────────────────────────────────┘
                       │
 ┌─────────────────────▼───────────────────────────────────────┐
-│                      Core Module                             │
+│                      Core Modules                            │
 ├──────────────┬──────────────┬───────────────────────────────┤
-│  DataLoader  │ WeatherClient│   Model                       │
-│  (CSV→SQLite)│ (Open-Meteo) │  (Train/Predict)              │
+│  DataLoader  │   Sources    │   Model                       │
+│  (CSV→SQLite)│ (MOSMIX,     │  (Train/Predict)              │
+│              │  HOSTRADA,   │  (RF, XGBoost)                │
+│              │  Open-Meteo) │                               │
 └──────────────┴──────────────┴───────────────────────────────┘
                       │
 ┌─────────────────────▼───────────────────────────────────────┐
 │                     Storage Layer                            │
-│                   SQLite Database                            │
-│         (pv_readings + weather_history + cache)              │
+│              SQLite Database (WAL Mode)                      │
+│         (pv_readings + weather_history)                      │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -71,28 +78,32 @@
 
 | Modul | Verantwortung |
 |-------|---------------|
-| `cli.py` | Kommandozeilen-Interface (argparse) + Output-Formatierung |
+| `cli/` | CLI Package (commands, parser, formatters, helpers) |
+| `sources/` | Wetter-Sources (MOSMIX, HOSTRADA, Open-Meteo) |
 | `data_loader.py` | Import & Normalisierung der E3DC-CSVs |
-| `weather.py` | Open-Meteo API Client (historisch + Forecast) |
-| `model.py` | ML-Modell (Training & Prediction) |
-| `config.py` | Konfiguration (Defaults + CLI-Override) |
-| `db.py` | SQLite Datenbankzugriff |
+| `weather.py` | Wetter-Utilities (ensure_weather_history) |
+| `model.py` | ML-Modell (Training, Prediction, Evaluation) |
+| `config.py` | YAML-Konfiguration + CLI-Override |
+| `db.py` | SQLite Datenbankzugriff (WAL Mode) |
+| `doctor.py` | System-Diagnose |
+| `setup.py` | Interaktiver Setup-Wizard |
+| `validation.py` | Input-Validierung |
 
 ### 3.2 Datenfluss
 
 ```
 [Training]
-E3DC CSV ──► DataLoader ──► SQLite ◄── WeatherClient ◄── Open-Meteo
-                              │            (hist.)        Archive API
+E3DC CSV ──► DataLoader ──► SQLite ◄── Sources ◄── HOSTRADA / Open-Meteo
+                              │         (hist.)
                               ▼
                            Merge (JOIN on timestamp)
                               │
                               ▼
-                         Train ML ──► model.pkl
+                      Train RF/XGBoost ──► model.pkl
 
 [Prediction]
-Open-Meteo ──► WeatherClient ──► model.pkl ──► Forecast ──► CLI Output
-Forecast API                      predict()     (strukturiert)
+MOSMIX / ──► Sources ──► model.pkl ──► Forecast ──► CLI Output
+Open-Meteo    fetch()     predict()   (strukturiert)
 ```
 
 ---
@@ -176,13 +187,16 @@ CREATE TABLE pv_readings (
     consumption_w   INTEGER               -- Hausverbrauch [W]
 );
 
--- Historische Wetterdaten (von Open-Meteo)
+-- Historische Wetterdaten (HOSTRADA / Open-Meteo)
 CREATE TABLE weather_history (
     timestamp           INTEGER PRIMARY KEY,  -- Unix timestamp (UTC)
     ghi_wm2             REAL NOT NULL,        -- Globalstrahlung W/m²
+    dhi_wm2             REAL,                 -- Diffusstrahlung W/m²
+    dni_wm2             REAL,                 -- Direktstrahlung W/m²
     cloud_cover_pct     INTEGER,              -- Bewölkung %
     temperature_c       REAL,                 -- Temperatur °C
-    sun_elevation_deg   REAL                  -- Sonnenhöhe °
+    humidity_pct        REAL,                 -- Luftfeuchtigkeit %
+    wind_speed_ms       REAL                  -- Windgeschwindigkeit m/s
 );
 
 -- Index für schnelle Zeitbereichs-Abfragen
@@ -197,6 +211,7 @@ CREATE INDEX idx_weather_timestamp ON weather_history(timestamp);
 | Intern (DB, Model) | **UTC** (Unix timestamps) |
 | E3DC CSV Input | Europe/Berlin → konvertieren zu UTC |
 | CLI Output | Europe/Berlin (lokale Anzeige) |
+| MOSMIX / HOSTRADA | UTC (DWD liefert UTC) |
 | Open-Meteo API | UTC (nativ) |
 
 ### 5.3 Defaults
@@ -294,23 +309,20 @@ def import_to_db(df: pd.DataFrame, db_path: Path) -> int:
     """Importiert DataFrame in SQLite. Returns: Anzahl neue Zeilen."""
 
 
-# === weather.py ===
-def fetch_historical(
-    lat: float, lon: float, 
-    start: date, end: date
-) -> pd.DataFrame:
-    """
-    Holt historische Wetterdaten von Open-Meteo.
+# === sources/base.py ===
+class WeatherSource(Protocol):
+    """Abstrakte Basis für Wetter-Sources."""
     
-    Returns:
-        DataFrame mit: timestamp (UTC), ghi_wm2, cloud_cover_pct, temperature_c
-    """
+    def fetch_forecast(self, hours: int = 48) -> pd.DataFrame:
+        """Holt Wettervorhersage."""
+        ...
+    
+    def fetch_historical(self, start: date, end: date) -> pd.DataFrame:
+        """Holt historische Wetterdaten."""
+        ...
 
-def fetch_forecast(
-    lat: float, lon: float, 
-    hours: int = 48
-) -> pd.DataFrame:
-    """Holt Wettervorhersage. Gleiches Schema wie fetch_historical."""
+# === sources/mosmix.py, sources/hostrada.py, sources/openmeteo.py ===
+# Implementieren WeatherSource Protocol
 
 
 # === model.py ===
@@ -355,7 +367,7 @@ def save_model(model: Pipeline, path: Path) -> None:
 | HTTP | `httpx` | Modern, async-fähig (für später) |
 | Tests | `pytest` | Standard |
 
-### 8.1 Dependencies (minimal)
+### 8.1 Dependencies
 
 ```toml
 [project]
@@ -363,13 +375,17 @@ dependencies = [
     "pandas>=2.0",
     "scikit-learn>=1.3",
     "httpx>=0.25",
+    "pyyaml>=6.0",
+    "xarray>=2024.1",      # HOSTRADA NetCDF
+    "netCDF4>=1.6",        # HOSTRADA NetCDF
+    "scipy>=1.11",
 ]
 
 [project.optional-dependencies]
-dev = [
-    "pytest>=7.0",
-    "ruff>=0.1",
-]
+xgb = ["xgboost>=2.0"]
+tune = ["optuna>=3.0"]
+physics = ["pvlib>=0.10.0"]
+dev = ["pytest>=8.0", "pytest-cov>=4.0", "ruff>=0.4"]
 ```
 
 ### 8.2 Projektstruktur
@@ -382,20 +398,35 @@ pv-forecast/
 ├── src/
 │   └── pvforecast/
 │       ├── __init__.py
-│       ├── __main__.py      # Entry point: python -m pvforecast
-│       ├── cli.py           # CLI commands + formatting
-│       ├── config.py        # Defaults + CLI-Override
-│       ├── db.py            # SQLite helpers
-│       ├── data_loader.py   # CSV import
-│       ├── weather.py       # Open-Meteo client
-│       └── model.py         # ML model
+│       ├── __main__.py         # Entry point
+│       ├── cli/                # CLI Package
+│       │   ├── __init__.py     # main(), Entry Point
+│       │   ├── commands.py     # cmd_* Funktionen
+│       │   ├── parser.py       # Argument-Parser
+│       │   ├── formatters.py   # Output-Formatierung
+│       │   └── helpers.py      # Source-Helper
+│       ├── sources/            # Wetter-Sources
+│       │   ├── base.py         # WeatherSource Protocol
+│       │   ├── mosmix.py       # DWD MOSMIX
+│       │   ├── hostrada.py     # DWD HOSTRADA
+│       │   └── openmeteo.py    # Open-Meteo (Fallback)
+│       ├── config.py           # YAML-Konfiguration
+│       ├── db.py               # SQLite (WAL Mode)
+│       ├── data_loader.py      # CSV Import
+│       ├── weather.py          # Wetter-Utilities
+│       ├── model.py            # ML (RF, XGBoost)
+│       ├── doctor.py           # System-Diagnose
+│       ├── setup.py            # Setup-Wizard
+│       └── validation.py       # Input-Validierung
 ├── tests/
-│   ├── conftest.py          # Fixtures
-│   ├── test_data_loader.py
-│   ├── test_weather.py
-│   └── test_model.py
-└── data/
-    └── .gitkeep
+│   ├── conftest.py
+│   ├── test_*.py               # ~240 Tests
+│   └── test_e2e.py             # End-to-End Tests
+└── docs/
+    ├── CLI.md
+    ├── CONFIG.md
+    ├── DATA.md
+    └── MODELS.md
 ```
 
 ---
@@ -478,20 +509,21 @@ class ModelNotFoundError(PVForecastError):
 - [x] Projektsetup (pyproject.toml, venv)
 - [x] DB-Schema + Migrations
 - [x] data_loader.py
-- [x] weather.py
+- [x] sources/ (MOSMIX, HOSTRADA, Open-Meteo)
 - [x] model.py (RandomForest + XGBoost)
-- [x] cli.py
-- [ ] README.md aktualisieren (#20)
+- [x] cli/ Package (Refactoring)
+- [x] README.md
 
 ### 🧪 Tester
-- [x] Unit Tests pro Modul (65 Tests)
-- [ ] Integration Test (End-to-End) (#21)
+- [x] Unit Tests pro Modul (~240 Tests)
+- [x] Integration Tests (End-to-End)
 - [x] Edge Cases (leere DB, API-Fehler, fehlende Daten)
-- [ ] Performance-Test (< 10s Ziel)
+- [x] Performance-Test (< 10s Ziel erreicht)
 
 ### 🔒 Security
 - [x] Keine Secrets im Code
-- [ ] Input-Validierung (Pfade, Koordinaten) (#22)
+- [x] Input-Validierung (Pfade, Koordinaten)
+- [x] SQL Injection Prevention (parametrisierte Queries)
 - [x] API-Rate-Limiting beachtet (Retry mit Backoff + Jitter)
 
 ---
@@ -520,23 +552,31 @@ class ModelNotFoundError(PVForecastError):
 5. ✅ `weather.py` – Open-Meteo Client
 6. ✅ `model.py` – RandomForest Training/Predict
 7. ✅ `cli.py` – predict, import, train, status
-8. 🔲 README.md (#20)
+8. ✅ README.md
 
 ### Phase 2: Polish ✅
 - ✅ Bessere Evaluation-Metriken (`evaluate` Befehl)
-- ✅ XGBoost als Alternative (#6, PR #19)
-- ✅ Caching/Performance optimieren (Bulk Insert #11)
-- ✅ Error-Handling verbessern (Retry-Logic #2, #12)
-- ✅ Config-File Support (YAML, #4)
-- 🔲 Input-Validierung (#22)
-- 🔲 Integration Tests (#21)
+- ✅ XGBoost als Alternative
+- ✅ Caching/Performance optimieren (Bulk Insert, itertuples)
+- ✅ Error-Handling verbessern (Retry-Logic + Jitter)
+- ✅ Config-File Support (YAML)
+- ✅ Input-Validierung
+- ✅ Integration Tests (E2E)
+- ✅ Hyperparameter-Tuning (tune Befehl, Optuna)
 
-### Phase 3: Erweiterungen (später)
-- 🔲 Automatische tägliche Updates (#23)
+### Phase 3: DWD-Integration ✅
+- ✅ MOSMIX Forecast-Source
+- ✅ HOSTRADA Historical-Source
+- ✅ Sources-Framework (abstrakte Basis)
+- ✅ Open-Meteo als Fallback behalten
+- ✅ CLI Refactoring (cli/ Package)
+
+### Phase 4: Erweiterungen (offen)
+- 🔲 Home Assistant Integration
+- 🔲 Automatische tägliche Updates
 - 🔲 Visualisierung (Charts)
 - 🔲 Web-UI oder TUI
-- 🔲 Hyperparameter-Tuning (#18)
 
 ---
 
-*Erstellt: 2026-02-04 | Version: 0.2 (Architekt-Review)*
+*Erstellt: 2026-02-04 | Version: 0.4.0 (Stand: 2026-02-08)*

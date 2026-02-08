@@ -5,6 +5,53 @@ Alle wichtigen Änderungen an diesem Projekt werden hier dokumentiert.
 Das Format basiert auf [Keep a Changelog](https://keepachangelog.com/de/1.0.0/),
 und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
+## [0.4.0] - 2026-02-08
+
+### Hinzugefügt
+
+- **`--quiet` Flag** – Reduzierte Ausgabe für Skripte und Cronjobs (#134, #142, #144)
+  - `pvforecast today --quiet` → `12.4 kWh`
+  - `pvforecast train --quiet` → `✅ Training: MAPE 30.1%, MAE 144W`
+  - Verfügbar für: today, train, tune, import
+
+- **`--since` Filter** – Training/Tuning nur mit Daten ab Jahr X (#76)
+  - `pvforecast train --since 2022`
+  - `pvforecast tune --since 2023`
+
+- **SQLite WAL Mode** – Bessere Concurrency bei parallelen Zugriffen (#133)
+
+- **MOSMIX Humidity** – Berechnet Luftfeuchtigkeit aus Taupunkt (#146)
+
+### Geändert
+
+- **CLI Refactoring** – `cli.py` (1654 LOC) aufgeteilt in `cli/` Package (#131, #148)
+  - `cli/commands.py` – Business-Logik
+  - `cli/parser.py` – Argument-Parsing
+  - `cli/formatters.py` – Ausgabe-Formatierung
+  - `cli/helpers.py` – Source-Helper
+
+- **Open-Meteo Migration** – In Sources-Framework integriert (#147)
+
+- **`load_training_data()` extrahiert** – Bessere Modularität in model.py (#145)
+
+- **Performance:** `itertuples()` statt `iterrows()` (~3x schneller) (#135, #138)
+
+### Behoben
+
+- **Security: SQL Injection** – Parametrisierte Queries für `--since` Filter (#113, #141)
+- **`mode=today` mit Produktions-Lags** – Korrekte Prognose für heute (#129, #143)
+- **`model_version` in Forecast** – Version wird korrekt übergeben (#128, #140)
+- **`cmd_reset` AttributeError** – Robustere Fehlerbehandlung (#127, #139)
+- **`degrees()` statt Konstante** – Korrektes Radians-zu-Degrees (#115, #136)
+- **`--quiet` nach Subcommand** – Flag-Position flexibel (#144)
+
+### Dokumentation
+
+- **Docs Cleanup** – 8 veraltete Planungsdokumente entfernt (-62%)
+- **CLI.md aktualisiert** – `--quiet` und `--since` dokumentiert
+
+---
+
 ## [0.3.0] - 2026-02-07
 
 ### Hinzugefügt
@@ -156,6 +203,7 @@ Erstes Release von PV-Forecast. 🎉
 
 ---
 
+[0.4.0]: https://github.com/jarvis-schlappa/pv-forecast/releases/tag/v0.4.0
 [0.3.0]: https://github.com/jarvis-schlappa/pv-forecast/releases/tag/v0.3.0
 [0.2.1]: https://github.com/jarvis-schlappa/pv-forecast/releases/tag/v0.2.1
 [0.2.0]: https://github.com/jarvis-schlappa/pv-forecast/releases/tag/v0.2.0
