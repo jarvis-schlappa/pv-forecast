@@ -54,6 +54,15 @@ from pvforecast.weather import (
 
 logger = logging.getLogger(__name__)
 
+# Module-level quiet flag (set by main())
+_quiet_mode = False
+
+
+def qprint(*args, **kwargs) -> None:
+    """Print only if not in quiet mode. Use for progress/info messages."""
+    if not _quiet_mode:
+        print(*args, **kwargs)
+
 
 def _get_forecast_source(config: Config, source_override: str | None = None):
     """
@@ -591,31 +600,35 @@ def cmd_today(args: argparse.Namespace, config: Config) -> int:
     )
 
     # Ausgabe
-    print()
-    print(f"PV-Prognose für heute ({today.strftime('%d.%m.%Y')})")
-    print(f"{config.system_name} ({config.peak_kwp} kWp)")
-    print()
-    print("═" * 50)
-    print(f"  Erwarteter Tagesertrag:  {forecast.total_kwh:>6.1f} kWh")
-    print("═" * 50)
-    print()
-    print("  Stundenwerte")
-    print("  " + "─" * 35)
+    if _quiet_mode:
+        # Kompakte Ausgabe bei --quiet
+        print(f"{forecast.total_kwh:.1f} kWh")
+    else:
+        print()
+        print(f"PV-Prognose für heute ({today.strftime('%d.%m.%Y')})")
+        print(f"{config.system_name} ({config.peak_kwp} kWp)")
+        print()
+        print("═" * 50)
+        print(f"  Erwarteter Tagesertrag:  {forecast.total_kwh:>6.1f} kWh")
+        print("═" * 50)
+        print()
+        print("  Stundenwerte")
+        print("  " + "─" * 35)
 
-    for h in forecast.hourly:
-        local = h.timestamp.astimezone(tz)
-        emoji = get_weather_emoji(h.cloud_cover_pct)
-        # Markiere aktuelle Stunde und vergangene
-        if local.hour == now_hour:
-            marker = " ◄"
-        elif local.hour < now_hour:
-            marker = " ○"  # vergangen (kurz)
-        else:
-            marker = ""
-        if h.production_w > 0 or 6 <= local.hour <= 20:
-            print(f"  {local.strftime('%H:%M')}   {h.production_w:>5} W   {emoji}{marker}")
+        for h in forecast.hourly:
+            local = h.timestamp.astimezone(tz)
+            emoji = get_weather_emoji(h.cloud_cover_pct)
+            # Markiere aktuelle Stunde und vergangene
+            if local.hour == now_hour:
+                marker = " ◄"
+            elif local.hour < now_hour:
+                marker = " ○"  # vergangen (kurz)
+            else:
+                marker = ""
+            if h.production_w > 0 or 6 <= local.hour <= 20:
+                print(f"  {local.strftime('%H:%M')}   {h.production_w:>5} W   {emoji}{marker}")
 
-    print()
+        print()
     return 0
 
 
@@ -630,9 +643,12 @@ def cmd_import(args: argparse.Namespace, config: Config) -> int:
     total = import_csv_files(csv_paths, db)
     elapsed = time.perf_counter() - start_time
 
-    print(f"✅ Import abgeschlossen in {format_duration(elapsed)}: {total} neue Datensätze")
-    print(f"   Datenbank: {config.db_path}")
-    print(f"   Gesamt in DB: {db.get_pv_count()} PV-Datensätze")
+    if _quiet_mode:
+        print(f"✅ Import: {total} neue Datensätze")
+    else:
+        print(f"✅ Import abgeschlossen in {format_duration(elapsed)}: {total} neue Datensätze")
+        print(f"   Datenbank: {config.db_path}")
+        print(f"   Gesamt in DB: {db.get_pv_count()} PV-Datensätze")
 
     return 0
 
@@ -648,7 +664,7 @@ def cmd_train(args: argparse.Namespace, config: Config) -> int:
         print("   Führe erst 'pvforecast import <csv>' aus.", file=sys.stderr)
         return 1
 
-    print(f"📊 PV-Datensätze: {pv_count}")
+    qprint(f"📊 PV-Datensätze: {pv_count}")
 
     # Zeitbereich der PV-Daten
     pv_start, pv_end = db.get_pv_date_range()
@@ -656,7 +672,7 @@ def cmd_train(args: argparse.Namespace, config: Config) -> int:
         print("❌ Keine PV-Daten gefunden.", file=sys.stderr)
         return 1
 
-    print(f"📅 Zeitraum: {datetime.fromtimestamp(pv_start)} bis {datetime.fromtimestamp(pv_end)}")
+    qprint(f"📅 Zeitraum: {datetime.fromtimestamp(pv_start)} bis {datetime.fromtimestamp(pv_end)}")
 
     # Historische Wetterdaten laden
     historical_provider = config.weather.historical_provider
@@ -674,23 +690,23 @@ def cmd_train(args: argparse.Namespace, config: Config) -> int:
             print("   pvforecast train --model xgb  (lädt automatisch von Open-Meteo)")
             return 1
         else:
-            print(f"🌤️  Verwende vorhandene Wetterdaten ({weather_count_before:,} Datensätze)")
+            qprint(f"🌤️  Verwende vorhandene Wetterdaten ({weather_count_before:,} Datensätze)")
     else:
         # Open-Meteo: Automatisch nachladen
-        print("🌤️  Lade historische Wetterdaten (Open-Meteo)...")
+        qprint("🌤️  Lade historische Wetterdaten (Open-Meteo)...")
         weather_start = time.perf_counter()
         try:
             loaded = ensure_weather_history(db, config.latitude, config.longitude, pv_start, pv_end)
             weather_elapsed = time.perf_counter() - weather_start
             if loaded > 0:
                 duration = format_duration(weather_elapsed)
-                print(f"   {loaded} neue Wetterdatensätze geladen in {duration}")
+                qprint(f"   {loaded} neue Wetterdatensätze geladen in {duration}")
         except WeatherAPIError as e:
             print(f"⚠️  Wetter-API Fehler: {e}", file=sys.stderr)
             print("   Versuche Training mit vorhandenen Daten...", file=sys.stderr)
 
     weather_count = db.get_weather_count()
-    print(f"🌡️  Wetterdatensätze: {weather_count}")
+    qprint(f"🌡️  Wetterdatensätze: {weather_count}")
 
     # Training
     model_type = getattr(args, "model", "rf")
@@ -698,9 +714,9 @@ def cmd_train(args: argparse.Namespace, config: Config) -> int:
     model_name = "XGBoost" if model_type == "xgb" else "RandomForest"
 
     if since_year:
-        print(f"🧠 Trainiere {model_name} Modell (Daten ab {since_year})...")
+        qprint(f"🧠 Trainiere {model_name} Modell (Daten ab {since_year})...")
     else:
-        print(f"🧠 Trainiere {model_name} Modell...")
+        qprint(f"🧠 Trainiere {model_name} Modell...")
 
     train_start = time.perf_counter()
     try:
@@ -720,17 +736,21 @@ def cmd_train(args: argparse.Namespace, config: Config) -> int:
     # Modell speichern
     save_model(model, config.model_path, metrics)
 
-    print("")
-    print(f"✅ Training abgeschlossen in {format_duration(train_elapsed)}!")
-    print(f"   MAPE: {metrics['mape']:.1f}%")
-    print(f"   MAE:  {metrics['mae']:.0f} W")
-    print(f"   RMSE: {metrics['rmse']:.0f} W")
-    print(f"   R²:   {metrics['r2']:.3f}")
-    print(f"   Trainingsdaten: {metrics['n_train']}")
-    print(f"   Testdaten: {metrics['n_test']}")
-    if since_year:
-        print(f"   Daten ab: {since_year}")
-    print(f"   Modell: {config.model_path}")
+    if _quiet_mode:
+        # Kompakte Ausgabe bei --quiet
+        print(f"✅ Training: MAPE {metrics['mape']:.1f}%, MAE {metrics['mae']:.0f}W")
+    else:
+        print("")
+        print(f"✅ Training abgeschlossen in {format_duration(train_elapsed)}!")
+        print(f"   MAPE: {metrics['mape']:.1f}%")
+        print(f"   MAE:  {metrics['mae']:.0f} W")
+        print(f"   RMSE: {metrics['rmse']:.0f} W")
+        print(f"   R²:   {metrics['r2']:.3f}")
+        print(f"   Trainingsdaten: {metrics['n_train']}")
+        print(f"   Testdaten: {metrics['n_test']}")
+        if since_year:
+            print(f"   Daten ab: {since_year}")
+        print(f"   Modell: {config.model_path}")
 
     return 0
 
@@ -745,7 +765,7 @@ def cmd_tune(args: argparse.Namespace, config: Config) -> int:
         print(f"❌ Zu wenig PV-Daten: {pv_count} (mindestens 500 empfohlen)", file=sys.stderr)
         return 1
 
-    print(f"📊 PV-Datensätze: {pv_count}")
+    qprint(f"📊 PV-Datensätze: {pv_count}")
 
     # Zeitbereich der PV-Daten
     pv_start, pv_end = db.get_pv_date_range()
@@ -754,14 +774,14 @@ def cmd_tune(args: argparse.Namespace, config: Config) -> int:
         return 1
 
     # Wetterdaten sicherstellen
-    print("🌤️  Prüfe Wetterdaten...")
+    qprint("🌤️  Prüfe Wetterdaten...")
     weather_start = time.perf_counter()
     try:
         loaded = ensure_weather_history(db, config.latitude, config.longitude, pv_start, pv_end)
         weather_elapsed = time.perf_counter() - weather_start
         if loaded > 0:
             duration = format_duration(weather_elapsed)
-            print(f"   {loaded} neue Wetterdatensätze geladen in {duration}")
+            qprint(f"   {loaded} neue Wetterdatensätze geladen in {duration}")
     except WeatherAPIError as e:
         print(f"⚠️  Wetter-API Fehler: {e}", file=sys.stderr)
 
@@ -775,18 +795,18 @@ def cmd_tune(args: argparse.Namespace, config: Config) -> int:
     model_name = "XGBoost" if model_type == "xgb" else "RandomForest"
     method_name = "Optuna" if method == "optuna" else "RandomizedSearchCV"
 
-    print()
-    print(f"🔧 Hyperparameter-Tuning für {model_name}")
-    print(f"   Methode: {method_name}")
-    print(f"   Trials: {n_iter}")
-    print(f"   CV-Splits: {cv_splits}")
+    qprint()
+    qprint(f"🔧 Hyperparameter-Tuning für {model_name}")
+    qprint(f"   Methode: {method_name}")
+    qprint(f"   Trials: {n_iter}")
+    qprint(f"   CV-Splits: {cv_splits}")
     if timeout and method == "optuna":
-        print(f"   Timeout: {timeout}s")
+        qprint(f"   Timeout: {timeout}s")
     if since_year:
-        print(f"   Daten ab: {since_year}")
-    print()
-    print("⏳ Das kann einige Minuten dauern...")
-    print()
+        qprint(f"   Daten ab: {since_year}")
+    qprint()
+    qprint("⏳ Das kann einige Minuten dauern...")
+    qprint()
 
     tune_start = time.perf_counter()
     try:
@@ -825,40 +845,44 @@ def cmd_tune(args: argparse.Namespace, config: Config) -> int:
     # Modell speichern
     save_model(best_model, config.model_path, metrics)
 
-    print()
-    print("=" * 50)
-    print(f"✅ Tuning abgeschlossen in {format_duration(tune_elapsed)}!")
-    print("=" * 50)
-    print()
-    print("📊 Performance:")
-    print(f"   MAPE: {metrics['mape']:.1f}%")
-    print(f"   MAE:  {metrics['mae']:.0f} W")
-    print(f"   RMSE: {metrics['rmse']:.0f} W")
-    print(f"   R²:   {metrics['r2']:.3f}")
-    print(f"   CV-Score (MAE): {metrics['best_cv_score']:.0f} W")
-
-    # Optuna-spezifische Stats
-    if method == "optuna":
+    if _quiet_mode:
+        # Kompakte Ausgabe bei --quiet
+        print(f"✅ Tuning: MAPE {metrics['mape']:.1f}%, MAE {metrics['mae']:.0f}W")
+    else:
         print()
-        print("📈 Optuna-Statistiken:")
-        print(f"   Trials abgeschlossen: {metrics.get('n_trials_complete', 'N/A')}")
-        print(f"   Trials gepruned: {metrics.get('n_trials_pruned', 'N/A')}")
+        print("=" * 50)
+        print(f"✅ Tuning abgeschlossen in {format_duration(tune_elapsed)}!")
+        print("=" * 50)
+        print()
+        print("📊 Performance:")
+        print(f"   MAPE: {metrics['mape']:.1f}%")
+        print(f"   MAE:  {metrics['mae']:.0f} W")
+        print(f"   RMSE: {metrics['rmse']:.0f} W")
+        print(f"   R²:   {metrics['r2']:.3f}")
+        print(f"   CV-Score (MAE): {metrics['best_cv_score']:.0f} W")
 
-    print()
-    print("🎯 Beste Parameter:")
-    for param, value in best_params.items():
-        # np.float64 und andere float-artige Typen erkennen
-        try:
-            float_val = float(value)
-            # Prüfen ob es wirklich ein Float ist (nicht int als float)
-            if float_val != int(float_val):
-                print(f"   {param}: {float_val:.4f}")
-            else:
-                print(f"   {param}: {int(float_val)}")
-        except (TypeError, ValueError):
-            print(f"   {param}: {value}")
-    print()
-    print(f"💾 Modell gespeichert: {config.model_path}")
+        # Optuna-spezifische Stats
+        if method == "optuna":
+            print()
+            print("📈 Optuna-Statistiken:")
+            print(f"   Trials abgeschlossen: {metrics.get('n_trials_complete', 'N/A')}")
+            print(f"   Trials gepruned: {metrics.get('n_trials_pruned', 'N/A')}")
+
+        print()
+        print("🎯 Beste Parameter:")
+        for param, value in best_params.items():
+            # np.float64 und andere float-artige Typen erkennen
+            try:
+                float_val = float(value)
+                # Prüfen ob es wirklich ein Float ist (nicht int als float)
+                if float_val != int(float_val):
+                    print(f"   {param}: {float_val:.4f}")
+                else:
+                    print(f"   {param}: {int(float_val)}")
+            except (TypeError, ValueError):
+                print(f"   {param}: {value}")
+        print()
+        print(f"💾 Modell gespeichert: {config.model_path}")
 
     return 0
 
@@ -1265,6 +1289,12 @@ def create_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Ausführliche Ausgabe",
     )
+    parser.add_argument(
+        "-q",
+        "--quiet",
+        action="store_true",
+        help="Reduzierte Ausgabe (unterdrückt Progress-Infos)",
+    )
 
     subparsers = parser.add_subparsers(dest="command", required=True)
 
@@ -1520,6 +1550,10 @@ def main() -> int:
     if not args.verbose:
         logging.getLogger("httpx").setLevel(logging.WARNING)
         logging.getLogger("httpcore").setLevel(logging.WARNING)
+
+    # Quiet-Mode global setzen
+    global _quiet_mode
+    _quiet_mode = args.quiet
 
     try:
         return _run_command(args, parser)
