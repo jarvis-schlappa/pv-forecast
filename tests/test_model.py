@@ -58,6 +58,19 @@ class TestSunElevation:
 
         assert elev_equator > elev_germany
 
+    def test_precision_known_values(self):
+        """Test: Bekannte Sonnenhöhen-Werte für Präzisionsprüfung.
+
+        Sommersonnenwende (21.6.) Mittag am Äquator sollte nahe 66.5° sein
+        (90° - 23.5° Ekliptik-Neigung).
+        """
+        # 21. Juni 2024, 12:00 UTC am Äquator
+        ts = int(datetime(2024, 6, 21, 12, 0, tzinfo=UTC_TZ).timestamp())
+        elev = calculate_sun_elevation(ts, 0.0, 0.0)
+
+        # Erwarteter Wert: ~66.5° (90 - 23.44 Ekliptik)
+        assert 64.0 < elev < 69.0, f"Erwartete ~66.5°, bekam {elev:.1f}°"
+
 
 class TestPrepareFeatures:
     """Tests für Feature-Erstellung."""
