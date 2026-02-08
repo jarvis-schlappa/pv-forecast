@@ -614,9 +614,15 @@ class TestOpenMeteoIntegration:
 
     def test_fetch_forecast_real(self, openmeteo_source):
         """Test fetching real Open-Meteo forecast."""
-        df = openmeteo_source.fetch_forecast(hours=24)
+        # Use a fixed reference time far in the past to get all forecast hours
+        # This avoids CI timing issues (Issue #109 lesson: parameter injection > mocking)
+        from datetime import datetime
+        from zoneinfo import ZoneInfo
 
-        assert len(df) >= 10  # Should have at least 10 hours (allows for timing edge cases)
+        past_ref = datetime(2020, 1, 1, 12, 0, 0, tzinfo=ZoneInfo("UTC"))
+        df = openmeteo_source.fetch_forecast(hours=24, now=past_ref)
+
+        assert len(df) >= 20  # Should have most of the 24 hours
         assert "timestamp" in df.columns
         assert "ghi_wm2" in df.columns
         assert "temperature_c" in df.columns
@@ -632,9 +638,15 @@ class TestOpenMeteoIntegration:
 
     def test_fetch_today_real(self, openmeteo_source):
         """Test fetching today's weather."""
-        df = openmeteo_source.fetch_today("Europe/Berlin")
+        # Use fixed reference time at noon to avoid midnight edge cases
+        # (Issue #109 lesson: parameter injection > mocking)
+        from datetime import datetime
+        from zoneinfo import ZoneInfo
 
-        assert len(df) >= 1  # At least some data (edge cases at midnight)
+        ref_time = datetime.now(ZoneInfo("Europe/Berlin")).replace(hour=12, minute=0, second=0)
+        df = openmeteo_source.fetch_today("Europe/Berlin", now=ref_time)
+
+        assert len(df) >= 12  # At least half a day
         assert "timestamp" in df.columns
         assert "ghi_wm2" in df.columns
 

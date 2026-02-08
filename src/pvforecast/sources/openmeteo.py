@@ -175,12 +175,16 @@ class OpenMeteoSource(ForecastSource, HistoricalSource):
 
         return df
 
-    def fetch_forecast(self, hours: int = 48) -> pd.DataFrame:
+    def fetch_forecast(
+        self, hours: int = 48, *, now: datetime | None = None
+    ) -> pd.DataFrame:
         """
         Fetch weather forecast for the next N hours.
 
         Args:
             hours: Number of hours (max 384 = 16 days)
+            now: Reference time for filtering (default: current time).
+                 Useful for testing without mocking datetime.
 
         Returns:
             DataFrame with forecast data
@@ -189,6 +193,9 @@ class OpenMeteoSource(ForecastSource, HistoricalSource):
             DownloadError: If download fails
             ParseError: If parsing fails
         """
+        if now is None:
+            now = datetime.now(UTC_TZ)
+
         logger.info(f"Fetching Open-Meteo forecast: {hours} hours")
 
         params = {
@@ -203,13 +210,15 @@ class OpenMeteoSource(ForecastSource, HistoricalSource):
         df = self._parse_response(data)
 
         # Filter to future hours only (with 1h buffer for clock drift)
-        now_ts = int(datetime.now(UTC_TZ).timestamp()) - 3600
+        now_ts = int(now.timestamp()) - 3600
         df = df[df["timestamp"] >= now_ts].head(hours)
 
         logger.info(f"Fetched {len(df)} hours of forecast data")
         return df
 
-    def fetch_today(self, tz: str) -> pd.DataFrame:
+    def fetch_today(
+        self, tz: str, *, now: datetime | None = None
+    ) -> pd.DataFrame:
         """
         Fetch weather data for today (past hours + forecast).
 
@@ -218,6 +227,8 @@ class OpenMeteoSource(ForecastSource, HistoricalSource):
 
         Args:
             tz: Timezone string (e.g., "Europe/Berlin")
+            now: Reference time (default: current time).
+                 Useful for testing without mocking datetime.
 
         Returns:
             DataFrame with today's weather data
@@ -227,7 +238,11 @@ class OpenMeteoSource(ForecastSource, HistoricalSource):
             ParseError: If parsing fails
         """
         local_tz = ZoneInfo(tz)
-        now = datetime.now(local_tz)
+        if now is None:
+            now = datetime.now(local_tz)
+        elif now.tzinfo is None:
+            now = now.replace(tzinfo=local_tz)
+
         current_hour = now.hour
 
         # past_hours: 00:00 to now (+2 buffer)
