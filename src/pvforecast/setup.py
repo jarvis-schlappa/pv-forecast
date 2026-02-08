@@ -1104,7 +1104,8 @@ class SetupWizard:
             # Modell speichern
             save_model(model, model_path, metrics)
 
-            mape = metrics.get("mape", 0) * 100 if metrics else 0
+            # MAPE ist bereits in Prozent (z.B. 22.4 für 22.4%)
+            mape = metrics.get("mape", 0) if metrics else 0
             self.output(f"   ✓ Modell trainiert: {model_type}")
             self.output(f"   ✓ Genauigkeit: ~{mape:.0f}% Abweichung (MAPE)")
             self.output("")
