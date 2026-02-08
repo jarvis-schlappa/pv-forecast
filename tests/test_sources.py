@@ -296,7 +296,7 @@ class TestMOSMIXSource:
         # Known values for verification
         sun_elevation = 30.0  # degrees
         timestamp = datetime(2026, 2, 8, 12, 0)  # Feb 8 = DOY 39
-        
+
         # Calculate expected GHI_extra
         import math
         doy = 39
@@ -305,13 +305,13 @@ class TestMOSMIXSource:
         eccentricity = 1 + 0.033 * math.cos(day_angle)
         sin_alt = math.sin(math.radians(sun_elevation))
         ghi_extra = solar_constant * eccentricity * sin_alt  # ~691 W/m²
-        
+
         # Test 1: GHI = GHI_extra → kt = 1.0 → low diffuse fraction
         ghi_clear = ghi_extra
         dhi_clear = estimate_dhi(ghi_clear, sun_elevation, timestamp)
         df_clear = dhi_clear / ghi_clear
         assert df_clear < 0.2  # kt=1 → Erbs gives ~0.165
-        
+
         # Test 2: GHI = 0.3 * GHI_extra → kt = 0.3 → high diffuse fraction
         ghi_cloudy = 0.3 * ghi_extra
         dhi_cloudy = estimate_dhi(ghi_cloudy, sun_elevation, timestamp)
