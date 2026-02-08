@@ -1385,6 +1385,13 @@ def create_parser() -> argparse.ArgumentParser:
         nargs="+",
         help="CSV-Dateien zum Importieren",
     )
+    p_import.add_argument(
+        "-q",
+        "--quiet",
+        action="store_true",
+        dest="sub_quiet",
+        help="Reduzierte Ausgabe",
+    )
 
     # today
     p_today = subparsers.add_parser("today", help="Prognose für heute")
@@ -1398,6 +1405,13 @@ def create_parser() -> argparse.ArgumentParser:
         "--full",
         action="store_true",
         help="Ganzer Tag inkl. vergangener Stunden",
+    )
+    p_today.add_argument(
+        "-q",
+        "--quiet",
+        action="store_true",
+        dest="sub_quiet",
+        help="Reduzierte Ausgabe",
     )
 
     # train
@@ -1414,6 +1428,13 @@ def create_parser() -> argparse.ArgumentParser:
         default=None,
         metavar="YEAR",
         help="Nur Daten ab diesem Jahr verwenden (z.B. --since 2022)",
+    )
+    p_train.add_argument(
+        "-q",
+        "--quiet",
+        action="store_true",
+        dest="sub_quiet",
+        help="Reduzierte Ausgabe",
     )
 
     # tune
@@ -1454,6 +1475,13 @@ def create_parser() -> argparse.ArgumentParser:
         default=None,
         metavar="YEAR",
         help="Nur Daten ab diesem Jahr verwenden (z.B. --since 2022)",
+    )
+    p_tune.add_argument(
+        "-q",
+        "--quiet",
+        action="store_true",
+        dest="sub_quiet",
+        help="Reduzierte Ausgabe",
     )
 
     # status
@@ -1539,8 +1567,16 @@ def main() -> int:
     parser = create_parser()
     args = parser.parse_args()
 
+    # Quiet-Mode ermitteln (global oder subparser-level)
+    quiet = args.quiet or getattr(args, "sub_quiet", False)
+
     # Logging konfigurieren
-    level = logging.DEBUG if args.verbose else logging.INFO
+    if quiet:
+        level = logging.WARNING
+    elif args.verbose:
+        level = logging.DEBUG
+    else:
+        level = logging.INFO
     logging.basicConfig(
         level=level,
         format="%(message)s" if not args.verbose else "%(levelname)s: %(message)s",
@@ -1553,7 +1589,7 @@ def main() -> int:
 
     # Quiet-Mode global setzen
     global _quiet_mode
-    _quiet_mode = args.quiet
+    _quiet_mode = quiet
 
     try:
         return _run_command(args, parser)
