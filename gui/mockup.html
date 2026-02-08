@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>pvforecast – GUI Entwurf</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.3.1/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.3.1/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.26.4/babel.min.js"></script>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #0f1117; color: #e8eaf0; font-family: 'IBM Plex Sans', -apple-system, sans-serif; }
+  button { font-family: inherit; }
+  #root { min-height: 100vh; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState } = React;
+
+const C = {
+bg:"#0f1117",surface:"#181b24",card:"#1a1d28",border:"#2a2d3a",borderLight:"#353849",
+text:"#e8eaf0",textMuted:"#8b90a0",textDim:"#5c6070",
+accent:"#f59e0b",accentBg:"rgba(245,158,11,0.08)",accentBorder:"rgba(245,158,11,0.2)",
+green:"#22c55e",greenBg:"rgba(34,197,94,0.1)",red:"#ef4444",redBg:"rgba(239,68,68,0.1)",
+blue:"#3b82f6",blueBg:"rgba(59,130,246,0.1)",
+};
+const font="'IBM Plex Sans',-apple-system,sans-serif";
+const mono="'IBM Plex Mono','SF Mono',monospace";
+
+const Icons={
+sun:"M12 3v1m0 16v1m-7.07-14.07l.71.71m12.02 12.02l.71.71M3 12h1m16 0h1m-14.07 7.07l.71-.71m12.02-12.02l.71-.71M12 7a5 5 0 1 0 0 10 5 5 0 0 0 0-10z",
+chart:"M3 3v18h18M7 16l4-4 4 4 5-5",
+brain:"M12 2a7 7 0 0 0-7 7c0 2.5 1.5 4.5 3 6l4 5 4-5c1.5-1.5 3-3.5 3-6a7 7 0 0 0-7-7z",
+database:"M4 7v10c0 2 3.6 3 8 3s8-1 8-3V7M4 7c0 2 3.6 3 8 3s8-1 8-3M4 7c0-2 3.6-3 8-3s8 1 8 3M4 12c0 2 3.6 3 8 3s8-1 8-3",
+settings:"M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z",
+health:"M22 12h-4l-3 9L9 3l-3 9H2",
+upload:"M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12",
+clock:"M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zM12 6v6l4 2",
+cloud:"M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z",
+zap:"M13 2L3 14h9l-1 8 10-12h-9l1-8z",
+check:"M20 6L9 17l-5-5",
+alert:"M12 9v4m0 4h.01M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z",
+};
+
+const Icon=({d,size=20,color="currentColor"})=>React.createElement("svg",{width:size,height:size,viewBox:"0 0 24 24",fill:"none",stroke:color,strokeWidth:"1.8",strokeLinecap:"round",strokeLinejoin:"round"},React.createElement("path",{d}));
+
+const MetricCard=({label,value,unit,sub,color,trend})=>React.createElement("div",{style:{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:"18px 20px",flex:"1 1 0",minWidth:140}},
+React.createElement("div",{style:{fontSize:11,color:C.textMuted,textTransform:"uppercase",letterSpacing:1,marginBottom:8,fontFamily:font}},label),
+React.createElement("div",{style:{display:"flex",alignItems:"baseline",gap:6}},
+React.createElement("span",{style:{fontSize:28,fontWeight:700,color:color||C.text,fontFamily:font}},value),
+unit&&React.createElement("span",{style:{fontSize:13,color:C.textMuted,fontFamily:font}},unit)),
+sub&&React.createElement("div",{style:{fontSize:12,color:trend==="up"?C.green:trend==="down"?C.red:C.textMuted,marginTop:6,fontFamily:font}},sub));
+
+const SectionTitle=({children,icon})=>React.createElement("div",{style:{display:"flex",alignItems:"center",gap:10,marginBottom:16,marginTop:8}},icon,React.createElement("span",{style:{fontSize:15,fontWeight:600,color:C.text,fontFamily:font,letterSpacing:0.2}},children));
+
+const Badge=({children,color=C.accent})=>React.createElement("span",{style:{display:"inline-block",fontSize:10,fontWeight:600,fontFamily:font,padding:"2px 8px",borderRadius:99,background:`${color}18`,color,letterSpacing:0.5,textTransform:"uppercase"}},children);
+
+const ToggleSwitch=({on,label,onClick})=>React.createElement("div",{style:{display:"flex",alignItems:"center",gap:10,cursor:"pointer"},onClick},
+React.createElement("div",{style:{width:36,height:20,borderRadius:99,background:on?C.accent:C.borderLight,position:"relative",transition:"all .2s"}},
+React.createElement("div",{style:{width:16,height:16,borderRadius:99,background:"#fff",position:"absolute",top:2,left:on?18:2,transition:"all .2s",boxShadow:"0 1px 3px rgba(0,0,0,.3)"}})),
+React.createElement("span",{style:{fontSize:13,color:C.text,fontFamily:font}},label));
+
+const Btn=({children,primary,small,icon,onClick})=>React.createElement("button",{onClick,style:{display:"inline-flex",alignItems:"center",gap:6,padding:small?"6px 12px":"9px 18px",fontSize:small?12:13,fontWeight:600,fontFamily:font,border:primary?"none":`1px solid ${C.border}`,borderRadius:8,cursor:"pointer",background:primary?C.accent:"transparent",color:primary?"#000":C.text,letterSpacing:0.2}},icon,children);
+
+const FakeBarChart=({data,height=140,color=C.accent})=>{const max=Math.max(...data.map(d=>d.v));return React.createElement("div",{style:{display:"flex",alignItems:"flex-end",gap:3,height,padding:"0 4px"}},data.map((d,i)=>React.createElement("div",{key:i,style:{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:4}},React.createElement("div",{style:{width:"100%",maxWidth:32,height:`${(d.v/max)*(height-24)}px`,background:`linear-gradient(180deg, ${color}, ${color}88)`,borderRadius:"4px 4px 0 0",minHeight:2}}),React.createElement("span",{style:{fontSize:9,color:C.textDim,fontFamily:mono}},d.l))))};
+
+const FakeLineChart=({height=160})=>{
+const pts="0,120 40,90 80,60 120,95 160,40 200,55 240,20 280,45 320,30 360,70 400,50 440,80";
+const pts2="0,130 40,110 80,85 120,100 160,65 200,78 240,50 280,70 320,60 360,90 400,75 440,95";
+return React.createElement("svg",{width:"100%",height,viewBox:"0 0 460 160",preserveAspectRatio:"none",style:{display:"block"}},
+React.createElement("defs",null,React.createElement("linearGradient",{id:"glow",x1:"0",y1:"0",x2:"0",y2:"1"},React.createElement("stop",{offset:"0%",stopColor:C.accent,stopOpacity:"0.3"}),React.createElement("stop",{offset:"100%",stopColor:C.accent,stopOpacity:"0"}))),
+[0,40,80,120].map(y=>React.createElement("line",{key:y,x1:"0",y1:y,x2:"460",y2:y,stroke:C.border,strokeWidth:"0.5",strokeDasharray:"4 4"})),
+React.createElement("polygon",{points:`0,160 ${pts} 440,160`,fill:"url(#glow)"}),
+React.createElement("polyline",{points:pts2,fill:"none",stroke:C.blue,strokeWidth:"1.5",opacity:"0.4",strokeDasharray:"4 3"}),
+React.createElement("polyline",{points:pts,fill:"none",stroke:C.accent,strokeWidth:"2"}),
+pts.split(" ").map((p,i)=>{const[x,y]=p.split(",");return React.createElement("circle",{key:i,cx:x,cy:y,r:"3",fill:C.accent})}));
+};
+
+const HourRow=({time,watts,ghi,cloud,emoji})=>React.createElement("div",{style:{display:"grid",gridTemplateColumns:"60px 90px 70px 60px 30px",padding:"6px 12px",fontSize:12,fontFamily:mono,color:C.textMuted,borderBottom:`1px solid ${C.border}08`}},
+React.createElement("span",{style:{color:C.text}},time),
+React.createElement("span",{style:{color:watts>1000?C.accent:C.textMuted}},watts+" W"),
+React.createElement("span",null,ghi+" W/m²"),
+React.createElement("span",null,cloud+"%"),
+React.createElement("span",null,emoji));
+
+// ─── PAGES ─────────────────────────────────────────────────
+
+function DashboardPage(){return React.createElement("div",{style:{display:"flex",flexDirection:"column",gap:20}},
+React.createElement("div",{style:{display:"flex",gap:12,flexWrap:"wrap"}},
+React.createElement(MetricCard,{label:"Heute",value:"14.2",unit:"kWh",sub:"▲ +2.3 vs. gestern",trend:"up",color:C.accent}),
+React.createElement(MetricCard,{label:"Morgen",value:"8.7",unit:"kWh",sub:"☁️ bewölkt",color:C.textMuted}),
+React.createElement(MetricCard,{label:"Batterie",value:"78",unit:"%",sub:"wird geladen",trend:"up",color:C.green}),
+React.createElement(MetricCard,{label:"Modell MAPE",value:"28.3",unit:"%",sub:"▼ -1.8 pp",trend:"up",color:C.blue})),
+React.createElement("div",{style:{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:20}},
+React.createElement("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}},
+React.createElement(SectionTitle,{icon:React.createElement(Icon,{d:Icons.sun,color:C.accent})},"Heutige Prognose vs. Ist"),
+React.createElement("div",{style:{display:"flex",gap:16,fontSize:11,fontFamily:font}},
+React.createElement("span",{style:{color:C.accent}},"━ Prognose"),
+React.createElement("span",{style:{color:C.blue,opacity:0.5}},"╌ Tatsächlich"))),
+React.createElement(FakeLineChart,{height:180}),
+React.createElement("div",{style:{display:"flex",justifyContent:"space-between",padding:"8px 4px 0",fontSize:10,color:C.textDim,fontFamily:mono}},
+["06:00","08:00","10:00","12:00","14:00","16:00","18:00","20:00"].map(t=>React.createElement("span",{key:t},t)))),
+React.createElement("div",{style:{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:20}},
+React.createElement(SectionTitle,{icon:React.createElement(Icon,{d:Icons.chart,color:C.blue})},"Wochenübersicht"),
+React.createElement(FakeBarChart,{data:[{l:"Mo",v:12},{l:"Di",v:15},{l:"Mi",v:8},{l:"Do",v:14},{l:"Fr",v:11},{l:"Sa",v:16},{l:"So",v:14}],height:120})),
+React.createElement("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12}},
+[{bg:C.greenBg,bc:C.green+"30",ic:Icons.check,cc:C.green,t:"Modell aktuell"},{bg:C.greenBg,bc:C.green+"30",ic:Icons.check,cc:C.green,t:"14.231 PV-Datensätze"},{bg:C.blueBg,bc:C.blue+"30",ic:Icons.clock,cc:C.blue,t:"Update: vor 2 Std."}].map((s,i)=>
+React.createElement("div",{key:i,style:{background:s.bg,border:`1px solid ${s.bc}`,borderRadius:8,padding:"10px 14px",display:"flex",alignItems:"center",gap:8}},
+React.createElement(Icon,{d:s.ic,size:14,color:s.cc}),
+React.createElement("span",{style:{fontSize:12,color:s.cc,fontFamily:font}},s.t)))));}
+
+function ForecastPage(){return React.createElement("div",{style:{display:"flex",flexDirection:"column",gap:20}},
+React.createElement("div",{style:{display:"flex",gap:12,alignItems:"center",flexWrap:"wrap"}},
+React.createElement("div",{style:{display:"flex",background:C.surface,border:`1px solid ${C.border}`,borderRadius:8,overflow:"hidden"}},
+["1 Tag","2 Tage","5 Tage"].map((d,i)=>React.createElement("button",{key:d,style:{padding:"7px 16px",fontSize:12,fontFamily:font,fontWeight:500,border:"none",cursor:"pointer",background:i===1?C.accent:"transparent",color:i===1?"#000":C.textMuted}},d))),
+React.createElement("div",{style:{display:"flex",background:C.surface,border:`1px solid ${C.border}`,borderRadius:8,overflow:"hidden"}},
+["MOSMIX","Open-Meteo"].map((d,i)=>React.createElement("button",{key:d,style:{padding:"7px 14px",fontSize:12,fontFamily:font,fontWeight:500,border:"none",cursor:"pointer",background:i===0?C.accentBg:"transparent",color:i===0?C.accent:C.textMuted}},d))),
+React.createElement(Btn,{primary:true,icon:React.createElement(Icon,{d:Icons.cloud,size:14,color:"#000"})},"Aktualisieren")),
+React.createElement("div",{style:{display:"flex",gap:12}},
+React.createElement(MetricCard,{label:"Morgen • So 09.02.",value:"8.7",unit:"kWh",sub:"🌤️ teilweise bewölkt",color:C.accent}),
+React.createElement(MetricCard,{label:"Übermorgen • Mo 10.02.",value:"5.2",unit:"kWh",sub:"☁️ bewölkt",color:C.textMuted})),
+React.createElement("div",{style:{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:20}},
+React.createElement(SectionTitle,{icon:React.createElement(Icon,{d:Icons.chart,color:C.accent})},"Stundenwerte"),
+React.createElement(FakeBarChart,{data:[{l:"07",v:50},{l:"08",v:280},{l:"09",v:680},{l:"10",v:1200},{l:"11",v:1850},{l:"12",v:2100},{l:"13",v:1950},{l:"14",v:1600},{l:"15",v:1100},{l:"16",v:520},{l:"17",v:180},{l:"18",v:30}],height:160})),
+React.createElement("div",{style:{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:"12px 0",overflow:"hidden"}},
+React.createElement("div",{style:{padding:"4px 12px 10px",display:"grid",gridTemplateColumns:"60px 90px 70px 60px 30px",fontSize:10,color:C.textDim,fontFamily:font,textTransform:"uppercase",letterSpacing:0.8,borderBottom:`1px solid ${C.border}`}},
+React.createElement("span",null,"Uhrzeit"),React.createElement("span",null,"Leistung"),React.createElement("span",null,"GHI"),React.createElement("span",null,"Wolken"),React.createElement("span",null,"")),
+React.createElement(HourRow,{time:"07:00",watts:50,ghi:45,cloud:35,emoji:"🌤️"}),
+React.createElement(HourRow,{time:"08:00",watts:280,ghi:210,cloud:30,emoji:"🌤️"}),
+React.createElement(HourRow,{time:"09:00",watts:680,ghi:420,cloud:25,emoji:"🌤️"}),
+React.createElement(HourRow,{time:"10:00",watts:1200,ghi:580,cloud:20,emoji:"☀️"}),
+React.createElement(HourRow,{time:"11:00",watts:1850,ghi:720,cloud:15,emoji:"☀️"}),
+React.createElement(HourRow,{time:"12:00",watts:2100,ghi:810,cloud:18,emoji:"☀️"}),
+React.createElement("div",{style:{padding:"8px 12px",fontSize:11,color:C.textDim,fontFamily:font,textAlign:"center"}},"⋮ weitere Stunden ⋮")),
+React.createElement("div",{style:{display:"flex",gap:8,justifyContent:"flex-end"}},
+React.createElement(Btn,{small:true},"CSV Export"),React.createElement(Btn,{small:true},"JSON Export")));}
+
+function TrainingPage(){return React.createElement("div",{style:{display:"flex",flexDirection:"column",gap:20}},
+React.createElement("div",{style:{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:20}},
+React.createElement(SectionTitle,{icon:React.createElement(Icon,{d:Icons.brain,color:C.accent})},"Modell trainieren"),
+React.createElement("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16,marginTop:8}},
+React.createElement("div",{style:{border:`2px solid ${C.accent}`,borderRadius:10,padding:16,background:C.accentBg,cursor:"pointer"}},
+React.createElement("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center"}},
+React.createElement("span",{style:{fontSize:14,fontWeight:600,color:C.text,fontFamily:font}},"RandomForest"),
+React.createElement(Badge,null,"Empfohlen")),
+React.createElement("p",{style:{fontSize:12,color:C.textMuted,marginTop:8,fontFamily:font,lineHeight:1.5}},"Robust, schnelles Training, gut interpretierbar. Optimal für Anlagen mit < 2 Jahre Daten.")),
+React.createElement("div",{style:{border:`1px solid ${C.border}`,borderRadius:10,padding:16,background:C.surface,cursor:"pointer"}},
+React.createElement("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center"}},
+React.createElement("span",{style:{fontSize:14,fontWeight:600,color:C.text,fontFamily:font}},"XGBoost"),
+React.createElement(Badge,{color:C.blue},"Fortgeschritten")),
+React.createElement("p",{style:{fontSize:12,color:C.textMuted,marginTop:8,fontFamily:font,lineHeight:1.5}},"Höhere Genauigkeit bei großen Datenmengen. Benötigt libomp auf macOS."))),
+React.createElement("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:16,marginTop:20}},
+[{l:"Daten ab Jahr",v:"2023",m:true},{l:"Datensätze verfügbar",v:"9.847",c:C.accent},{l:"Geschätzte Dauer",v:"~12 Sek.",c:C.textMuted}].map(f=>
+React.createElement("div",{key:f.l},
+React.createElement("label",{style:{fontSize:11,color:C.textMuted,fontFamily:font,display:"block",marginBottom:6}},f.l),
+f.m?React.createElement("div",{style:{background:C.surface,border:`1px solid ${C.border}`,borderRadius:6,padding:"8px 12px",fontSize:14,color:C.text,fontFamily:mono}},f.v):
+React.createElement("div",{style:{padding:"8px 0",fontSize:14,color:f.c,fontFamily:mono}},f.v)))),
+React.createElement("div",{style:{marginTop:20,display:"flex",gap:12}},
+React.createElement(Btn,{primary:true,icon:React.createElement(Icon,{d:Icons.zap,size:14,color:"#000"})},"Training starten"),
+React.createElement(Btn,null,"Altes Modell behalten"))),
+React.createElement("div",{style:{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:20}},
+React.createElement("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center"}},
+React.createElement(SectionTitle,{icon:React.createElement(Icon,{d:Icons.settings,color:C.blue})},"Hyperparameter-Tuning"),
+React.createElement(Badge,{color:C.blue},"Experte")),
+React.createElement("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:16,marginTop:8}},
+[{l:"Methode",w:true},{l:"Trials",v:"50"},{l:"CV-Splits",v:"5"},{l:"Timeout",v:"—",d:true}].map(f=>
+React.createElement("div",{key:f.l},
+React.createElement("label",{style:{fontSize:11,color:C.textMuted,fontFamily:font,display:"block",marginBottom:6}},f.l),
+f.w?React.createElement("div",{style:{display:"flex",background:C.surface,border:`1px solid ${C.border}`,borderRadius:6,overflow:"hidden"}},
+React.createElement("button",{style:{flex:1,padding:"7px 8px",fontSize:11,border:"none",background:C.accentBg,color:C.accent,fontFamily:font,cursor:"pointer"}},"Optuna"),
+React.createElement("button",{style:{flex:1,padding:"7px 8px",fontSize:11,border:"none",background:"transparent",color:C.textMuted,fontFamily:font,cursor:"pointer"}},"Random")):
+React.createElement("div",{style:{background:C.surface,border:`1px solid ${C.border}`,borderRadius:6,padding:"8px 12px",fontSize:13,color:f.d?C.textDim:C.text,fontFamily:mono}},f.v)))),
+React.createElement("div",{style:{marginTop:16}},React.createElement(Btn,{icon:React.createElement(Icon,{d:Icons.zap,size:14})},"Tuning starten"))),
+React.createElement("div",{style:{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:20}},
+React.createElement(SectionTitle,{icon:React.createElement(Icon,{d:Icons.health,color:C.green})},"Aktuelles Modell"),
+React.createElement("div",{style:{display:"flex",gap:12,flexWrap:"wrap"}},
+React.createElement(MetricCard,{label:"MAPE",value:"28.3",unit:"%",color:C.accent}),
+React.createElement(MetricCard,{label:"MAE",value:"187",unit:"W"}),
+React.createElement(MetricCard,{label:"RMSE",value:"312",unit:"W"}),
+React.createElement(MetricCard,{label:"R²",value:"0.891",color:C.green}),
+React.createElement(MetricCard,{label:"Typ",value:"XGB",sub:"getuned, Optuna",color:C.blue}))),
+React.createElement("div",{style:{background:"#0d0f14",border:`1px solid ${C.border}`,borderRadius:12,padding:"12px 16px"}},
+React.createElement("div",{style:{fontSize:11,color:C.textDim,fontFamily:font,marginBottom:8,display:"flex",justifyContent:"space-between"}},
+React.createElement("span",null,"Training Log"),React.createElement("span",null,"Letztes Training: 06.02.2026 14:22")),
+React.createElement("div",{style:{fontFamily:mono,fontSize:11,lineHeight:1.8,color:C.textMuted}},
+["14:22:01 Lade Trainingsdaten ab 2023…","14:22:01 Trainingsdaten: 9847 Datensätze","14:22:01 Training: 7877, Test: 1970","14:22:01 Erstelle XGBoost Pipeline…"].map((l,i)=>
+React.createElement("div",{key:i},React.createElement("span",{style:{color:C.textDim}},l.slice(0,8)),l.slice(8))),
+React.createElement("div",null,React.createElement("span",{style:{color:C.textDim}},"14:22:12")," ",React.createElement("span",{style:{color:C.green}},"✓")," XGBoost Training abgeschlossen."),
+React.createElement("div",null,React.createElement("span",{style:{color:C.textDim}},"14:22:12")," MAPE: ",React.createElement("span",{style:{color:C.accent}},"28.3%"),", MAE: 187W, RMSE: 312W, R²: 0.891"),
+React.createElement("div",null,React.createElement("span",{style:{color:C.textDim}},"14:22:12")," ",React.createElement("span",{style:{color:C.green}},"✓")," Modell gespeichert"))));}
+
+function EvaluatePage(){return React.createElement("div",{style:{display:"flex",flexDirection:"column",gap:20}},
+React.createElement("div",{style:{display:"flex",gap:12,alignItems:"center"}},
+React.createElement("span",{style:{fontSize:13,color:C.textMuted,fontFamily:font}},"Backtesting für:"),
+React.createElement("div",{style:{display:"flex",background:C.surface,border:`1px solid ${C.border}`,borderRadius:8,overflow:"hidden"}},
+["2023","2024","2025"].map((y,i)=>React.createElement("button",{key:y,style:{padding:"7px 16px",fontSize:12,fontFamily:font,fontWeight:500,border:"none",cursor:"pointer",background:i===1?C.accent:"transparent",color:i===1?"#000":C.textMuted}},y))),
+React.createElement(Btn,{primary:true,small:true},"Evaluation starten")),
+React.createElement("div",{style:{display:"flex",gap:12,flexWrap:"wrap"}},
+React.createElement(MetricCard,{label:"MAPE",value:"28.3",unit:"%",color:C.accent}),
+React.createElement(MetricCard,{label:"Skill Score",value:"+34.2",unit:"%",sub:"ML ist 34% besser als Persistence",trend:"up",color:C.green}),
+React.createElement(MetricCard,{label:"Jahresertrag Ist",value:"9.247",unit:"kWh"}),
+React.createElement(MetricCard,{label:"Vorhersage",value:"9.018",unit:"kWh",sub:"−229 kWh (−2.5%)"})),
+React.createElement("div",{style:{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:20}},
+React.createElement(SectionTitle,{icon:React.createElement(Icon,{d:Icons.chart,color:C.accent})},"Monatliche Abweichung"),
+React.createElement(FakeBarChart,{data:[{l:"Jan",v:3},{l:"Feb",v:5},{l:"Mär",v:4},{l:"Apr",v:6},{l:"Mai",v:2},{l:"Jun",v:3},{l:"Jul",v:4},{l:"Aug",v:3},{l:"Sep",v:5},{l:"Okt",v:7},{l:"Nov",v:8},{l:"Dez",v:6}],height:120,color:C.blue})),
+React.createElement("div",{style:{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:20}},
+React.createElement(SectionTitle,{icon:React.createElement(Icon,{d:Icons.cloud,color:C.blue})},"Performance nach Wetter"),
+React.createElement("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12}},
+[{e:"☀️",l:"Klar (<20%)",mape:"18.2",mae:"142",n:"2.841"},{e:"🌤️",l:"Teil (20-60%)",mape:"31.5",mae:"210",n:"3.126"},{e:"☁️",l:"Bewölkt (>60%)",mape:"42.1",mae:"98",n:"2.880"}].map(w=>
+React.createElement("div",{key:w.l,style:{background:C.surface,borderRadius:8,padding:14,border:`1px solid ${C.border}`}},
+React.createElement("div",{style:{fontSize:20,marginBottom:6}},w.e),
+React.createElement("div",{style:{fontSize:12,color:C.text,fontFamily:font,fontWeight:500}},w.l),
+React.createElement("div",{style:{fontSize:11,color:C.textMuted,fontFamily:mono,marginTop:8,lineHeight:1.8}},`MAPE: ${w.mape}%`,React.createElement("br"),`MAE: ${w.mae} W`,React.createElement("br"),`${w.n} Stunden`))))));}
+
+function DataPage(){return React.createElement("div",{style:{display:"flex",flexDirection:"column",gap:20}},
+React.createElement("div",{style:{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:20}},
+React.createElement(SectionTitle,{icon:React.createElement(Icon,{d:Icons.upload,color:C.accent})},"CSV-Import (E3DC)"),
+React.createElement("div",{style:{border:`2px dashed ${C.border}`,borderRadius:10,padding:32,textAlign:"center",color:C.textMuted,fontFamily:font,fontSize:13,cursor:"pointer"}},
+React.createElement("div",{style:{fontSize:32,marginBottom:8}},"📂"),
+"CSV-Dateien hierher ziehen",React.createElement("br"),
+React.createElement("span",{style:{fontSize:11,color:C.textDim}},"oder klicken zum Auswählen • E3DC-Format"))),
+React.createElement("div",{style:{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:20}},
+React.createElement(SectionTitle,{icon:React.createElement(Icon,{d:Icons.cloud,color:C.blue})},"Wetterdaten abrufen"),
+React.createElement("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr 1fr auto",gap:12,alignItems:"end"}},
+[{l:"Quelle",v:"HOSTRADA ▾"},{l:"Von",v:"2023-01-01",m:true},{l:"Bis",v:"2025-12-31",m:true}].map(f=>
+React.createElement("div",{key:f.l},
+React.createElement("label",{style:{fontSize:11,color:C.textMuted,fontFamily:font,display:"block",marginBottom:6}},f.l),
+React.createElement("div",{style:{background:C.surface,border:`1px solid ${C.border}`,borderRadius:6,padding:"8px 12px",fontSize:13,color:C.text,fontFamily:f.m?mono:font}},f.v))),
+React.createElement(Btn,{primary:true},"Abrufen"))),
+React.createElement("div",{style:{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:20}},
+React.createElement(SectionTitle,{icon:React.createElement(Icon,{d:Icons.database,color:C.green})},"Datenbestand"),
+React.createElement("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16}},
+React.createElement("div",null,
+React.createElement("div",{style:{fontSize:12,color:C.textMuted,fontFamily:font,marginBottom:12}},"PV-Produktionsdaten"),
+React.createElement("div",{style:{fontFamily:mono,fontSize:12,color:C.text,lineHeight:2}},
+"Datensätze: ",React.createElement("span",{style:{color:C.accent}},"14.231"),React.createElement("br"),
+"Zeitraum: 2023-03-15 → 2026-02-07",React.createElement("br"),
+"Curtailed: 342 Stunden (2.4%)")),
+React.createElement("div",null,
+React.createElement("div",{style:{fontSize:12,color:C.textMuted,fontFamily:font,marginBottom:12}},"Wetter-Historie"),
+React.createElement("div",{style:{fontFamily:mono,fontSize:12,color:C.text,lineHeight:2}},
+"Datensätze: ",React.createElement("span",{style:{color:C.blue}},"25.680"),React.createElement("br"),
+"Zeitraum: 2023-01-01 → 2025-12-31",React.createElement("br"),
+"Quelle: HOSTRADA + Open-Meteo"))),
+React.createElement("div",{style:{marginTop:16,background:C.surface,borderRadius:8,padding:12}},
+React.createElement("div",{style:{fontSize:11,color:C.textMuted,fontFamily:font,marginBottom:8}},"Datenabdeckung (Monate mit PV ∩ Wetter)"),
+React.createElement("div",{style:{display:"flex",gap:3,flexWrap:"wrap"}},
+Array.from({length:36},(_,i)=>{const h=i>2&&i<35;const b=h&&!(i===15||i===16);return React.createElement("div",{key:i,style:{width:18,height:18,borderRadius:3,fontSize:8,fontFamily:mono,display:"flex",alignItems:"center",justifyContent:"center",background:b?C.green+"30":h?C.accent+"15":C.surface,border:`1px solid ${b?C.green+"40":C.border}`,color:C.textDim}},(i%12)+1)})),
+React.createElement("div",{style:{display:"flex",gap:16,marginTop:8,fontSize:10,color:C.textDim,fontFamily:font}},
+React.createElement("span",null,"🟩 PV + Wetter"),React.createElement("span",null,"🟧 nur teilweise"),React.createElement("span",null,"⬛ keine Daten")))));}
+
+function SettingsPage(){return React.createElement("div",{style:{display:"flex",flexDirection:"column",gap:20}},
+React.createElement("div",{style:{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:20}},
+React.createElement(SectionTitle,{icon:React.createElement(Icon,{d:Icons.sun,color:C.accent})},"Anlage & Standort"),
+React.createElement("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:16}},
+[{l:"Anlagenname",v:"Dülmen PV"},{l:"Leistung (kWp)",v:"9.92",m:true},{l:"Zeitzone",v:"Europe/Berlin"},{l:"Breitengrad",v:"51.83",m:true},{l:"Längengrad",v:"7.28",m:true},{l:"MOSMIX-Station",v:"P0051"}].map(f=>
+React.createElement("div",{key:f.l},
+React.createElement("label",{style:{fontSize:11,color:C.textMuted,fontFamily:font,display:"block",marginBottom:6}},f.l),
+React.createElement("div",{style:{background:C.surface,border:`1px solid ${C.border}`,borderRadius:6,padding:"8px 12px",fontSize:13,color:C.text,fontFamily:f.m?mono:font}},f.v))))),
+React.createElement("div",{style:{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:20}},
+React.createElement(SectionTitle,{icon:React.createElement(Icon,{d:Icons.cloud,color:C.blue})},"Wetterdaten-Quellen"),
+React.createElement("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16}},
+[{l:"Vorhersage-Provider",opts:["MOSMIX","Open-Meteo"]},{l:"Historische Daten",opts:["HOSTRADA","Open-Meteo"]}].map(f=>
+React.createElement("div",{key:f.l},
+React.createElement("label",{style:{fontSize:11,color:C.textMuted,fontFamily:font,display:"block",marginBottom:6}},f.l),
+React.createElement("div",{style:{display:"flex",background:C.surface,border:`1px solid ${C.border}`,borderRadius:6,overflow:"hidden"}},
+f.opts.map((o,i)=>React.createElement("button",{key:o,style:{flex:1,padding:"8px",fontSize:12,fontFamily:font,border:"none",cursor:"pointer",background:i===0?C.accentBg:"transparent",color:i===0?C.accent:C.textMuted}},o)))))),
+React.createElement("div",{style:{marginTop:12}},React.createElement(ToggleSwitch,{on:true,label:"MOSMIX_L verwenden (115 Parameter, empfohlen)"}))),
+React.createElement("div",{style:{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:20}},
+React.createElement(SectionTitle,{icon:React.createElement(Icon,{d:Icons.database,color:C.textMuted})},"Pfade"),
+React.createElement("div",{style:{fontFamily:mono,fontSize:12,color:C.textMuted,lineHeight:2.2}},
+["Datenbank: ~/.local/share/pvforecast/data.db","Modell: ~/.local/share/pvforecast/model.pkl","Config: ~/.config/pvforecast/config.yaml","HOSTRADA-Cache: ~/.cache/pvforecast/hostrada/"].map((p,i)=>{
+const[k,v]=p.split(": ");return React.createElement("div",{key:i},k+": ",React.createElement("span",{style:{color:C.text}},v))}))),
+React.createElement("div",{style:{background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:20}},
+React.createElement("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center"}},
+React.createElement(SectionTitle,{icon:React.createElement(Icon,{d:Icons.health,color:C.green})},"Systemcheck (Doctor)"),
+React.createElement(Btn,{small:true,icon:React.createElement(Icon,{d:Icons.health,size:13})},"Jetzt prüfen")),
+React.createElement("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginTop:4}},
+["Python 3.12.4","pvforecast v0.3.0","Config vorhanden","Datenbank OK","Modell geladen","XGBoost verfügbar","libomp installiert","MOSMIX erreichbar"].map(n=>
+React.createElement("div",{key:n,style:{display:"flex",alignItems:"center",gap:8,padding:"4px 0"}},
+React.createElement(Icon,{d:Icons.check,size:13,color:C.green}),
+React.createElement("span",{style:{fontSize:12,fontFamily:font,color:C.text}},n))))),
+React.createElement("div",{style:{background:C.redBg,border:`1px solid ${C.red}25`,borderRadius:12,padding:20}},
+React.createElement(SectionTitle,{icon:React.createElement(Icon,{d:Icons.alert,color:C.red})},"Zurücksetzen"),
+React.createElement("div",{style:{display:"flex",gap:8,flexWrap:"wrap"}},
+["Datenbank löschen","Modell löschen","Config löschen","Alles zurücksetzen"].map(a=>
+React.createElement("button",{key:a,style:{padding:"7px 14px",fontSize:12,fontFamily:font,borderRadius:6,border:`1px solid ${C.red}40`,background:"transparent",color:C.red,cursor:"pointer",fontWeight:a.includes("Alles")?600:400}},a)))),
+React.createElement("div",{style:{display:"flex",gap:12,justifyContent:"flex-end"}},
+React.createElement(Btn,null,"Änderungen verwerfen"),React.createElement(Btn,{primary:true},"Speichern")));}
+
+// ─── MAIN APP ──────────────────────────────────────────────
+const pageList=[
+{id:"dashboard",label:"Dashboard",icon:Icons.sun,comp:DashboardPage},
+{id:"forecast",label:"Prognose",icon:Icons.chart,comp:ForecastPage},
+{id:"training",label:"Training",icon:Icons.brain,comp:TrainingPage},
+{id:"evaluate",label:"Evaluation",icon:Icons.health,comp:EvaluatePage},
+{id:"data",label:"Daten",icon:Icons.database,comp:DataPage},
+{id:"settings",label:"Einstellungen",icon:Icons.settings,comp:SettingsPage},
+];
+
+function App(){
+const[active,setActive]=useState("dashboard");
+const[expertMode,setExpertMode]=useState(true);
+const page=pageList.find(p=>p.id===active);
+const PageComp=page?page.comp:DashboardPage;
+const isExpert=active==="training"||active==="evaluate";
+
+return React.createElement("div",{style:{display:"flex",minHeight:"100vh",background:C.bg,fontFamily:font,color:C.text}},
+// Sidebar
+React.createElement("nav",{style:{width:220,background:C.surface,borderRight:`1px solid ${C.border}`,display:"flex",flexDirection:"column",position:"sticky",top:0,height:"100vh"}},
+React.createElement("div",{style:{padding:"20px 18px 16px",borderBottom:`1px solid ${C.border}`}},
+React.createElement("div",{style:{display:"flex",alignItems:"center",gap:10}},
+React.createElement("div",{style:{width:32,height:32,borderRadius:8,display:"flex",alignItems:"center",justifyContent:"center",background:`linear-gradient(135deg, ${C.accent}, #d97706)`,fontSize:16}},"☀️"),
+React.createElement("div",null,
+React.createElement("div",{style:{fontSize:14,fontWeight:700,letterSpacing:0.3}},"pvforecast"),
+React.createElement("div",{style:{fontSize:10,color:C.textDim,fontFamily:mono}},"v0.3.0")))),
+React.createElement("div",{style:{padding:"12px 8px",flex:1}},
+pageList.map(p=>{
+const isActive=active===p.id;
+const isExp=p.id==="training"||p.id==="evaluate";
+if(isExp&&!expertMode)return null;
+return React.createElement("button",{key:p.id,onClick:()=>setActive(p.id),style:{display:"flex",alignItems:"center",gap:10,width:"100%",padding:"9px 12px",borderRadius:8,border:"none",cursor:"pointer",background:isActive?C.accentBg:"transparent",color:isActive?C.accent:C.textMuted,fontSize:13,fontFamily:font,fontWeight:isActive?600:400,marginBottom:2,textAlign:"left",borderLeft:isActive?`2px solid ${C.accent}`:"2px solid transparent"}},
+React.createElement(Icon,{d:p.icon,size:16,color:isActive?C.accent:C.textMuted}),
+p.label,
+isExp&&React.createElement(Badge,{color:C.blue},"Pro"))})),
+React.createElement("div",{style:{padding:"12px 16px",borderTop:`1px solid ${C.border}`}},
+React.createElement("div",{style:{marginBottom:12},onClick:()=>setExpertMode(!expertMode)},
+React.createElement(ToggleSwitch,{on:expertMode,label:"Experten-Modus"})),
+React.createElement("div",{style:{fontSize:11,color:C.textDim,fontFamily:font,lineHeight:1.6}},
+"Dülmen PV • 9.92 kWp",React.createElement("br"),
+React.createElement("span",{style:{fontFamily:mono,fontSize:10}},"51.83°N 7.28°E")))),
+// Main
+React.createElement("main",{style:{flex:1,display:"flex",flexDirection:"column",minWidth:0}},
+React.createElement("header",{style:{padding:"14px 28px",borderBottom:`1px solid ${C.border}`,display:"flex",justifyContent:"space-between",alignItems:"center",background:C.surface,position:"sticky",top:0,zIndex:10}},
+React.createElement("div",null,
+React.createElement("h1",{style:{fontSize:18,fontWeight:600,margin:0,letterSpacing:-0.3}},page?.label),
+isExpert&&React.createElement("span",{style:{fontSize:11,color:C.textDim}},"Erweiterte Funktionen")),
+React.createElement("div",{style:{display:"flex",alignItems:"center",gap:16}},
+React.createElement("span",{style:{fontSize:11,color:C.textDim,fontFamily:mono}},"08.02.2026 • 16:42"),
+React.createElement("div",{style:{width:8,height:8,borderRadius:99,background:C.green,boxShadow:`0 0 8px ${C.green}60`}}))),
+React.createElement("div",{style:{padding:28,flex:1,overflowY:"auto"}},
+React.createElement(PageComp))));
+}
+
+ReactDOM.render(React.createElement(App),document.getElementById("root"));
+</script>
+
+</body>
+</html>
