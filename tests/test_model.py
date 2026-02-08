@@ -11,6 +11,7 @@ from pvforecast.model import (
     ModelNotFoundError,
     calculate_sun_elevation,
     load_model,
+    load_training_data,
     prepare_features,
     save_model,
 )
@@ -565,6 +566,122 @@ class TestXGBoostIntegration:
             assert pipeline is not None
 
 
+class TestLoadTrainingData:
+    """Tests für load_training_data()."""
+
+    def test_load_training_data_imports(self):
+        """Test: load_training_data kann importiert werden."""
+        assert callable(load_training_data)
+
+    def test_load_training_data_returns_tuple(self, tmp_path):
+        """Test: load_training_data gibt (X, y) Tuple zurück."""
+        from pvforecast.db import Database
+
+        db_path = tmp_path / "test.db"
+        db = Database(db_path)
+
+
+        # Testdaten einfügen (genug für min_samples=10)
+        with db.connect() as conn:
+            for i in range(20):
+                ts = 1704067200 + i * 3600  # Stündlich ab 01.01.2024
+                conn.execute(
+                    "INSERT INTO pv_readings (timestamp, production_w, curtailed) VALUES (?, ?, 0)",
+                    (ts, 500 + i * 10),
+                )
+                conn.execute(
+                    """INSERT INTO weather_history
+                    (timestamp, ghi_wm2, cloud_cover_pct, temperature_c, wind_speed_ms, humidity_pct, dhi_wm2, dni_wm2)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                    (ts, 400, 20, 15, 3, 60, 100, 300),
+                )
+            conn.commit()
+
+        X, y = load_training_data(db, lat=51.83, lon=7.28, min_samples=10)
+
+        assert isinstance(X, pd.DataFrame)
+        assert isinstance(y, pd.Series)
+        assert len(X) == len(y) == 20
+
+    def test_load_training_data_min_samples(self, tmp_path):
+        """Test: load_training_data wirft ValueError bei zu wenig Daten."""
+        from pvforecast.db import Database
+
+        db_path = tmp_path / "test.db"
+        db = Database(db_path)
+
+
+        # Nur 5 Datensätze einfügen
+        with db.connect() as conn:
+            for i in range(5):
+                ts = 1704067200 + i * 3600
+                conn.execute(
+                    "INSERT INTO pv_readings (timestamp, production_w, curtailed) VALUES (?, ?, 0)",
+                    (ts, 500),
+                )
+                conn.execute(
+                    """INSERT INTO weather_history
+                    (timestamp, ghi_wm2, cloud_cover_pct, temperature_c, wind_speed_ms, humidity_pct, dhi_wm2, dni_wm2)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                    (ts, 400, 20, 15, 3, 60, 100, 300),
+                )
+            conn.commit()
+
+        with pytest.raises(ValueError) as exc_info:
+            load_training_data(db, lat=51.83, lon=7.28, min_samples=100)
+
+        assert "Zu wenig Trainingsdaten" in str(exc_info.value)
+        assert "100" in str(exc_info.value)
+
+    def test_load_training_data_since_year(self, tmp_path):
+        """Test: since_year filtert alte Daten aus."""
+        from pvforecast.db import Database
+
+        db_path = tmp_path / "test.db"
+        db = Database(db_path)
+
+
+        # Daten aus 2022 und 2024
+        with db.connect() as conn:
+            # 10 Datensätze aus 2022
+            for i in range(10):
+                ts = 1640995200 + i * 3600  # 01.01.2022
+                conn.execute(
+                    "INSERT INTO pv_readings (timestamp, production_w, curtailed) VALUES (?, ?, 0)",
+                    (ts, 500),
+                )
+                conn.execute(
+                    """INSERT INTO weather_history
+                    (timestamp, ghi_wm2, cloud_cover_pct, temperature_c, wind_speed_ms, humidity_pct, dhi_wm2, dni_wm2)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                    (ts, 400, 20, 15, 3, 60, 100, 300),
+                )
+            # 15 Datensätze aus 2024
+            for i in range(15):
+                ts = 1704067200 + i * 3600  # 01.01.2024
+                conn.execute(
+                    "INSERT INTO pv_readings (timestamp, production_w, curtailed) VALUES (?, ?, 0)",
+                    (ts, 600),
+                )
+                conn.execute(
+                    """INSERT INTO weather_history
+                    (timestamp, ghi_wm2, cloud_cover_pct, temperature_c, wind_speed_ms, humidity_pct, dhi_wm2, dni_wm2)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                    (ts, 500, 15, 18, 2, 55, 120, 350),
+                )
+            conn.commit()
+
+        # Alle Daten laden
+        X_all, y_all = load_training_data(db, lat=51.83, lon=7.28, min_samples=10)
+        assert len(X_all) == 25
+
+        # Nur ab 2024
+        X_2024, y_2024 = load_training_data(
+            db, lat=51.83, lon=7.28, since_year=2024, min_samples=10
+        )
+        assert len(X_2024) == 15
+
+
 class TestTune:
     """Tests für Hyperparameter-Tuning."""
 
@@ -585,7 +702,7 @@ class TestTune:
         with pytest.raises(ValueError) as exc_info:
             tune(db, 51.83, 7.28, n_iter=2, cv_splits=2)
 
-        assert "Zu wenig Daten" in str(exc_info.value)
+        assert "Zu wenig Trainingsdaten" in str(exc_info.value)
 
     def test_tune_parameter_distributions(self):
         """Test: Parameter-Verteilungen sind korrekt definiert."""
@@ -704,7 +821,7 @@ class TestOptunaIntegration:
         with pytest.raises(ValueError) as exc_info:
             tune_optuna(db, 51.83, 7.28, n_trials=2, cv_splits=2)
 
-        assert "Zu wenig Daten" in str(exc_info.value)
+        assert "Zu wenig Trainingsdaten" in str(exc_info.value)
 
     def test_tune_optuna_without_optuna_raises_dependency_error(self, tmp_path, monkeypatch):
         """Test: tune_optuna ohne Optuna wirft DependencyError."""
