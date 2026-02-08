@@ -5,6 +5,40 @@ Alle wichtigen Änderungen an diesem Projekt werden hier dokumentiert.
 Das Format basiert auf [Keep a Changelog](https://keepachangelog.com/de/1.0.0/),
 und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
+## [0.4.1] - 2026-02-08
+
+### Hinzugefügt
+
+- **GUI Mockup** – Interaktiver HTML/React Prototyp für geplante NiceGUI-Oberfläche
+  - 6 Seiten: Dashboard, Prognose, Training, Evaluation, Daten, Einstellungen
+  - Dark Theme mit IBM Plex Fonts
+  - Screenshots direkt auf GitHub sichtbar (`gui/README.md`)
+
+- **GUI-Framework-Analyse** – Vergleich NiceGUI vs. Streamlit vs. Dash (`docs/GUI-ANALYSIS.md`)
+
+- **Glossar** – Erklärung aller Fachbegriffe und Metriken (`docs/GLOSSARY.md`)
+
+### Behoben
+
+- **Setup: XGBoost nach Installation verfügbar** (#161) – `reload_xgboost()` aktualisiert Import-Cache nach pip-Installation
+- **Setup: MAPE-Anzeige korrigiert** (#162) – Wurde doppelt mit 100 multipliziert (2237% statt 22%)
+- **Setup: XGBoost-Verfügbarkeit vor Training prüfen** (#160)
+- **Setup: HOSTRADA Dateinamen-Parsing** (#158) – Hex-Prefixe werden korrekt ignoriert
+- **Setup: Korrekte Argumente an train()** (#154)
+
+### Verbessert
+
+- **Setup: Fortschrittsbalken für HOSTRADA-Import** (#159) – Zeigt Monat und Prozent
+- **Setup: HOSTRADA sofort laden** (#157) – Wetterdaten können direkt in DB importiert werden
+- **Setup: Wetterdaten vor Training prüfen** (#157) – Bietet Nachladen an wenn keine vorhanden
+- **Setup: UX-Verbesserungen** (#149-#152) – Training nach Import, Dependency-Checks
+
+### Dokumentation
+
+- SPEC.md nach `docs/` verschoben
+- CLI.md mit `--quiet` Flag aktualisiert
+- PROJECT-STATUS.md und METRIKEN-ERKLAERT.pdf entfernt (ersetzt durch GLOSSARY.md)
+
 ## [0.4.0] - 2026-02-08
 
 ### Hinzugefügt
