@@ -694,3 +694,201 @@ class TestShowTestForecast:
 
         # Sollte Fehlermeldung ausgeben
         assert any("nicht verfügbar" in str(o) for o in outputs)
+
+
+class TestHOSTRADALoadInSetup:
+    """Tests für Issue #155: HOSTRADA-Dateien im Setup laden."""
+
+    def test_hostrada_load_offered_when_files_found(self, tmp_path):
+        """Test: Laden wird angeboten wenn NetCDF-Dateien gefunden werden."""
+        # Erstelle fake NetCDF-Dateien
+        hostrada_dir = tmp_path / "hostrada"
+        hostrada_dir.mkdir()
+        (hostrada_dir / "rsds_1hr_HOSTRADA-v1-0_BE_gn_2023010100-2023013123.nc").touch()
+        (hostrada_dir / "tas_1hr_HOSTRADA-v1-0_BE_gn_2023010100-2023013123.nc").touch()
+
+        outputs = []
+        inputs = iter([
+            "j",               # Lokales Verzeichnis angeben? [j/N]
+            str(hostrada_dir), # Pfad
+            "n",               # Wetterdaten jetzt laden? [J/n] - ablehnen
+        ])
+
+        wizard = SetupWizard(
+            output_func=lambda x: outputs.append(x),
+            input_func=lambda _: next(inputs),
+        )
+
+        # Setze Koordinaten (normalerweise aus _prompt_location)
+        wizard._latitude = 51.83
+        wizard._longitude = 7.28
+
+        result = wizard._prompt_hostrada_path()
+
+        # Sollte Pfad zurückgeben
+        assert result == str(hostrada_dir)
+        # Sollte Dateien gefunden melden
+        assert any("2 NetCDF-Dateien gefunden" in str(o) for o in outputs)
+
+    def test_hostrada_load_skipped_without_coordinates(self, tmp_path):
+        """Test: Laden wird nicht angeboten wenn Koordinaten fehlen."""
+        hostrada_dir = tmp_path / "hostrada"
+        hostrada_dir.mkdir()
+        (hostrada_dir / "test.nc").touch()
+
+        outputs = []
+        inputs = iter([
+            "j",               # Lokales Verzeichnis angeben?
+            str(hostrada_dir), # Pfad
+        ])
+
+        wizard = SetupWizard(
+            output_func=lambda x: outputs.append(x),
+            input_func=lambda _: next(inputs),
+        )
+
+        # Keine Koordinaten gesetzt!
+        wizard._latitude = None
+        wizard._longitude = None
+
+        result = wizard._prompt_hostrada_path()
+
+        # Sollte Pfad zurückgeben
+        assert result == str(hostrada_dir)
+        # Sollte nicht nach Laden fragen (keine "Wetterdaten jetzt laden" Frage)
+        assert not any("Wetterdaten jetzt in Datenbank laden" in str(o) for o in outputs)
+
+
+class TestWeatherCheckBeforeTraining:
+    """Tests für Issue #156: Wetterdaten vor Training prüfen."""
+
+    def test_training_checks_weather_data(self, tmp_path):
+        """Test: Training prüft ob Wetterdaten vorhanden sind."""
+        outputs = []
+        inputs = iter(["n"])  # Wetterdaten laden? - ablehnen
+
+        wizard = SetupWizard(
+            output_func=lambda x: outputs.append(x),
+            input_func=lambda _: next(inputs),
+        )
+
+        with patch("pvforecast.config._default_model_path") as mock_model_path:
+            mock_model_path.return_value = tmp_path / "model.pkl"
+
+            # Mock Database
+            with patch("pvforecast.db.Database") as MockDB:
+                mock_db = MagicMock()
+                mock_db.get_weather_count.return_value = 0  # Keine Wetterdaten!
+                MockDB.return_value = mock_db
+
+                from pvforecast.config import Config
+                config = Config(
+                    latitude=51.83,
+                    longitude=7.28,
+                    peak_kwp=9.92,
+                    db_path=tmp_path / "test.db",
+                )
+
+                result = wizard._execute_training("rf", config)
+
+        # Training sollte abbrechen
+        assert result is False
+        assert wizard._training_completed is False
+        # Warnung sollte ausgegeben werden
+        assert any("Keine Wetterdaten vorhanden" in str(o) for o in outputs)
+
+    def test_training_proceeds_with_weather_data(self, tmp_path):
+        """Test: Training läuft wenn Wetterdaten vorhanden sind."""
+        outputs = []
+
+        wizard = SetupWizard(
+            output_func=lambda x: outputs.append(x),
+            input_func=lambda _: "",
+        )
+
+        with patch("pvforecast.config._default_model_path") as mock_model_path:
+            mock_model_path.return_value = tmp_path / "model.pkl"
+
+            # Mock Database mit Wetterdaten
+            with patch("pvforecast.db.Database") as MockDB:
+                mock_db = MagicMock()
+                mock_db.get_weather_count.return_value = 1000  # Wetterdaten vorhanden!
+                MockDB.return_value = mock_db
+
+                # Mock train function
+                with patch("pvforecast.model.train") as mock_train:
+                    mock_model = MagicMock()
+                    mock_metrics = {"mape": 0.25}
+                    mock_train.return_value = (mock_model, mock_metrics)
+
+                    # Mock save_model
+                    with patch("pvforecast.model.save_model"):
+                        from pvforecast.config import Config
+                        config = Config(
+                            latitude=51.83,
+                            longitude=7.28,
+                            peak_kwp=9.92,
+                            db_path=tmp_path / "test.db",
+                        )
+
+                        result = wizard._execute_training("rf", config)
+
+        # Training sollte erfolgreich sein
+        assert result is True
+        assert wizard._training_completed is True
+        # Keine Warnung über fehlende Wetterdaten
+        assert not any("Keine Wetterdaten vorhanden" in str(o) for o in outputs)
+
+
+class TestFetchWeatherForTraining:
+    """Tests für _fetch_weather_for_training Methode."""
+
+    def test_fetch_weather_declined(self, tmp_path):
+        """Test: Benutzer lehnt Wetterdaten-Laden ab."""
+        outputs = []
+        inputs = iter(["n"])  # Ablehnen
+
+        wizard = SetupWizard(
+            output_func=lambda x: outputs.append(x),
+            input_func=lambda _: next(inputs),
+        )
+
+        from pvforecast.config import Config
+        config = Config(
+            latitude=51.83,
+            longitude=7.28,
+            peak_kwp=9.92,
+            db_path=tmp_path / "test.db",
+        )
+
+        result = wizard._fetch_weather_for_training(config)
+
+        assert result == 0
+
+    def test_fetch_weather_no_pv_data(self, tmp_path):
+        """Test: Fehler wenn keine PV-Daten vorhanden."""
+        outputs = []
+        inputs = iter(["j"])  # Zustimmen
+
+        wizard = SetupWizard(
+            output_func=lambda x: outputs.append(x),
+            input_func=lambda _: next(inputs),
+        )
+
+        with patch("pvforecast.db.Database") as MockDB:
+            mock_db = MagicMock()
+            mock_db.get_pv_date_range.return_value = None  # Keine PV-Daten
+            MockDB.return_value = mock_db
+
+            from pvforecast.config import Config
+            config = Config(
+                latitude=51.83,
+                longitude=7.28,
+                peak_kwp=9.92,
+                db_path=tmp_path / "test.db",
+            )
+
+            result = wizard._fetch_weather_for_training(config)
+
+        assert result == 0
+        assert any("Keine PV-Daten" in str(o) for o in outputs)

@@ -68,6 +68,9 @@ class SetupWizard:
         self._existing_config = None
         self._run_training_after_import = False
         self._training_completed = False
+        self._latitude: float | None = None
+        self._longitude: float | None = None
+        self._existing_weather_records = 0
 
     def run_interactive(self) -> SetupResult:
         """Führt den interaktiven Setup-Wizard aus.
@@ -168,8 +171,10 @@ class SetupWizard:
 
                 db = Database(db_path)
                 self._existing_db_records = db.get_pv_count()
-                weather_count = db.get_weather_count()
-                db_info = f"{self._existing_db_records:,} PV + {weather_count:,} Wetter"
+                self._existing_weather_records = db.get_weather_count()
+                db_info = (
+                    f"{self._existing_db_records:,} PV + {self._existing_weather_records:,} Wetter"
+                )
                 found_items.append(f"Datenbank: {db_info}")
             except Exception:
                 found_items.append("Datenbank: vorhanden")
@@ -214,9 +219,11 @@ class SetupWizard:
             if not query and self._existing_config:
                 self.output("   ✓ Übernehme existierenden Standort")
                 self.output("")
+                self._latitude = self._existing_config.latitude
+                self._longitude = self._existing_config.longitude
                 return (
-                    self._existing_config.latitude,
-                    self._existing_config.longitude,
+                    self._latitude,
+                    self._longitude,
                     self._existing_config.system_name.replace(" PV", ""),
                 )
 
@@ -244,6 +251,8 @@ class SetupWizard:
                 if confirm in ("", "j", "ja", "y", "yes"):
                     self.output("   ✓")
                     self.output("")
+                    self._latitude = result.latitude
+                    self._longitude = result.longitude
                     return result.latitude, result.longitude, result.short_name()
                 else:
                     self.output("   OK, versuche es erneut.")
@@ -289,6 +298,8 @@ class SetupWizard:
 
                 self.output("   ✓")
                 self.output("")
+                self._latitude = latitude
+                self._longitude = longitude
                 return latitude, longitude, name
 
             except ValueError:
@@ -462,11 +473,176 @@ class SetupWizard:
             nc_files = list(local_path.glob("*.nc"))
             if nc_files:
                 self.output(f"   ✓ {len(nc_files)} NetCDF-Dateien gefunden")
+
+                # Issue #155: Anbieten, die Dateien sofort zu laden
+                if self._latitude is not None and self._longitude is not None:
+                    self.output("")
+                    response = self.input(
+                        "   Wetterdaten jetzt in Datenbank laden? [J/n]: "
+                    ).strip().lower()
+                    if response not in ("n", "nein", "no"):
+                        loaded = self._load_hostrada_to_db(str(local_path))
+                        if loaded > 0:
+                            self._existing_weather_records = loaded
             else:
                 self.output("   ℹ️  Noch keine Dateien vorhanden (werden bei Bedarf geladen)")
 
             self.output("")
             return str(local_path)
+
+    def _load_hostrada_to_db(self, local_dir: str) -> int:
+        """Lädt HOSTRADA-Daten aus lokalem Verzeichnis in die Datenbank.
+
+        Args:
+            local_dir: Pfad zum Verzeichnis mit NetCDF-Dateien
+
+        Returns:
+            Anzahl geladener Datensätze
+        """
+        from datetime import date, timedelta
+
+        from pvforecast.config import _default_db_path
+        from pvforecast.db import Database
+        from pvforecast.sources.hostrada import HOSTRADASource
+
+        self.output("")
+        self.output("   Lade Wetterdaten...")
+
+        try:
+            # HOSTRADA Source initialisieren
+            source = HOSTRADASource(
+                latitude=self._latitude,
+                longitude=self._longitude,
+                local_dir=local_dir,
+                show_progress=False,  # Wir machen eigene Fortschrittsanzeige
+            )
+
+            # Verfügbaren Datumsbereich ermitteln
+            local_path = Path(local_dir)
+            nc_files = sorted(local_path.glob("*.nc"))
+
+            if not nc_files:
+                self.output("   ⚠️  Keine NetCDF-Dateien gefunden")
+                return 0
+
+            # Extrahiere Jahreszahlen aus Dateinamen (Format: *_YYYYMM*.nc)
+            import re
+
+            years_months = set()
+            for f in nc_files:
+                # Suche nach YYYYMM Pattern
+                matches = re.findall(r"(\d{4})(\d{2})\d{2}", f.name)
+                for year, month in matches:
+                    years_months.add((int(year), int(month)))
+
+            if not years_months:
+                self.output("   ⚠️  Konnte Datumsbereich nicht ermitteln")
+                return 0
+
+            sorted_ym = sorted(years_months)
+            first_year, first_month = sorted_ym[0]
+            last_year, last_month = sorted_ym[-1]
+
+            start_date = date(first_year, first_month, 1)
+            # Letzter Tag des letzten Monats
+            if last_month == 12:
+                end_date = date(last_year + 1, 1, 1) - timedelta(days=1)
+            else:
+                end_date = date(last_year, last_month + 1, 1) - timedelta(days=1)
+
+            self.output(f"   Zeitraum: {start_date} bis {end_date}")
+
+            # Daten laden (HOSTRADA zeigt eigene Fortschrittsanzeige)
+            weather_df = source.fetch_historical(start_date, end_date)
+
+            if len(weather_df) == 0:
+                self.output("   ⚠️  Keine Wetterdaten geladen")
+                return 0
+
+            # In DB speichern (nutze bestehende Funktion)
+            from pvforecast.weather import save_weather_to_db
+
+            db_path = _default_db_path()
+            db = Database(db_path)
+            loaded = save_weather_to_db(weather_df, db)
+
+            self.output(f"   ✓ {loaded:,} Wetterdatensätze geladen")
+            return loaded
+
+        except Exception as e:
+            self.output(f"   ❌ Fehler beim Laden: {e}")
+            return 0
+
+    def _fetch_weather_for_training(self, config: Config) -> int:
+        """Lädt Wetterdaten für das Training.
+
+        Wird aufgerufen wenn vor dem Training keine Wetterdaten vorhanden sind.
+
+        Args:
+            config: Die aktuelle Konfiguration
+
+        Returns:
+            Anzahl geladener Datensätze
+        """
+        from datetime import date, timedelta
+
+        from pvforecast.db import Database
+        from pvforecast.weather import fetch_historical, save_weather_to_db
+
+        response = self.input("   Wetterdaten jetzt laden? [J/n]: ").strip().lower()
+        if response in ("n", "nein", "no"):
+            return 0
+
+        self.output("")
+        self.output("   Lade Wetterdaten von Open-Meteo...")
+
+        try:
+            db = Database(config.db_path)
+
+            # Lade PV-Daten Zeitraum um passende Wetterdaten zu ermitteln
+            pv_range = db.get_pv_date_range()
+            if pv_range is None:
+                self.output("   ⚠️  Keine PV-Daten vorhanden")
+                return 0
+
+            start_ts, end_ts = pv_range
+            start_date = date.fromtimestamp(start_ts)
+            end_date = date.fromtimestamp(end_ts)
+
+            self.output(f"   Zeitraum: {start_date} bis {end_date}")
+
+            # Wetterdaten laden (in Chunks von max 1 Jahr)
+            total_loaded = 0
+            current = start_date
+            max_chunk_days = 365
+
+            while current <= end_date:
+                chunk_end = min(current + timedelta(days=max_chunk_days), end_date)
+                self.output(f"   → Lade {current} bis {chunk_end}...")
+
+                try:
+                    weather_df = fetch_historical(
+                        lat=config.latitude,
+                        lon=config.longitude,
+                        start=current,
+                        end=chunk_end,
+                    )
+                    loaded = save_weather_to_db(weather_df, db)
+                    total_loaded += loaded
+                except Exception as e:
+                    self.output(f"   ⚠️  Fehler: {e}")
+
+                current = chunk_end + timedelta(days=1)
+
+            if total_loaded > 0:
+                self.output(f"   ✓ {total_loaded:,} Wetterdatensätze geladen")
+                self._existing_weather_records = total_loaded
+
+            return total_loaded
+
+        except Exception as e:
+            self.output(f"   ❌ Fehler beim Laden: {e}")
+            return 0
 
     def _prompt_model(self) -> tuple[str, bool]:
         """Fragt nach dem Prognose-Modell.
@@ -832,6 +1008,21 @@ class SetupWizard:
 
             db = Database(config.db_path)
             model_path = _default_model_path()
+
+            # Issue #156: Vor Training prüfen ob Wetterdaten vorhanden sind
+            weather_count = db.get_weather_count()
+            if weather_count == 0:
+                self.output("   ⚠️  Keine Wetterdaten vorhanden!")
+                self.output("   Training benötigt historische Wetterdaten.")
+                self.output("")
+
+                # Anbieten Wetterdaten zu laden
+                loaded = self._fetch_weather_for_training(config)
+                if loaded == 0:
+                    self.output("   ❌ Training abgebrochen (keine Wetterdaten)")
+                    self.output("")
+                    self._training_completed = False
+                    return False
 
             # Training durchführen
             model, metrics = train(
