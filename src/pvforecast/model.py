@@ -469,9 +469,11 @@ def train(
               AND p.production_w >= 0
               AND w.ghi_wm2 IS NOT NULL
         """
+        params: list[str] = []
         if since_year:
-            query += f" AND p.timestamp >= strftime('%s', '{since_year}-01-01')"
-        df = pd.read_sql_query(query, conn)
+            query += " AND p.timestamp >= strftime('%s', ?)"
+            params.append(f"{since_year}-01-01")
+        df = pd.read_sql_query(query, conn, params=params if params else None)
 
     if len(df) < 100:
         raise ValueError(f"Zu wenig Trainingsdaten: {len(df)} (mindestens 100 benötigt)")
@@ -580,9 +582,11 @@ def tune(
               AND p.production_w >= 0
               AND w.ghi_wm2 IS NOT NULL
         """
+        params: list[str] = []
         if since_year:
-            query += f" AND p.timestamp >= strftime('%s', '{since_year}-01-01')"
-        df = pd.read_sql_query(query, conn)
+            query += " AND p.timestamp >= strftime('%s', ?)"
+            params.append(f"{since_year}-01-01")
+        df = pd.read_sql_query(query, conn, params=params if params else None)
 
     if len(df) < 500:
         raise ValueError(f"Zu wenig Daten für Tuning: {len(df)} (mindestens 500 empfohlen)")
@@ -798,9 +802,11 @@ def tune_optuna(
               AND p.production_w >= 0
               AND w.ghi_wm2 IS NOT NULL
         """
+        params: list[str] = []
         if since_year:
-            query += f" AND p.timestamp >= strftime('%s', '{since_year}-01-01')"
-        df = pd.read_sql_query(query, conn)
+            query += " AND p.timestamp >= strftime('%s', ?)"
+            params.append(f"{since_year}-01-01")
+        df = pd.read_sql_query(query, conn, params=params if params else None)
 
     if len(df) < 500:
         raise ValueError(f"Zu wenig Daten für Tuning: {len(df)} (mindestens 500 empfohlen)")
