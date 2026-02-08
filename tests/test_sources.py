@@ -614,13 +614,13 @@ class TestOpenMeteoIntegration:
 
     def test_fetch_forecast_real(self, openmeteo_source):
         """Test fetching real Open-Meteo forecast."""
-        # Use a fixed reference time far in the past to get all forecast hours
-        # This avoids CI timing issues (Issue #109 lesson: parameter injection > mocking)
+        # Pass explicit now to disable past-filtering (Issue #109: parameter injection)
+        # This gives us all forecast hours regardless of CI server time
         from datetime import datetime
         from zoneinfo import ZoneInfo
 
-        past_ref = datetime(2020, 1, 1, 12, 0, 0, tzinfo=ZoneInfo("UTC"))
-        df = openmeteo_source.fetch_forecast(hours=24, now=past_ref)
+        ref_time = datetime.now(ZoneInfo("UTC"))
+        df = openmeteo_source.fetch_forecast(hours=24, now=ref_time)
 
         assert len(df) >= 20  # Should have most of the 24 hours
         assert "timestamp" in df.columns

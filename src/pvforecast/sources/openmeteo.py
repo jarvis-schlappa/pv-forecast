@@ -184,7 +184,7 @@ class OpenMeteoSource(ForecastSource, HistoricalSource):
         Args:
             hours: Number of hours (max 384 = 16 days)
             now: Reference time for filtering (default: current time).
-                 Useful for testing without mocking datetime.
+                 If explicitly set, no past-filtering is applied (full control).
 
         Returns:
             DataFrame with forecast data
@@ -193,6 +193,9 @@ class OpenMeteoSource(ForecastSource, HistoricalSource):
             DownloadError: If download fails
             ParseError: If parsing fails
         """
+        # Only filter past hours if now is not explicitly set
+        filter_past = now is None
+
         if now is None:
             now = datetime.now(UTC_TZ)
 
@@ -209,9 +212,12 @@ class OpenMeteoSource(ForecastSource, HistoricalSource):
         data = self._request_with_retry(FORECAST_API, params)
         df = self._parse_response(data)
 
-        # Filter to future hours only (with 1h buffer for clock drift)
-        now_ts = int(now.timestamp()) - 3600
-        df = df[df["timestamp"] >= now_ts].head(hours)
+        if filter_past:
+            # Filter to future hours only (with 1h buffer for clock drift)
+            now_ts = int(now.timestamp()) - 3600
+            df = df[df["timestamp"] >= now_ts]
+
+        df = df.head(hours)
 
         logger.info(f"Fetched {len(df)} hours of forecast data")
         return df
