@@ -10,6 +10,7 @@ from pvforecast.sources.base import (
 )
 from pvforecast.sources.hostrada import HOSTRADASource
 from pvforecast.sources.mosmix import MOSMIXSource
+from pvforecast.sources.openmeteo import OpenMeteoConfig, OpenMeteoSource
 
 __all__ = [
     "DownloadError",
@@ -17,6 +18,8 @@ __all__ = [
     "HistoricalSource",
     "HOSTRADASource",
     "MOSMIXSource",
+    "OpenMeteoConfig",
+    "OpenMeteoSource",
     "ParseError",
     "WeatherRecord",
     "WeatherSourceError",

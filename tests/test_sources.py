@@ -17,6 +17,7 @@ from pvforecast.sources.mosmix import (
     calculate_relative_humidity,
     estimate_dhi,
 )
+from pvforecast.sources.openmeteo import OpenMeteoConfig, OpenMeteoSource
 
 # =============================================================================
 # MOSMIX Tests
@@ -450,3 +451,204 @@ class TestHOSTRADAIntegration:
         assert df["ghi_wm2"].min() >= 0
         assert df["cloud_cover_pct"].min() >= 0
         assert df["cloud_cover_pct"].max() <= 100
+
+
+# =============================================================================
+# OpenMeteoSource Tests
+# =============================================================================
+
+
+class TestOpenMeteoConfig:
+    """Tests for OpenMeteoConfig dataclass."""
+
+    def test_default_config(self):
+        """Test default config values."""
+        config = OpenMeteoConfig()
+        assert config.lat == 51.83
+        assert config.lon == 7.28
+        assert config.timeout == 30.0
+        assert config.max_retries == 3
+
+    def test_custom_location(self):
+        """Test custom location config."""
+        config = OpenMeteoConfig(lat=52.52, lon=13.40)
+        assert config.lat == 52.52
+        assert config.lon == 13.40
+
+
+class TestOpenMeteoSource:
+    """Tests for OpenMeteoSource."""
+
+    @pytest.fixture
+    def openmeteo_source(self):
+        """Create Open-Meteo source for testing."""
+        config = OpenMeteoConfig(lat=51.83, lon=7.28)
+        return OpenMeteoSource(config)
+
+    def test_parse_response_valid(self, openmeteo_source):
+        """Test parsing valid API response."""
+        mock_response = {
+            "hourly": {
+                "time": ["2026-02-08T12:00", "2026-02-08T13:00"],
+                "shortwave_radiation": [500.0, 600.0],
+                "cloud_cover": [30, 40],
+                "temperature_2m": [15.0, 16.0],
+                "wind_speed_10m": [5.0, 6.0],
+                "relative_humidity_2m": [60, 55],
+                "diffuse_radiation": [100.0, 120.0],
+                "direct_normal_irradiance": [400.0, 450.0],
+            }
+        }
+
+        df = openmeteo_source._parse_response(mock_response)
+
+        assert len(df) == 2
+        assert "timestamp" in df.columns
+        assert "ghi_wm2" in df.columns
+        assert "cloud_cover_pct" in df.columns
+        assert "temperature_c" in df.columns
+        assert "humidity_pct" in df.columns
+        assert "dhi_wm2" in df.columns
+        assert "dni_wm2" in df.columns
+
+        # Check values
+        assert df["ghi_wm2"].iloc[0] == 500.0
+        assert df["cloud_cover_pct"].iloc[0] == 30
+        assert df["temperature_c"].iloc[0] == 15.0
+        assert df["humidity_pct"].iloc[0] == 60
+
+    def test_parse_response_with_missing_values(self, openmeteo_source):
+        """Test parsing response with missing optional fields."""
+        mock_response = {
+            "hourly": {
+                "time": ["2026-02-08T12:00"],
+                "shortwave_radiation": [500.0],
+                "cloud_cover": [30],
+                "temperature_2m": [15.0],
+                # Optional fields missing
+            }
+        }
+
+        df = openmeteo_source._parse_response(mock_response)
+
+        assert len(df) == 1
+        # Defaults should be applied
+        assert df["wind_speed_ms"].iloc[0] == 0.0
+        assert df["humidity_pct"].iloc[0] == 50
+        assert df["dhi_wm2"].iloc[0] == 0.0
+        assert df["dni_wm2"].iloc[0] == 0.0
+
+    def test_parse_response_invalid(self, openmeteo_source):
+        """Test parsing invalid response raises ParseError."""
+        from pvforecast.sources.base import ParseError
+
+        with pytest.raises(ParseError):
+            openmeteo_source._parse_response({"error": "invalid"})
+
+    def test_get_available_range(self, openmeteo_source):
+        """Test available range returns valid dates."""
+        earliest, latest = openmeteo_source.get_available_range()
+
+        assert earliest == date(1940, 1, 1)
+        assert latest < date.today()
+
+    @patch("pvforecast.sources.openmeteo.httpx.Client")
+    def test_request_retry_on_429(self, mock_client, openmeteo_source):
+        """Test retry logic on rate limiting."""
+        import httpx
+
+        # First call returns 429, second succeeds
+        mock_response_429 = MagicMock()
+        mock_response_429.status_code = 429
+        mock_response_429.raise_for_status.side_effect = httpx.HTTPStatusError(
+            "Rate limited", request=MagicMock(), response=mock_response_429
+        )
+
+        mock_response_ok = MagicMock()
+        mock_response_ok.status_code = 200
+        mock_response_ok.json.return_value = {
+            "hourly": {
+                "time": [],
+                "shortwave_radiation": [],
+                "cloud_cover": [],
+                "temperature_2m": [],
+            }
+        }
+        mock_response_ok.raise_for_status.return_value = None
+
+        mock_client.return_value.__enter__.return_value.get.side_effect = [
+            mock_response_429,
+            mock_response_ok,
+        ]
+
+        # Reduce retry delay for test
+        openmeteo_source.config.retry_delay = 0.01
+
+        result = openmeteo_source._request_with_retry("http://test", {})
+        assert "hourly" in result
+
+    @patch("pvforecast.sources.openmeteo.httpx.Client")
+    def test_request_fails_on_4xx(self, mock_client, openmeteo_source):
+        """Test 4xx errors (except 429) don't retry."""
+        import httpx
+
+        mock_response = MagicMock()
+        mock_response.status_code = 400
+        mock_response.raise_for_status.side_effect = httpx.HTTPStatusError(
+            "Bad request", request=MagicMock(), response=mock_response
+        )
+
+        mock_client.return_value.__enter__.return_value.get.return_value = mock_response
+
+        with pytest.raises(DownloadError, match="API error: 400"):
+            openmeteo_source._request_with_retry("http://test", {})
+
+
+@pytest.mark.integration
+class TestOpenMeteoIntegration:
+    """Integration tests for Open-Meteo (require network access)."""
+
+    @pytest.fixture
+    def openmeteo_source(self):
+        return OpenMeteoSource(OpenMeteoConfig(lat=51.83, lon=7.28))
+
+    def test_fetch_forecast_real(self, openmeteo_source):
+        """Test fetching real Open-Meteo forecast."""
+        df = openmeteo_source.fetch_forecast(hours=24)
+
+        assert len(df) >= 20  # Should have most of 24 hours
+        assert "timestamp" in df.columns
+        assert "ghi_wm2" in df.columns
+        assert "temperature_c" in df.columns
+        assert "cloud_cover_pct" in df.columns
+        assert "humidity_pct" in df.columns
+
+        # Sanity checks
+        assert df["ghi_wm2"].min() >= 0
+        assert df["cloud_cover_pct"].min() >= 0
+        assert df["cloud_cover_pct"].max() <= 100
+        assert df["humidity_pct"].min() >= 0
+        assert df["humidity_pct"].max() <= 100
+
+    def test_fetch_today_real(self, openmeteo_source):
+        """Test fetching today's weather."""
+        df = openmeteo_source.fetch_today("Europe/Berlin")
+
+        assert len(df) >= 12  # At least half a day
+        assert "timestamp" in df.columns
+        assert "ghi_wm2" in df.columns
+
+    def test_fetch_historical_real(self, openmeteo_source):
+        """Test fetching historical data (small range)."""
+        df = openmeteo_source.fetch_historical(
+            start=date(2024, 1, 1),
+            end=date(2024, 1, 2),
+        )
+
+        assert len(df) >= 24  # At least 1 full day
+        assert "timestamp" in df.columns
+        assert "ghi_wm2" in df.columns
+        assert "temperature_c" in df.columns
+
+        # Sanity checks
+        assert df["ghi_wm2"].min() >= 0

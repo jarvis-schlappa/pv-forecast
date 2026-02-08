@@ -38,6 +38,7 @@ from pvforecast.setup import SetupWizard
 from pvforecast.sources.base import WeatherSourceError
 from pvforecast.sources.hostrada import HOSTRADASource
 from pvforecast.sources.mosmix import MOSMIXConfig, MOSMIXSource
+from pvforecast.sources.openmeteo import OpenMeteoConfig, OpenMeteoSource
 from pvforecast.validation import (
     DependencyError,
     ValidationError,
@@ -48,8 +49,6 @@ from pvforecast.validation import (
 from pvforecast.weather import (
     WeatherAPIError,
     ensure_weather_history,
-    fetch_forecast,
-    fetch_today,
 )
 
 logger = logging.getLogger(__name__)
@@ -73,7 +72,7 @@ def _get_forecast_source(config: Config, source_override: str | None = None):
         source_override: Override source name (mosmix, open-meteo)
 
     Returns:
-        ForecastSource instance or None for legacy open-meteo
+        ForecastSource instance
     """
     source = source_override or config.weather.forecast_provider
 
@@ -86,7 +85,7 @@ def _get_forecast_source(config: Config, source_override: str | None = None):
         )
         return MOSMIXSource(mosmix_config)
     elif source == "open-meteo":
-        return None  # Use legacy weather.py functions
+        return OpenMeteoSource(OpenMeteoConfig(lat=config.latitude, lon=config.longitude))
     else:
         raise ValueError(f"Unknown forecast source: {source}")
 
@@ -100,7 +99,7 @@ def _get_historical_source(config: Config, source_override: str | None = None):
         source_override: Override source name (hostrada, open-meteo)
 
     Returns:
-        HistoricalSource instance or None for legacy open-meteo
+        HistoricalSource instance
     """
     source = source_override or config.weather.historical_provider
 
@@ -112,7 +111,7 @@ def _get_historical_source(config: Config, source_override: str | None = None):
             local_dir=local_dir,
         )
     elif source == "open-meteo":
-        return None  # Use legacy weather.py functions
+        return OpenMeteoSource(OpenMeteoConfig(lat=config.latitude, lon=config.longitude))
     else:
         raise ValueError(f"Unknown historical source: {source}")
 
@@ -219,12 +218,7 @@ def cmd_fetch_forecast(args: argparse.Namespace, config: Config) -> int:
 
     try:
         source = _get_forecast_source(config, source_name)
-
-        if source is None:
-            # Legacy open-meteo
-            weather_df = fetch_forecast(config.latitude, config.longitude, hours=hours)
-        else:
-            weather_df = source.fetch_forecast(hours=hours)
+        weather_df = source.fetch_forecast(hours=hours)
 
     except WeatherSourceError as e:
         print(f"❌ Fehler: {e}", file=sys.stderr)
@@ -395,12 +389,6 @@ def cmd_fetch_historical(args: argparse.Namespace, config: Config) -> int:
 
     try:
         source = _get_historical_source(config, source_name)
-
-        if source is None:
-            print("❌ Open-Meteo historical not implemented via this command yet.", file=sys.stderr)
-            print("   Use 'pvforecast import' instead.", file=sys.stderr)
-            return 1
-
         weather_df = source.fetch_historical(start_date, end_date)
 
     except WeatherSourceError as e:
@@ -489,11 +477,7 @@ def cmd_predict(args: argparse.Namespace, config: Config) -> int:
     # Wettervorhersage holen
     try:
         source = _get_forecast_source(config, source_name)
-        if source is None:
-            # Legacy open-meteo
-            weather_df = fetch_forecast(config.latitude, config.longitude, hours=hours_needed)
-        else:
-            weather_df = source.fetch_forecast(hours=hours_needed)
+        weather_df = source.fetch_forecast(hours=hours_needed)
     except WeatherSourceError as e:
         print(f"❌ Fehler bei Wetterabfrage: {e}", file=sys.stderr)
         return 1
@@ -556,17 +540,14 @@ def cmd_today(args: argparse.Namespace, config: Config) -> int:
     # Wetterdaten für heute holen
     try:
         source = _get_forecast_source(config, source_name)
-        if source is None:
-            # Open-Meteo: fetch_today liefert ganzen Tag (mit past_hours)
-            weather_df = fetch_today(config.latitude, config.longitude, tz)
-        else:
-            # MOSMIX: liefert nur Prognose ab jetzt
-            weather_df = source.fetch_today(str(tz))
-            if full_day and now_hour > 6:
-                print(
-                    "ℹ️  MOSMIX liefert nur Prognosen ab jetzt (kein --full möglich).",
-                    file=sys.stderr,
-                )
+        weather_df = source.fetch_today(str(tz))
+
+        # MOSMIX liefert nur Prognose ab jetzt (keine past_hours)
+        if source_name == "mosmix" and full_day and now_hour > 6:
+            print(
+                "ℹ️  MOSMIX liefert nur Prognosen ab jetzt (kein --full möglich).",
+                file=sys.stderr,
+            )
     except WeatherSourceError as e:
         print(f"❌ Fehler bei Wetterabfrage: {e}", file=sys.stderr)
         return 1
@@ -575,9 +556,9 @@ def cmd_today(args: argparse.Namespace, config: Config) -> int:
         return 1
 
     # Produktionsdaten für heute aus DB holen (für mode="today" mit Lags)
-    # Funktioniert nur mit Open-Meteo (source=None), da MOSMIX keine historischen Daten hat
+    # Funktioniert nur mit Open-Meteo, da MOSMIX keine past_hours liefert
     predict_mode = "predict"  # Default: keine Produktions-Lags
-    if source is None and len(weather_df) > 0:
+    if source_name == "open-meteo" and len(weather_df) > 0:
         db = Database(config.db_path)
         # Zeitraum: erste bis letzte Stunde im weather_df
         start_ts = int(weather_df["timestamp"].min())
