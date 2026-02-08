@@ -251,42 +251,72 @@ class TestMOSMIXSource:
         assert df["humidity_pct"].iloc[0] == 50
 
     def test_estimate_dhi_clear_sky(self, mosmix_source):
-        """Test DHI estimation for clear sky."""
-        # Clear sky at noon, high sun elevation
+        """Test DHI estimation for clear sky (high kt)."""
+        # Clear sky at noon, high sun elevation - summer day
         ghi = 800.0
-        cloud_cover_pct = 10  # Low clouds
         sun_elevation = 60.0  # High sun
+        timestamp = datetime(2026, 6, 21, 12, 0)  # Summer solstice
 
-        dhi = estimate_dhi(ghi, cloud_cover_pct, sun_elevation)
+        dhi = estimate_dhi(ghi, sun_elevation, timestamp)
 
         # DHI should be less than GHI
         assert dhi < ghi
         # DHI should be positive
         assert dhi > 0
-        # For clear sky, DHI should be modest fraction of GHI
+        # For clear sky (high kt), DHI should be modest fraction of GHI
         assert dhi < ghi * 0.5
 
-    def test_estimate_dhi_cloudy(self, mosmix_source):
-        """Test DHI estimation for cloudy conditions."""
-        ghi = 300.0
-        cloud_cover_pct = 80  # Heavy clouds
+    def test_estimate_dhi_low_ghi(self, mosmix_source):
+        """Test DHI estimation for low GHI (low kt = cloudy/diffuse)."""
+        ghi = 150.0  # Low GHI indicates clouds
         sun_elevation = 30.0
+        timestamp = datetime(2026, 2, 8, 12, 0)  # Winter
 
-        dhi = estimate_dhi(ghi, cloud_cover_pct, sun_elevation)
+        dhi = estimate_dhi(ghi, sun_elevation, timestamp)
 
-        # Under clouds, DHI should be higher fraction of GHI
+        # Under clouds (low kt), DHI should be higher fraction of GHI
         assert dhi > 0
         assert dhi <= ghi
+        # Low kt means high diffuse fraction
+        diffuse_fraction = dhi / ghi
+        assert diffuse_fraction > 0.5  # Mostly diffuse
 
     def test_estimate_dhi_night(self, mosmix_source):
         """Test DHI estimation at night returns 0."""
         ghi = 0.0
-        cloud_cover_pct = 50
         sun_elevation = -10.0  # Below horizon
+        timestamp = datetime(2026, 2, 8, 22, 0)
 
-        dhi = estimate_dhi(ghi, cloud_cover_pct, sun_elevation)
+        dhi = estimate_dhi(ghi, sun_elevation, timestamp)
 
         assert dhi == 0.0
+
+    def test_estimate_dhi_physical_kt(self, mosmix_source):
+        """Test that kt is calculated physically (GHI / GHI_extra)."""
+        # Known values for verification
+        sun_elevation = 30.0  # degrees
+        timestamp = datetime(2026, 2, 8, 12, 0)  # Feb 8 = DOY 39
+        
+        # Calculate expected GHI_extra
+        import math
+        doy = 39
+        solar_constant = 1361
+        day_angle = 2 * math.pi * doy / 365
+        eccentricity = 1 + 0.033 * math.cos(day_angle)
+        sin_alt = math.sin(math.radians(sun_elevation))
+        ghi_extra = solar_constant * eccentricity * sin_alt  # ~691 W/m²
+        
+        # Test 1: GHI = GHI_extra → kt = 1.0 → low diffuse fraction
+        ghi_clear = ghi_extra
+        dhi_clear = estimate_dhi(ghi_clear, sun_elevation, timestamp)
+        df_clear = dhi_clear / ghi_clear
+        assert df_clear < 0.2  # kt=1 → Erbs gives ~0.165
+        
+        # Test 2: GHI = 0.3 * GHI_extra → kt = 0.3 → high diffuse fraction
+        ghi_cloudy = 0.3 * ghi_extra
+        dhi_cloudy = estimate_dhi(ghi_cloudy, sun_elevation, timestamp)
+        df_cloudy = dhi_cloudy / ghi_cloudy
+        assert df_cloudy > 0.7  # kt=0.3 → Erbs gives ~0.87
 
     @patch("pvforecast.sources.mosmix.httpx.Client")
     def test_fetch_forecast_http_error(self, mock_client, mosmix_source):
