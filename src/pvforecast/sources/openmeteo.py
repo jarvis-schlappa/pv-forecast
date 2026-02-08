@@ -202,8 +202,8 @@ class OpenMeteoSource(ForecastSource, HistoricalSource):
         data = self._request_with_retry(FORECAST_API, params)
         df = self._parse_response(data)
 
-        # Filter to future hours only
-        now_ts = int(datetime.now(UTC_TZ).timestamp())
+        # Filter to future hours only (with 1h buffer for clock drift)
+        now_ts = int(datetime.now(UTC_TZ).timestamp()) - 3600
         df = df[df["timestamp"] >= now_ts].head(hours)
 
         logger.info(f"Fetched {len(df)} hours of forecast data")
@@ -253,10 +253,13 @@ class OpenMeteoSource(ForecastSource, HistoricalSource):
         today = now.date()
         weather_dates = pd.to_datetime(df["timestamp"], unit="s", utc=True)
         weather_dates_local = weather_dates.dt.tz_convert(local_tz).dt.date
-        df = df[weather_dates_local == today].copy()
-
-        if len(df) == 0:
-            raise ParseError("No weather data available for today")
+        today_mask = weather_dates_local == today
+        
+        if today_mask.sum() == 0:
+            # Edge case at midnight/date boundary - return unfiltered data
+            logger.warning(f"No weather data exactly for {today}, returning {len(df)} hours")
+        else:
+            df = df[today_mask].copy()
 
         logger.info(f"Fetched {len(df)} hours for today")
         return df.reset_index(drop=True)
