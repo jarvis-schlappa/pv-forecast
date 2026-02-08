@@ -126,3 +126,12 @@ class TestDatabase:
 
         assert result is not None
         assert result[0] == str(SCHEMA_VERSION)
+
+    def test_wal_mode_enabled(self, tmp_path):
+        """Test: WAL-Mode ist aktiviert für bessere Parallelität."""
+        db = Database(tmp_path / "test.db")
+
+        with db.connect() as conn:
+            result = conn.execute("PRAGMA journal_mode").fetchone()
+
+        assert result[0].lower() == "wal"

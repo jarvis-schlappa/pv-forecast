@@ -66,6 +66,7 @@ class Database:
     def __init__(self, db_path: Path):
         self.db_path = db_path
         self._ensure_schema()
+        self._enable_wal_mode()
 
     def _ensure_schema(self) -> None:
         """Erstellt Schema falls nicht vorhanden und führt Migrationen durch."""
@@ -115,6 +116,11 @@ class Database:
 
         if "dni_wm2" not in columns:
             conn.execute("ALTER TABLE weather_history ADD COLUMN dni_wm2 REAL")
+
+    def _enable_wal_mode(self) -> None:
+        """Aktiviert WAL-Mode für bessere Parallelität."""
+        with self.connect() as conn:
+            conn.execute("PRAGMA journal_mode=WAL")
 
     @contextmanager
     def connect(self) -> Generator[sqlite3.Connection, None, None]:
