@@ -826,9 +826,9 @@ class SetupWizard:
         self.output("")
 
         try:
-            from pvforecast.db import Database
-            from pvforecast.model import train, save_model, load_training_data
             from pvforecast.config import _default_model_path
+            from pvforecast.db import Database
+            from pvforecast.model import load_training_data, save_model, train
 
             db = Database(config.db_path)
             model_path = _default_model_path()
@@ -865,10 +865,11 @@ class SetupWizard:
             config: Die aktuelle Konfiguration
         """
         try:
+            from datetime import datetime
+
             from pvforecast.config import _default_model_path
             from pvforecast.model import load_model, predict
             from pvforecast.weather import fetch_forecast
-            from datetime import datetime
 
             model_path = _default_model_path()
             if not model_path.exists():
