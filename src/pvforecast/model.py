@@ -1017,6 +1017,7 @@ def predict(
     lon: float,
     peak_kwp: float | None = None,
     mode: FeatureMode = "predict",
+    model_version: str | None = None,
 ) -> Forecast:
     """
     Erstellt Prognose basierend auf Wettervorhersage.
@@ -1038,6 +1039,7 @@ def predict(
             hourly=[],
             total_kwh=0.0,
             generated_at=datetime.now(UTC_TZ),
+            model_version=model_version or "unknown",
         )
 
     # Features erstellen (mode bestimmt ob Produktions-Lags verfügbar)
@@ -1073,6 +1075,7 @@ def predict(
         hourly=hourly,
         total_kwh=round(total_kwh, 2),
         generated_at=datetime.now(UTC_TZ),
+        model_version=model_version or "unknown",
     )
 
 
