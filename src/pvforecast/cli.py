@@ -1073,8 +1073,13 @@ def cmd_reset(args: argparse.Namespace, config: Config) -> int:
         model_info = "nicht vorhanden"
         if model_path.exists():
             try:
-                model_data = load_model(model_path)
-                model_info = f"{model_data.model_type}, MAPE {model_data.mape:.1f}%"
+                _, metrics = load_model(model_path)
+                model_type = metrics.get("model_type", "?")
+                mape = metrics.get("mape")
+                if mape is not None:
+                    model_info = f"{model_type}, MAPE {mape:.1f}%"
+                else:
+                    model_info = model_type
             except Exception:
                 model_info = "vorhanden"
         response = input(f"  [M]odell ({model_info})? [j/N]: ").strip().lower()
