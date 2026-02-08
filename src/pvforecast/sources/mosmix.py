@@ -7,7 +7,7 @@ import logging
 import zipfile
 from dataclasses import dataclass
 from datetime import datetime
-from math import asin, cos, pi, radians, sin
+from math import asin, cos, exp, pi, radians, sin
 from typing import TYPE_CHECKING
 from xml.etree import ElementTree as ET
 from zoneinfo import ZoneInfo
@@ -85,6 +85,42 @@ def _calculate_sun_elevation(timestamp: int, lat: float, lon: float) -> float:
     return asin(sin_elevation) * 180 / pi
 
 
+def calculate_relative_humidity(temperature_c: float, dewpoint_c: float) -> int:
+    """
+    Calculate relative humidity from temperature and dewpoint using Magnus formula.
+
+    The Magnus formula approximates saturation vapor pressure, allowing RH
+    calculation from temperature and dewpoint.
+
+    Args:
+        temperature_c: Air temperature in Celsius
+        dewpoint_c: Dewpoint temperature in Celsius
+
+    Returns:
+        Relative humidity as integer [0-100%]
+
+    Reference:
+        Alduchov & Eskridge (1996), coefficients for water (0-50°C range)
+    """
+    # Magnus coefficients (Alduchov & Eskridge, 1996)
+    a = 17.625
+    b = 243.04
+
+    # Avoid division by zero or invalid temperatures
+    if temperature_c <= -b or dewpoint_c <= -b:
+        return 50  # Fallback for extreme values
+
+    # Magnus formula: RH = 100 * exp(a*Td/(b+Td)) / exp(a*T/(b+T))
+    try:
+        rh = 100.0 * exp(a * dewpoint_c / (b + dewpoint_c)) / exp(
+            a * temperature_c / (b + temperature_c)
+        )
+        # Clamp to valid range
+        return max(0, min(100, int(round(rh))))
+    except (OverflowError, ValueError):
+        return 50  # Fallback on math errors
+
+
 def estimate_dhi(ghi: float, cloud_cover_pct: float, sun_elevation: float) -> float:
     """
     Estimate DHI from GHI and cloud cover using simplified Erbs model.
@@ -142,6 +178,7 @@ class MOSMIXSource(ForecastSource):
     PARAM_MAP: dict[str, tuple[str, callable]] = {
         "Rad1h": ("ghi_wm2", lambda x: x / 3.6 if x is not None else 0.0),  # kJ/m² → W/m²
         "TTT": ("temperature_c", lambda x: x - 273.15 if x is not None else 10.0),  # K → °C
+        "TD": ("dewpoint_c", lambda x: x - 273.15 if x is not None else None),  # K → °C
         "Neff": ("cloud_cover_pct", lambda x: int(x) if x is not None else 0),  # %
         "FF": ("wind_speed_ms", lambda x: x if x is not None else 0.0),  # m/s
         "PPPP": ("pressure_pa", lambda x: x if x is not None else 101300),  # Pa
@@ -317,8 +354,16 @@ class MOSMIXSource(ForecastSource):
         # Create DataFrame
         df = pd.DataFrame(data)
 
-        # Add derived columns
-        df["humidity_pct"] = 50  # MOSMIX doesn't have humidity, use default
+        # Calculate humidity from dewpoint (if available)
+        if "dewpoint_c" in df.columns:
+            df["humidity_pct"] = [
+                calculate_relative_humidity(t, td) if td is not None else 50
+                for t, td in zip(df["temperature_c"], df["dewpoint_c"])
+            ]
+            # Drop intermediate column
+            df = df.drop(columns=["dewpoint_c"])
+        else:
+            df["humidity_pct"] = 50  # Fallback if TD not available
 
         # Calculate sun elevation and estimate DHI
         sun_elevations = [

@@ -11,7 +11,12 @@ from pvforecast.sources.base import (
     DownloadError,
 )
 from pvforecast.sources.hostrada import HOSTRADASource
-from pvforecast.sources.mosmix import MOSMIXConfig, MOSMIXSource, estimate_dhi
+from pvforecast.sources.mosmix import (
+    MOSMIXConfig,
+    MOSMIXSource,
+    calculate_relative_humidity,
+    estimate_dhi,
+)
 
 # =============================================================================
 # MOSMIX Tests
@@ -33,6 +38,58 @@ class TestMOSMIXConfig:
         """Test custom station ID."""
         config = MOSMIXConfig(station_id="10315", lat=52.52, lon=13.40)
         assert config.station_id == "10315"
+
+
+class TestRelativeHumidityCalculation:
+    """Tests for calculate_relative_humidity function."""
+
+    def test_saturated_air(self):
+        """When temperature equals dewpoint, RH should be 100%."""
+        # Same temp and dewpoint = saturated air
+        rh = calculate_relative_humidity(temperature_c=20.0, dewpoint_c=20.0)
+        assert rh == 100
+
+    def test_typical_summer_day(self):
+        """Test typical summer conditions: 25°C, dewpoint 15°C ≈ 55% RH."""
+        rh = calculate_relative_humidity(temperature_c=25.0, dewpoint_c=15.0)
+        # Expected: ~53-57% RH
+        assert 50 <= rh <= 60
+
+    def test_dry_winter_day(self):
+        """Test cold dry conditions: 0°C, dewpoint -10°C ≈ 47% RH."""
+        rh = calculate_relative_humidity(temperature_c=0.0, dewpoint_c=-10.0)
+        # Expected: ~45-50% RH
+        assert 40 <= rh <= 55
+
+    def test_humid_tropical(self):
+        """Test humid tropical: 30°C, dewpoint 25°C ≈ 74% RH."""
+        rh = calculate_relative_humidity(temperature_c=30.0, dewpoint_c=25.0)
+        # Expected: ~72-78% RH
+        assert 70 <= rh <= 80
+
+    def test_dewpoint_below_freezing(self):
+        """Test with dewpoint below freezing: 5°C, dewpoint -5°C ≈ 50% RH."""
+        rh = calculate_relative_humidity(temperature_c=5.0, dewpoint_c=-5.0)
+        # Expected: ~48-53% RH
+        assert 45 <= rh <= 55
+
+    def test_clamping_low(self):
+        """RH should never go below 0%."""
+        # Extreme dry case (very large temp-dewpoint spread)
+        rh = calculate_relative_humidity(temperature_c=40.0, dewpoint_c=-20.0)
+        assert rh >= 0
+
+    def test_clamping_high(self):
+        """RH should never exceed 100%."""
+        # Dewpoint slightly above temp (shouldn't happen, but handle gracefully)
+        rh = calculate_relative_humidity(temperature_c=20.0, dewpoint_c=21.0)
+        assert rh <= 100
+
+    def test_extreme_cold_fallback(self):
+        """Test fallback for extreme temperatures near formula limits."""
+        # Temperature near -243°C (near absolute formula limit)
+        rh = calculate_relative_humidity(temperature_c=-250.0, dewpoint_c=-260.0)
+        assert rh == 50  # Fallback value
 
 
 class TestMOSMIXSource:
@@ -104,6 +161,93 @@ class TestMOSMIXSource:
         assert df["temperature_c"].iloc[0] == pytest.approx(5.0, rel=0.01)
         # Neff: 50%
         assert df["cloud_cover_pct"].iloc[0] == 50
+
+    def test_parse_kml_with_dewpoint(self, mosmix_source):
+        """Test KML parsing calculates humidity from dewpoint."""
+        # KML with both TTT (temperature) and TD (dewpoint)
+        # TTT: 293.15 K = 20°C, TD: 283.15 K = 10°C
+        # Expected RH: ~52-53%
+        kml_content = b"""<?xml version="1.0" encoding="UTF-8"?>
+<kml xmlns="http://www.opengis.net/kml/2.2"
+     xmlns:dwd="https://opendata.dwd.de/weather/lib/pointforecast_dwd_extension_V1_0.xsd">
+  <Document>
+    <ExtendedData>
+      <dwd:ProductDefinition>
+        <dwd:ForecastTimeSteps>
+          <dwd:TimeStep>2026-02-07T12:00:00.000Z</dwd:TimeStep>
+        </dwd:ForecastTimeSteps>
+      </dwd:ProductDefinition>
+    </ExtendedData>
+    <Placemark>
+      <ExtendedData>
+        <dwd:Forecast dwd:elementName="Rad1h">
+          <dwd:value>500.0</dwd:value>
+        </dwd:Forecast>
+        <dwd:Forecast dwd:elementName="TTT">
+          <dwd:value>293.15</dwd:value>
+        </dwd:Forecast>
+        <dwd:Forecast dwd:elementName="TD">
+          <dwd:value>283.15</dwd:value>
+        </dwd:Forecast>
+        <dwd:Forecast dwd:elementName="Neff">
+          <dwd:value>30</dwd:value>
+        </dwd:Forecast>
+        <dwd:Forecast dwd:elementName="FF">
+          <dwd:value>2.0</dwd:value>
+        </dwd:Forecast>
+      </ExtendedData>
+    </Placemark>
+  </Document>
+</kml>"""
+
+        df = mosmix_source._parse_kml(kml_content)
+
+        assert len(df) == 1
+        assert "humidity_pct" in df.columns
+        # 20°C temp, 10°C dewpoint -> ~52% RH
+        assert 50 <= df["humidity_pct"].iloc[0] <= 55
+        # dewpoint_c should be dropped from output
+        assert "dewpoint_c" not in df.columns
+
+    def test_parse_kml_missing_dewpoint_fallback(self, mosmix_source):
+        """Test humidity fallback to 50% when dewpoint is missing."""
+        # KML without TD element
+        kml_content = b"""<?xml version="1.0" encoding="UTF-8"?>
+<kml xmlns="http://www.opengis.net/kml/2.2"
+     xmlns:dwd="https://opendata.dwd.de/weather/lib/pointforecast_dwd_extension_V1_0.xsd">
+  <Document>
+    <ExtendedData>
+      <dwd:ProductDefinition>
+        <dwd:ForecastTimeSteps>
+          <dwd:TimeStep>2026-02-07T12:00:00.000Z</dwd:TimeStep>
+        </dwd:ForecastTimeSteps>
+      </dwd:ProductDefinition>
+    </ExtendedData>
+    <Placemark>
+      <ExtendedData>
+        <dwd:Forecast dwd:elementName="Rad1h">
+          <dwd:value>500.0</dwd:value>
+        </dwd:Forecast>
+        <dwd:Forecast dwd:elementName="TTT">
+          <dwd:value>293.15</dwd:value>
+        </dwd:Forecast>
+        <dwd:Forecast dwd:elementName="Neff">
+          <dwd:value>30</dwd:value>
+        </dwd:Forecast>
+        <dwd:Forecast dwd:elementName="FF">
+          <dwd:value>2.0</dwd:value>
+        </dwd:Forecast>
+      </ExtendedData>
+    </Placemark>
+  </Document>
+</kml>"""
+
+        df = mosmix_source._parse_kml(kml_content)
+
+        assert len(df) == 1
+        assert "humidity_pct" in df.columns
+        # Without TD, should fall back to 50%
+        assert df["humidity_pct"].iloc[0] == 50
 
     def test_estimate_dhi_clear_sky(self, mosmix_source):
         """Test DHI estimation for clear sky."""
