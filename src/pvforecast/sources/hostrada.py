@@ -64,6 +64,7 @@ class HOSTRADASource(HistoricalSource):
         longitude: Location longitude (4.63 - 16.35)
         timeout: HTTP request timeout in seconds
         show_progress: Show progress bar during downloads
+        progress_callback: Optional callback(current, total, year, month) for custom progress
     """
 
     def __init__(
@@ -73,12 +74,14 @@ class HOSTRADASource(HistoricalSource):
         timeout: float = 120.0,
         show_progress: bool = True,
         local_dir: str | Path | None = None,
+        progress_callback: callable | None = None,
     ):
         self.latitude = latitude
         self.longitude = longitude
         self.timeout = timeout
         self.show_progress = show_progress
         self.local_dir = Path(local_dir).expanduser() if local_dir else None
+        self.progress_callback = progress_callback
         self._grid_point: GridPoint | None = None
 
     @property
@@ -199,7 +202,11 @@ class HOSTRADASource(HistoricalSource):
         # Check for local file first
         local_path = self._get_local_path(url)
         if local_path:
-            logger.info(f"Using local file: {local_path.name}")
+            # Use DEBUG level when progress_callback is set (to avoid spamming)
+            if self.progress_callback:
+                logger.debug(f"Using local file: {local_path.name}")
+            else:
+                logger.info(f"Using local file: {local_path.name}")
             return self._extract_from_file(local_path, var_name)
 
         logger.debug(f"Downloading: {url}")
@@ -249,7 +256,9 @@ class HOSTRADASource(HistoricalSource):
             distance_km=distance_km,
         )
 
-        logger.info(
+        # Use DEBUG level when progress_callback is set
+        log_fn = logger.debug if self.progress_callback else logger.info
+        log_fn(
             f"Grid point for ({self.latitude:.4f}, {self.longitude:.4f}): "
             f"({grid_lat:.4f}, {grid_lon:.4f}), distance: {distance_km:.1f} km"
         )
@@ -291,7 +300,9 @@ class HOSTRADASource(HistoricalSource):
                 current = datetime(current.year, current.month + 1, 1)
 
         total_files = len(months) * len(parameters)
-        logger.info(
+        # Use DEBUG level when progress_callback is set
+        log_fn = logger.debug if self.progress_callback else logger.info
+        log_fn(
             f"Fetching {len(months)} months × {len(parameters)} params = {total_files} files"
         )
 
@@ -321,14 +332,25 @@ class HOSTRADASource(HistoricalSource):
 
         # Process with or without progress indicator
         current = 0
+        current_year, current_month = 0, 0
         for param, series in process_downloads(downloads):
             current += 1
-            if self.show_progress:
+            # Track current month being processed
+            idx = (current - 1) // len(parameters)
+            if idx < len(months):
+                current_year, current_month = months[idx]
+
+            # Custom progress callback
+            if self.progress_callback:
+                self.progress_callback(current, total_files, current_year, current_month)
+            elif self.show_progress:
                 pct = (current * 100) // total_files
                 bar_len = 30
                 filled = (current * bar_len) // total_files
                 bar = "█" * filled + "░" * (bar_len - filled)
-                sys.stdout.write(f"\rFetching HOSTRADA [{bar}] {pct:3d}% ({current}/{total_files})")
+                sys.stdout.write(
+                    f"\rFetching HOSTRADA [{bar}] {pct:3d}% ({current}/{total_files})"
+                )
                 sys.stdout.flush()
 
             if series is not None:

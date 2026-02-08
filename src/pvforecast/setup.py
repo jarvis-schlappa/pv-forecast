@@ -508,13 +508,36 @@ class SetupWizard:
         self.output("")
         self.output("   Lade Wetterdaten...")
 
+        # Fortschrittsanzeige als Closure
+        last_month_shown = [0, 0]  # [year, month] - mutable für Closure
+
+        def progress_callback(current: int, total: int, year: int, month: int):
+            """Callback für Fortschrittsanzeige."""
+            pct = (current * 100) // total
+            bar_len = 20
+            filled = (current * bar_len) // total
+            bar = "█" * filled + "░" * (bar_len - filled)
+
+            # Zeige Monat nur wenn er sich ändert
+            month_str = ""
+            if (year, month) != tuple(last_month_shown):
+                month_str = f" → {year}-{month:02d}"
+                last_month_shown[0], last_month_shown[1] = year, month
+
+            # \r für Überschreiben der Zeile
+            import sys
+
+            sys.stdout.write(f"\r   [{bar}] {pct:3d}% ({current}/{total}){month_str}    ")
+            sys.stdout.flush()
+
         try:
-            # HOSTRADA Source initialisieren
+            # HOSTRADA Source initialisieren mit Progress-Callback
             source = HOSTRADASource(
                 latitude=self._latitude,
                 longitude=self._longitude,
                 local_dir=local_dir,
-                show_progress=False,  # Wir machen eigene Fortschrittsanzeige
+                show_progress=False,
+                progress_callback=progress_callback,
             )
 
             # Verfügbaren Datumsbereich ermitteln
@@ -560,8 +583,14 @@ class SetupWizard:
 
             self.output(f"   Zeitraum: {start_date} bis {end_date}")
 
-            # Daten laden (HOSTRADA zeigt eigene Fortschrittsanzeige)
+            # Daten laden mit Fortschrittsanzeige
             weather_df = source.fetch_historical(start_date, end_date)
+
+            # Neue Zeile nach Fortschrittsbalken
+            import sys
+
+            sys.stdout.write("\n")
+            sys.stdout.flush()
 
             if len(weather_df) == 0:
                 self.output("   ⚠️  Keine Wetterdaten geladen")
