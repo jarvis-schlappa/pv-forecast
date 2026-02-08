@@ -5,6 +5,31 @@ Alle wichtigen Änderungen an diesem Projekt werden hier dokumentiert.
 Das Format basiert auf [Keep a Changelog](https://keepachangelog.com/de/1.0.0/),
 und dieses Projekt folgt [Semantic Versioning](https://semver.org/lang/de/).
 
+## [0.4.2] - 2026-02-08
+
+### Behoben
+
+- **DHI-Schätzung physikalisch korrekt** (#163, #164) – Clearness Index wird jetzt aus GHI/GHI_extraterrestrisch berechnet statt aus Bewölkung approximiert
+  - Behebt Train/Inference-Inkonsistenz zwischen MOSMIX und HOSTRADA
+  - **MAPE verbessert: 29.3% → 22.3% (−7.0%)**
+  - **MAE verbessert: 140W → 107W (−33W)**
+  - **Skill Score: +69.4% → +76.7%**
+  - Besonders wirksam bei atypischen Wetterbedingungen (Dunst, Cirrus)
+
+### Geändert
+
+- **Breaking:** `estimate_dhi()` Signatur geändert
+  - Alt: `estimate_dhi(ghi, cloud_cover_pct, sun_elevation)`
+  - Neu: `estimate_dhi(ghi, sun_elevation, timestamp)`
+  - Betrifft nur interne API, keine CLI-Änderungen
+
+### Hinweis
+
+Nach Update sollte das Modell neu trainiert werden:
+```bash
+pvforecast train --model xgb
+```
+
 ## [0.4.1] - 2026-02-08
 
 ### Hinzugefügt
