@@ -303,6 +303,7 @@ class TestPromptModel:
         assert xgb_installed is True
 
     @patch("pvforecast.setup.subprocess.run")
+    @patch("sys.platform", "linux")  # Simulate non-macOS to skip libomp check
     def test_install_xgboost_on_demand(self, mock_run):
         """Test: XGBoost wird bei Bedarf installiert."""
         mock_run.return_value = MagicMock(returncode=0)
@@ -333,6 +334,7 @@ class TestPromptModel:
         mock_run.assert_called_once()
 
     @patch("pvforecast.setup.subprocess.run")
+    @patch("sys.platform", "linux")  # Simulate non-macOS to skip libomp check
     def test_xgboost_install_failure_fallback(self, mock_run):
         """Test: Bei XGBoost-Installationsfehler Fallback auf RF."""
         import subprocess
@@ -437,3 +439,258 @@ class TestSetupResult:
 
         assert result.config.latitude == 51.83
         assert result.xgboost_installed is True
+
+
+class TestLibompCheck:
+    """Tests für libomp-Check auf macOS (Issue #151)."""
+
+    @patch("sys.platform", "linux")
+    def test_skip_on_linux(self):
+        """Test: libomp-Check wird auf Linux übersprungen."""
+        wizard = SetupWizard(
+            output_func=lambda x: None,
+            input_func=lambda _: "",
+        )
+        assert wizard._check_libomp_macos() is True
+
+    @patch("sys.platform", "darwin")
+    @patch("pathlib.Path.exists")
+    def test_libomp_already_installed(self, mock_exists):
+        """Test: libomp bereits vorhanden."""
+        mock_exists.return_value = True
+
+        wizard = SetupWizard(
+            output_func=lambda x: None,
+            input_func=lambda _: "",
+        )
+        assert wizard._check_libomp_macos() is True
+
+    @patch("sys.platform", "darwin")
+    @patch("pathlib.Path.exists", return_value=False)
+    @patch("pvforecast.setup.subprocess.run")
+    def test_libomp_install_offered(self, mock_run, mock_exists):
+        """Test: libomp-Installation wird angeboten."""
+        # Homebrew check succeeds, install succeeds
+        mock_run.return_value = MagicMock(returncode=0)
+
+        inputs = iter(["j"])  # Ja, installieren
+        outputs = []
+
+        wizard = SetupWizard(
+            output_func=lambda x: outputs.append(x),
+            input_func=lambda _: next(inputs),
+        )
+        result = wizard._check_libomp_macos()
+
+        assert result is True
+        assert any("libomp" in str(o) for o in outputs)
+        assert mock_run.call_count == 2  # brew --version + brew install
+
+    @patch("sys.platform", "darwin")
+    @patch("pathlib.Path.exists", return_value=False)
+    @patch("pvforecast.setup.subprocess.run")
+    def test_libomp_install_declined(self, mock_run, mock_exists):
+        """Test: libomp-Installation abgelehnt."""
+        mock_run.return_value = MagicMock(returncode=0)  # Homebrew available
+
+        inputs = iter(["n"])  # Nein
+        outputs = []
+
+        wizard = SetupWizard(
+            output_func=lambda x: outputs.append(x),
+            input_func=lambda _: next(inputs),
+        )
+        result = wizard._check_libomp_macos()
+
+        assert result is False
+        assert any("nicht installiert" in str(o) for o in outputs)
+
+
+class TestOptunaInstall:
+    """Tests für Optuna-Installation bei Tuning (Issue #152)."""
+
+    @patch("pvforecast.setup.subprocess.run")
+    def test_install_optuna_method(self, mock_run):
+        """Test: _install_optuna installiert Optuna."""
+        mock_run.return_value = MagicMock(returncode=0)
+
+        outputs = []
+        wizard = SetupWizard(
+            output_func=lambda x: outputs.append(x),
+            input_func=lambda _: "",
+        )
+
+        result = wizard._install_optuna()
+
+        assert result is True
+        assert any("Optuna installiert" in str(o) for o in outputs)
+        mock_run.assert_called_once()
+
+    def test_optuna_already_installed(self):
+        """Test: Keine Installation wenn Optuna bereits vorhanden."""
+        inputs = iter(["2"])  # Schnelles Tuning
+        outputs = []
+
+        with patch.dict("sys.modules", {"optuna": MagicMock()}):
+            wizard = SetupWizard(
+                output_func=lambda x: outputs.append(x),
+                input_func=lambda _: next(inputs),
+            )
+            wizard._existing_db_records = 5000
+
+            result = wizard._prompt_tuning("xgb")
+
+        assert result is True
+        # Keine Installation angeboten
+        assert not any("Optuna installieren?" in str(o) for o in outputs)
+
+
+class TestTrainingAfterImport:
+    """Tests für Training nach Import (Issue #149)."""
+
+    def test_training_offered_after_import(self, tmp_path):
+        """Test: Training wird nach erfolgreichem Import angeboten."""
+        # Erstelle test CSV
+        csv_file = tmp_path / "test.csv"
+        csv_file.write_text("timestamp,power\n2024-01-01 12:00,1000\n")
+
+        inputs = iter(["j", str(csv_file), "j"])  # Import: ja, Pfad, Training: ja
+
+        wizard = SetupWizard(
+            output_func=lambda x: None,
+            input_func=lambda _: next(inputs),
+        )
+
+        # Mock die Database und import_csv_files
+        with patch("pvforecast.db.Database"):
+            with patch("pvforecast.data_loader.import_csv_files", return_value=100):
+                from pvforecast.config import Config
+                config = Config(latitude=51.83, longitude=7.28, peak_kwp=9.92)
+
+                wizard._prompt_import(config)
+
+        # Wenn User "j" antwortet, sollte Flag gesetzt sein
+        assert wizard._run_training_after_import is True
+
+    def test_training_declined_after_import(self, tmp_path):
+        """Test: Training nach Import ablehnen."""
+        csv_file = tmp_path / "test.csv"
+        csv_file.write_text("timestamp,power\n2024-01-01 12:00,1000\n")
+
+        inputs = iter(["j", str(csv_file), "n"])  # Training: nein
+        outputs = []
+
+        wizard = SetupWizard(
+            output_func=lambda x: outputs.append(x),
+            input_func=lambda _: next(inputs),
+        )
+
+        with patch("pvforecast.db.Database"):
+            with patch("pvforecast.data_loader.import_csv_files", return_value=100):
+                from pvforecast.config import Config
+                config = Config(latitude=51.83, longitude=7.28, peak_kwp=9.92)
+
+                wizard._prompt_import(config)
+
+        assert wizard._run_training_after_import is False
+
+
+class TestExecuteTraining:
+    """Tests für Training-Ausführung (Issue #149)."""
+
+    def test_training_sets_flag_on_success(self, tmp_path):
+        """Test: _training_completed wird bei Erfolg gesetzt."""
+        outputs = []
+        wizard = SetupWizard(
+            output_func=lambda x: outputs.append(x),
+            input_func=lambda _: "",
+        )
+
+        # Simuliere erfolgreiche Initialisierung
+        wizard._training_completed = False
+
+        # Mock alle Abhängigkeiten
+        with patch("pvforecast.db.Database"):
+            with patch("pvforecast.model.load_training_data") as mock_load:
+                with patch("pvforecast.model.train") as mock_train:
+                    with patch("pvforecast.model.save_model"):
+                        with patch("pvforecast.config._default_model_path") as mock_path:
+                            mock_path.return_value = tmp_path / "model.pkl"
+                            mock_load.return_value = MagicMock()
+                            mock_train.return_value = (MagicMock(), {"mape": 0.25})
+
+                            from pvforecast.config import Config
+                            config = Config(latitude=51.83, longitude=7.28, peak_kwp=9.92)
+
+                            result = wizard._execute_training("xgb", config)
+
+        assert result is True
+        assert wizard._training_completed is True
+
+    def test_training_handles_failure(self, tmp_path):
+        """Test: Training-Fehler wird abgefangen."""
+        outputs = []
+        wizard = SetupWizard(
+            output_func=lambda x: outputs.append(x),
+            input_func=lambda _: "",
+        )
+
+        with patch("pvforecast.db.Database", side_effect=Exception("DB Error")):
+            with patch("pvforecast.config._default_model_path") as mock_path:
+                mock_path.return_value = tmp_path / "model.pkl"
+
+                from pvforecast.config import Config
+                config = Config(latitude=51.83, longitude=7.28, peak_kwp=9.92)
+
+                result = wizard._execute_training("xgb", config)
+
+        assert result is False
+        assert wizard._training_completed is False
+        assert any("fehlgeschlagen" in str(o) for o in outputs)
+
+
+class TestShowTestForecast:
+    """Tests für Test-Prognose am Ende (Issue #150)."""
+
+    def test_no_forecast_without_model(self, tmp_path):
+        """Test: Keine Prognose wenn kein Modell vorhanden."""
+        outputs = []
+        wizard = SetupWizard(
+            output_func=lambda x: outputs.append(x),
+            input_func=lambda _: "",
+        )
+
+        with patch("pvforecast.config._default_model_path") as mock_path:
+            mock_path.return_value = tmp_path / "nonexistent.pkl"
+
+            from pvforecast.config import Config
+            config = Config(latitude=51.83, longitude=7.28, peak_kwp=9.92)
+
+            wizard._show_test_forecast(config)
+
+        # Keine Test-Prognose Ausgabe wenn Modell fehlt
+        assert not any("Test-Prognose" in str(o) for o in outputs)
+
+    def test_forecast_handles_errors_gracefully(self, tmp_path):
+        """Test: Fehler bei Prognose werden abgefangen."""
+        model_file = tmp_path / "model.pkl"
+        model_file.touch()
+
+        outputs = []
+        wizard = SetupWizard(
+            output_func=lambda x: outputs.append(x),
+            input_func=lambda _: "",
+        )
+
+        with patch("pvforecast.config._default_model_path") as mock_path:
+            mock_path.return_value = model_file
+            # load_model wirft Fehler
+            with patch("pvforecast.model.load_model", side_effect=Exception("Load error")):
+                from pvforecast.config import Config
+                config = Config(latitude=51.83, longitude=7.28, peak_kwp=9.92)
+
+                # Sollte nicht abstürzen
+                wizard._show_test_forecast(config)
+
+        # Sollte Fehlermeldung ausgeben
+        assert any("nicht verfügbar" in str(o) for o in outputs)
