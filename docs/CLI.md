@@ -35,6 +35,7 @@ pvforecast [GLOBALE OPTIONEN] <befehl> [BEFEHL-OPTIONEN]
 | `--lat FLOAT` | Breitengrad | aus Config |
 | `--lon FLOAT` | Längengrad | aus Config |
 | `-v, --verbose` | Ausführliche Ausgabe (inkl. HTTP-Requests, Debug-Logs) | aus |
+| `-q, --quiet` | Reduzierte Ausgabe (nur Ergebnisse, keine Progress-Infos) | aus |
 | `--version` | Version anzeigen | - |
 | `-h, --help` | Hilfe anzeigen | - |
 
@@ -157,6 +158,7 @@ pvforecast today [OPTIONEN]
 | Option | Beschreibung | Default |
 |--------|--------------|---------|
 | `--source SOURCE` | Wetterdaten-Quelle: `mosmix`, `open-meteo` | aus Config |
+| `-q, --quiet` | Nur Tagesertrag ausgeben (für Skripte) | aus |
 
 **Beispiele:**
 
@@ -169,6 +171,10 @@ pvforecast today --source mosmix
 
 # Mit Open-Meteo
 pvforecast today --source open-meteo
+
+# Kompakte Ausgabe für Cronjobs/Skripte
+pvforecast today --quiet
+# → 12.4 kWh
 ```
 
 ---
@@ -311,12 +317,13 @@ HOSTRADA liefert bessere Trainingsdaten als Open-Meteo:
 Importiert PV-Daten aus E3DC CSV-Exporten.
 
 ```bash
-pvforecast import <DATEIEN>
+pvforecast import [OPTIONEN] <DATEIEN>
 ```
 
-| Argument | Beschreibung |
-|----------|--------------|
+| Argument/Option | Beschreibung |
+|-----------------|--------------|
 | `DATEIEN` | Eine oder mehrere CSV-Dateien |
+| `-q, --quiet` | Reduzierte Ausgabe |
 
 **Beispiele:**
 
@@ -329,6 +336,10 @@ pvforecast import E3DC-Export-*.csv
 
 # Mit absolutem Pfad
 pvforecast import ~/Downloads/E3DC-Export-2024-01.csv
+
+# Kompakte Ausgabe
+pvforecast import --quiet E3DC-Export-*.csv
+# → ✅ Import: 18398 neue Datensätze
 ```
 
 **Ausgabe (mit Progress und Timing):**
@@ -355,6 +366,8 @@ pvforecast train [OPTIONEN]
 | Option | Beschreibung | Default |
 |--------|--------------|---------|
 | `--model MODEL` | Modell-Typ: `rf` (RandomForest) oder `xgb` (XGBoost) | `rf` |
+| `--since YEAR` | Nur Daten ab diesem Jahr verwenden | alle |
+| `-q, --quiet` | Reduzierte Ausgabe | aus |
 
 **Beispiele:**
 
@@ -364,6 +377,13 @@ pvforecast train
 
 # XGBoost (benötigt: pip install pvforecast[xgb])
 pvforecast train --model xgb
+
+# Nur Daten ab 2022 verwenden
+pvforecast train --model xgb --since 2022
+
+# Kompakte Ausgabe für Automatisierung
+pvforecast train --model xgb --quiet
+# → ✅ Training: MAPE 30.1%, MAE 144W
 ```
 
 **Hinweis:** Beim Training werden automatisch fehlende historische Wetterdaten von Open-Meteo geladen.
@@ -385,6 +405,8 @@ pvforecast tune [OPTIONEN]
 | `--trials N` | Anzahl der Trials/Iterationen | 50 |
 | `--cv N` | Anzahl der Cross-Validation Splits | 5 |
 | `--timeout SECS` | Maximale Laufzeit in Sekunden (nur Optuna) | - |
+| `--since YEAR` | Nur Daten ab diesem Jahr verwenden | alle |
+| `-q, --quiet` | Reduzierte Ausgabe | aus |
 
 #### Tuning-Methoden
 
