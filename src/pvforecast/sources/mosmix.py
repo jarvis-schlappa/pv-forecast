@@ -121,17 +121,17 @@ def calculate_relative_humidity(temperature_c: float, dewpoint_c: float) -> int:
         return 50  # Fallback on math errors
 
 
-def estimate_dhi(ghi: float, cloud_cover_pct: float, sun_elevation: float) -> float:
+def estimate_dhi(ghi: float, sun_elevation: float, timestamp: datetime) -> float:
     """
-    Estimate DHI from GHI and cloud cover using simplified Erbs model.
+    Estimate DHI from GHI using physical clearness index and Erbs model.
 
-    MOSMIX doesn't provide DHI, so we estimate it for the ML model's
-    diffuse_fraction feature.
+    Calculates kt as GHI / GHI_extraterrestrial (consistent with HOSTRADA),
+    then applies the Erbs model to derive the diffuse fraction.
 
     Args:
         ghi: Global Horizontal Irradiance [W/m²]
-        cloud_cover_pct: Cloud cover [0-100%]
         sun_elevation: Sun elevation angle [degrees]
+        timestamp: Timestamp for day-of-year (used for orbital eccentricity)
 
     Returns:
         Estimated Diffuse Horizontal Irradiance [W/m²]
@@ -139,9 +139,17 @@ def estimate_dhi(ghi: float, cloud_cover_pct: float, sun_elevation: float) -> fl
     if sun_elevation <= 0 or ghi <= 0:
         return 0.0
 
-    # Clearness index approximation from cloud cover
-    # kt ~ 1 for clear sky, ~0.2 for overcast
-    kt = max(0.1, 1.0 - cloud_cover_pct / 100 * 0.8)
+    # Extraterrestrial radiation
+    doy = timestamp.timetuple().tm_yday
+    solar_constant = 1361  # W/m²
+    day_angle = 2 * pi * doy / 365
+    eccentricity = 1 + 0.033 * cos(day_angle)
+    sin_alt = sin(radians(sun_elevation))
+    ghi_extra = solar_constant * eccentricity * sin_alt
+
+    # Physical clearness index (consistent with HOSTRADA)
+    kt = ghi / ghi_extra if ghi_extra > 0 else 0
+    kt = max(0.0, min(1.0, kt))
 
     # Erbs model for diffuse fraction
     if kt <= 0.22:
@@ -370,9 +378,12 @@ class MOSMIXSource(ForecastSource):
             _calculate_sun_elevation(ts, self.config.lat, self.config.lon) for ts in df["timestamp"]
         ]
 
+        # Convert timestamps to datetime for DHI estimation
+        timestamps_dt = [datetime.fromtimestamp(ts) for ts in df["timestamp"]]
+
         df["dhi_wm2"] = [
-            estimate_dhi(ghi, cloud, elev)
-            for ghi, cloud, elev in zip(df["ghi_wm2"], df["cloud_cover_pct"], sun_elevations)
+            estimate_dhi(ghi, elev, ts)
+            for ghi, elev, ts in zip(df["ghi_wm2"], sun_elevations, timestamps_dt)
         ]
 
         # DNI estimation (simplified: DNI = (GHI - DHI) / cos(zenith))
