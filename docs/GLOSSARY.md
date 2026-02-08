@@ -2,6 +2,20 @@
 
 Erklärung der Fachbegriffe in PV-Forecast – verständlich für Nicht-Experten.
 
+## Übersicht
+
+| 📊 Metriken | 🤖 Machine Learning | 🌤️ Wetter | 🌐 DWD | ☀️ PV | 🔧 Technik |
+|-------------|---------------------|-----------|--------|-------|------------|
+| [MAE](#mae-mean-absolute-error) | [Feature](#feature) | [GHI](#ghi-global-horizontal-irradiance) | [DWD](#dwd) | [kWp](#kwp-kilowatt-peak) | [API](#api-application-programming-interface) |
+| [MAPE](#mape-mean-absolute-percentage-error) | [Feature Engineering](#feature-engineering) | [DHI](#dhi-diffuse-horizontal-irradiance) | [MOSMIX](#mosmix) | [Ertrag](#ertrag-kwh) | [CLI](#cli-command-line-interface) |
+| [RMSE](#rmse-root-mean-square-error) | [Lag-Features](#lag-features) | [DNI](#dni-direct-normal-irradiance) | [HOSTRADA](#hostrada) | [Abregelung](#abregelung-curtailment) | [CSV](#csv-comma-separated-values) |
+| [R²](#r²-bestimmtheitsmaß) | [RandomForest](#randomforest) | [CSI](#clear-sky-index-csi) | [Open-Meteo](#open-meteo) | [E3DC](#e3dc) | [SQLite](#sqlite) |
+| [Cross-Validation](#cross-validation-cv) | [XGBoost](#xgboost) | [Sonnenhöhe](#sonnenhöhe-solar-elevation) | [ERA5](#era5) | [SoC](#soc-state-of-charge) | [UTC](#utc-coordinated-universal-time) |
+| [Overfitting](#overfitting) | [Hyperparameter](#hyperparameter) | [Modultemperatur](#modultemperatur) | | | [Unix Timestamp](#unix-timestamp) |
+| [Train/Test Split](#traintest-split) | [Tuning](#hyperparameter-tuning) | [NOCT](#noct-nominal-operating-cell-temperature) | | | [Geocoding](#geocoding) |
+| | [Trial](#trial) | | | | |
+| | [Pruning](#pruning) | | | | |
+
 ---
 
 ## 📊 Metriken & Statistik
