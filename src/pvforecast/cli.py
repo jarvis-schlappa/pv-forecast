@@ -565,11 +565,29 @@ def cmd_today(args: argparse.Namespace, config: Config) -> int:
         print(f"❌ Fehler bei Wetterabfrage: {e}", file=sys.stderr)
         return 1
 
+    # Produktionsdaten für heute aus DB holen (für mode="today" mit Lags)
+    # Funktioniert nur mit Open-Meteo (source=None), da MOSMIX keine historischen Daten hat
+    predict_mode = "predict"  # Default: keine Produktions-Lags
+    if source is None and len(weather_df) > 0:
+        db = Database(config.db_path)
+        # Zeitraum: erste bis letzte Stunde im weather_df
+        start_ts = int(weather_df["timestamp"].min())
+        end_ts = int(weather_df["timestamp"].max())
+        production_data = db.get_production_data(start_ts, end_ts)
+
+        if production_data:
+            # Produktionsdaten zum DataFrame hinzufügen
+            weather_df["production_w"] = weather_df["timestamp"].map(
+                lambda ts: production_data.get(int(ts), 0)
+            )
+            predict_mode = "today"
+            qprint(f"📊 Nutze {len(production_data)} historische Produktionswerte für Prognose")
+
     # Prognose berechnen
     model_version = metrics.get("model_version") if metrics else None
     forecast = predict(
         model, weather_df, config.latitude, config.longitude, config.peak_kwp,
-        mode="predict", model_version=model_version
+        mode=predict_mode, model_version=model_version
     )
 
     # Ausgabe

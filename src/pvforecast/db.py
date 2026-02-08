@@ -174,3 +174,25 @@ class Database:
                 FROM weather_history
             """).fetchall()
             return {(row[0], row[1]) for row in result}
+
+    def get_production_data(self, start_ts: int, end_ts: int) -> dict[int, int]:
+        """
+        Get production data for a time range as {timestamp: production_w} dict.
+
+        Args:
+            start_ts: Start Unix timestamp (inclusive)
+            end_ts: End Unix timestamp (inclusive)
+
+        Returns:
+            Dictionary mapping timestamp to production in watts
+        """
+        with self.connect() as conn:
+            result = conn.execute(
+                """
+                SELECT timestamp, production_w
+                FROM pv_readings
+                WHERE timestamp >= ? AND timestamp <= ?
+                """,
+                (start_ts, end_ts),
+            ).fetchall()
+            return {row[0]: row[1] for row in result}
