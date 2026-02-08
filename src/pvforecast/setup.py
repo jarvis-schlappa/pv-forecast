@@ -66,6 +66,8 @@ class SetupWizard:
         self.input = input_func
         self._existing_db_records = 0
         self._existing_config = None
+        self._run_training_after_import = False
+        self._training_completed = False
 
     def run_interactive(self) -> SetupResult:
         """Führt den interaktiven Setup-Wizard aus.
@@ -117,6 +119,10 @@ class SetupWizard:
 
         # 6. Daten importieren
         imported_count = self._prompt_import(config)
+
+        # Issue #149: Training nach Import durchführen wenn gewünscht
+        if self._run_training_after_import:
+            self._execute_training(model_type, config)
 
         self._print_success(config_path, model_type, run_tuning, imported_count)
 
@@ -521,8 +527,70 @@ class SetupWizard:
             else:
                 self.output("   ⚠️  Bitte 1 oder 2 eingeben.")
 
+    def _check_libomp_macos(self) -> bool:
+        """Prüft ob libomp auf macOS installiert ist und bietet Installation an.
+
+        Returns:
+            True wenn libomp verfügbar oder installiert wurde, False sonst.
+        """
+        if sys.platform != "darwin":
+            return True
+
+        # Prüfe beide möglichen Pfade (Apple Silicon und Intel)
+        libomp_paths = [
+            Path("/opt/homebrew/lib/libomp.dylib"),  # Apple Silicon
+            Path("/usr/local/lib/libomp.dylib"),  # Intel
+        ]
+
+        if any(p.exists() for p in libomp_paths):
+            return True
+
+        self.output("")
+        self.output("   ⚠️  XGBoost benötigt libomp (OpenMP)")
+        self.output("")
+
+        # Prüfe ob Homebrew verfügbar
+        try:
+            subprocess.run(
+                ["brew", "--version"],
+                check=True,
+                capture_output=True,
+            )
+        except (subprocess.CalledProcessError, FileNotFoundError):
+            self.output("   ❌ Homebrew nicht gefunden.")
+            self.output("   💡 Installiere libomp manuell:")
+            self.output("      brew install libomp")
+            self.output("")
+            return False
+
+        response = self.input("   Mit Homebrew installieren? [J/n]: ").strip().lower()
+        if response in ("n", "nein", "no"):
+            self.output("   → libomp nicht installiert")
+            self.output("")
+            return False
+
+        self.output("   Installiere libomp...")
+        try:
+            subprocess.run(
+                ["brew", "install", "libomp"],
+                check=True,
+                capture_output=True,
+            )
+            self.output("   ✓ libomp installiert")
+            return True
+        except subprocess.CalledProcessError as e:
+            error_msg = e.stderr[:100] if e.stderr else "Unbekannter Fehler"
+            self.output(f"   ❌ Installation fehlgeschlagen: {error_msg}")
+            return False
+
     def _install_xgboost(self) -> bool:
         """Installiert XGBoost."""
+        # Issue #151: libomp-Check auf macOS vor XGBoost
+        if not self._check_libomp_macos():
+            self.output("   → XGBoost-Installation übersprungen (libomp fehlt)")
+            self.output("")
+            return False
+
         self.output("")
         self.output("   Installiere XGBoost...")
 
@@ -548,6 +616,29 @@ class SetupWizard:
                 self.output("      brew install libomp")
                 self.output("")
 
+            return False
+
+    def _install_optuna(self) -> bool:
+        """Installiert Optuna für besseres Hyperparameter-Tuning.
+
+        Returns:
+            True wenn Optuna installiert wurde, False sonst.
+        """
+        self.output("")
+        self.output("   Installiere Optuna...")
+
+        try:
+            subprocess.run(
+                [sys.executable, "-m", "pip", "install", "optuna>=3.0"],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            self.output("   ✓ Optuna installiert")
+            return True
+        except subprocess.CalledProcessError as e:
+            error_msg = e.stderr[:100] if e.stderr else "Unbekannter Fehler"
+            self.output(f"   ⚠️  Installation fehlgeschlagen: {error_msg}")
             return False
 
     def _prompt_tuning(self, model_type: str) -> bool:
@@ -592,6 +683,16 @@ class SetupWizard:
                 self.output("")
                 return False
             elif choice in ("2", "3"):
+                # Issue #152: Optuna bei Tuning-Auswahl installieren
+                if not optuna_available:
+                    self.output("")
+                    self.output("   ℹ️  Optuna ermöglicht besseres Tuning (Bayesian Optimization)")
+                    response = self.input("   Optuna installieren? [J/n]: ").strip().lower()
+                    if response not in ("n", "nein", "no"):
+                        if self._install_optuna():
+                            optuna_available = True
+                    self.output("")
+
                 self.output("   ✓ Tuning wird nach dem Training durchgeführt")
                 self.output("")
                 # Speichere Tuning-Einstellung für später
@@ -691,6 +792,14 @@ class SetupWizard:
                 if total_imported > 0:
                     self.output(f"   ✓ {total_imported:,} Datensätze importiert")
                     self._existing_db_records = total_imported
+
+                    # Issue #149: Training nach Import anbieten
+                    self.output("")
+                    response = self.input("   Jetzt Modell trainieren? [J/n]: ").strip().lower()
+                    if response not in ("n", "nein", "no"):
+                        self._run_training_after_import = True
+                    else:
+                        self._run_training_after_import = False
                 else:
                     self.output("   ⚠️  Keine neuen Datensätze (evtl. Duplikate)")
 
@@ -702,6 +811,130 @@ class SetupWizard:
                 self.output("")
                 return 0
 
+    def _execute_training(self, model_type: str, config: Config) -> bool:
+        """Führt das Training nach dem Import durch.
+
+        Args:
+            model_type: Modelltyp (rf oder xgb)
+            config: Die aktuelle Konfiguration
+
+        Returns:
+            True wenn Training erfolgreich, False sonst.
+        """
+        self.output("")
+        self.output("🔄 Training wird gestartet...")
+        self.output("")
+
+        try:
+            from pvforecast.db import Database
+            from pvforecast.model import train, save_model, load_training_data
+            from pvforecast.config import _default_model_path
+
+            db = Database(config.db_path)
+            model_path = _default_model_path()
+
+            # Lade Trainingsdaten
+            df = load_training_data(db, peak_kwp=config.peak_kwp)
+
+            # Training durchführen
+            model, metrics = train(
+                df=df,
+                model_type=model_type,
+            )
+
+            # Modell speichern
+            save_model(model, model_path, metrics)
+
+            mape = metrics.get("mape", 0) * 100 if metrics else 0
+            self.output(f"   ✓ Modell trainiert: {model_type}")
+            self.output(f"   ✓ Genauigkeit: ~{mape:.0f}% Abweichung (MAPE)")
+            self.output("")
+            self._training_completed = True
+            return True
+
+        except Exception as e:
+            self.output(f"   ❌ Training fehlgeschlagen: {e}")
+            self.output("")
+            self._training_completed = False
+            return False
+
+    def _show_test_forecast(self, config: Config) -> None:
+        """Zeigt eine Test-Prognose am Ende des Setups.
+
+        Args:
+            config: Die aktuelle Konfiguration
+        """
+        try:
+            from pvforecast.config import _default_model_path
+            from pvforecast.model import load_model, predict
+            from pvforecast.weather import fetch_forecast
+            from datetime import datetime
+
+            model_path = _default_model_path()
+            if not model_path.exists():
+                return
+
+            self.output("")
+            self.output("🎉 Test-Prognose für heute:")
+            self.output("")
+
+            # Wetterdaten holen
+            weather_df = fetch_forecast(
+                latitude=config.latitude,
+                longitude=config.longitude,
+                provider=config.weather.forecast_provider,
+            )
+
+            # Modell laden
+            model, metrics = load_model(model_path)
+
+            # Prognose erstellen
+            predictions_df = predict(
+                model=model,
+                weather_df=weather_df,
+                peak_kwp=config.peak_kwp,
+            )
+
+            # Nur Tageslicht-Stunden zeigen (9-17 Uhr, max 5 Zeilen)
+            now = datetime.now()
+            today_mask = predictions_df.index.date == now.date()
+            hour_mask = (predictions_df.index.hour >= 9) & (predictions_df.index.hour <= 17)
+            day_predictions = predictions_df[today_mask & hour_mask]
+
+            if day_predictions.empty:
+                self.output("   (Keine Prognose für heute verfügbar)")
+                return
+
+            self.output("    Zeit    Ertrag  Wetter")
+            self.output("   ─────────────────────────")
+
+            # Zeige max 5 Stunden
+            for idx, row in day_predictions.head(5).iterrows():
+                hour = idx.strftime("%H:%M")
+                power_kw = row["predicted_power"] / 1000
+
+                # Wetter-Emoji basierend auf cloud_cover
+                emoji = "  "
+                if "cloud_cover" in row:
+                    cc = row["cloud_cover"]
+                    if cc < 20:
+                        emoji = "☀️"
+                    elif cc < 50:
+                        emoji = "⛅"
+                    else:
+                        emoji = "☁️"
+
+                self.output(f"   {hour}   {power_kw:5.1f} kW  {emoji}")
+
+            # Tagesertrag berechnen
+            today_total = predictions_df[today_mask]["predicted_power"].sum() / 1000
+            self.output("")
+            self.output(f"   Tagesertrag: ~{today_total:.1f} kWh")
+
+        except Exception as e:
+            # Bei Fehlern still ignorieren - Test-Prognose ist optional
+            self.output(f"   (Prognose nicht verfügbar: {e})")
+
     def _print_success(
         self, config_path: Path, model_type: str, run_tuning: bool, imported_count: int = 0
     ) -> None:
@@ -712,6 +945,16 @@ class SetupWizard:
         self.output("═" * 50)
         self.output("")
         self.output(f"   Config gespeichert: {config_path}")
+
+        # Issue #150: Test-Prognose zeigen wenn Training abgeschlossen
+        if self._training_completed:
+            # Config wird benötigt für Test-Prognose, holen wir aus dem Pfad
+            try:
+                config = Config.load(config_path)
+                self._show_test_forecast(config)
+            except Exception:
+                pass  # Still ignorieren wenn es nicht klappt
+
         self.output("")
         self.output("   Nächste Schritte:")
         self.output("")
@@ -729,11 +972,15 @@ class SetupWizard:
             self.output(f"   ✓ {total:,} Datensätze vorhanden")
             self.output("")
 
-        # Training
-        model_flag = f" --model {model_type}" if model_type == "xgb" else ""
-        self.output(f"   {step}. Modell trainieren:")
-        self.output(f"      pvforecast train{model_flag}")
-        step += 1
+        # Training - nur anzeigen wenn noch nicht durchgeführt
+        if not self._training_completed:
+            model_flag = f" --model {model_type}" if model_type == "xgb" else ""
+            self.output(f"   {step}. Modell trainieren:")
+            self.output(f"      pvforecast train{model_flag}")
+            step += 1
+        else:
+            self.output("   ✓ Modell trainiert")
+            self.output("")
 
         # Tuning
         if run_tuning:
