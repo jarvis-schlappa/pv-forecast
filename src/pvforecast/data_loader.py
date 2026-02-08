@@ -159,9 +159,10 @@ def import_to_db(df: pd.DataFrame, db: Database) -> int:
         return val
 
     # Alle Zeilen in Liste von Tupeln konvertieren (für executemany)
+    # itertuples() ist ~100x schneller als iterrows()
     all_values = [
-        tuple(to_python(row[c]) if c in row.index else None for c in columns)
-        for _, row in df.iterrows()
+        tuple(to_python(getattr(row, c, None)) for c in columns)
+        for row in df[columns].itertuples(index=False)
     ]
 
     # SQL-Statement bauen (Spalten sind aus interner Konstante, nicht User-Input)
