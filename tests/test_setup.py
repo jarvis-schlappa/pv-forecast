@@ -753,6 +753,8 @@ class TestHOSTRADALoadInSetup:
 
         result = wizard._prompt_hostrada_path()
 
+        # Sollte Pfad zurückgeben
+        assert result == str(hostrada_dir)
         # Sollte nicht nach Laden fragen (keine "Wetterdaten jetzt laden" Frage)
         assert not any("Wetterdaten jetzt in Datenbank laden" in str(o) for o in outputs)
 
