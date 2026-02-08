@@ -128,6 +128,7 @@ Stundenwerte
 | [CONFIG.md](docs/CONFIG.md) | Konfiguration (CLI & YAML) |
 | [MODELS.md](docs/MODELS.md) | ML-Modelle, Training, Tuning |
 | [DATA.md](docs/DATA.md) | Datenformat, E3DC Import |
+| [SPEC.md](docs/SPEC.md) | Technische Spezifikation & Architektur |
 | [**Glossar**](docs/GLOSSARY.md) | Alle Fachbegriffe verständlich erklärt |
 
 ## Performance
