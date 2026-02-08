@@ -701,11 +701,14 @@ class TestHOSTRADALoadInSetup:
 
     def test_hostrada_load_offered_when_files_found(self, tmp_path):
         """Test: Laden wird angeboten wenn NetCDF-Dateien gefunden werden."""
-        # Erstelle fake NetCDF-Dateien
+        # Erstelle fake NetCDF-Dateien mit realistischen Namen (inkl. Hex-Prefix)
         hostrada_dir = tmp_path / "hostrada"
         hostrada_dir.mkdir()
-        (hostrada_dir / "rsds_1hr_HOSTRADA-v1-0_BE_gn_2023010100-2023013123.nc").touch()
-        (hostrada_dir / "tas_1hr_HOSTRADA-v1-0_BE_gn_2023010100-2023013123.nc").touch()
+        # Realistische Dateinamen wie sie vom DWD kommen (mit Hex-Prefix)
+        fname1 = "c3755909661f_rsds_1hr_HOSTRADA-v1-0_BE_gn_2023010100-2023013123.nc"
+        fname2 = "a1b2c3d4e5f6_tas_1hr_HOSTRADA-v1-0_BE_gn_2023010100-2023013123.nc"
+        (hostrada_dir / fname1).touch()
+        (hostrada_dir / fname2).touch()
 
         outputs = []
         inputs = iter([
@@ -892,3 +895,76 @@ class TestFetchWeatherForTraining:
 
         assert result == 0
         assert any("Keine PV-Daten" in str(o) for o in outputs)
+
+
+class TestHOSTRADADateParsing:
+    """Tests für HOSTRADA Dateinamen-Parsing (Bug-Regression)."""
+
+    def test_hex_prefix_not_parsed_as_date(self, tmp_path):
+        """Test: Hex-Prefix im Dateinamen wird nicht als Datum interpretiert.
+
+        Regression-Test für Bug: Dateiname c3755909661f_rsds_... wurde
+        fälschlicherweise als Jahr=3755, Monat=90 geparst.
+        """
+        import re
+
+        # Problematischer Dateiname mit Hex-Prefix der Ziffern enthält
+        filename = "c3755909661f_rsds_1hr_HOSTRADA-v1-0_BE_gn_2025020100-2025022823.nc"
+
+        # Der neue Regex sollte nur das korrekte Datum finden
+        match = re.search(
+            r"_gn_(\d{4})(\d{2})\d{2}\d{2}-(\d{4})(\d{2})\d{2}\d{2}\.nc$",
+            filename
+        )
+
+        assert match is not None
+        start_year, start_month = int(match.group(1)), int(match.group(2))
+        end_year, end_month = int(match.group(3)), int(match.group(4))
+
+        # Validiere die extrahierten Werte
+        assert start_year == 2025
+        assert start_month == 2
+        assert end_year == 2025
+        assert end_month == 2
+
+        # Stelle sicher, dass 3755/90 NICHT gefunden wird
+        assert start_year != 3755
+        assert start_month != 90
+
+    def test_various_hostrada_filenames(self, tmp_path):
+        """Test: Verschiedene HOSTRADA-Dateinamen werden korrekt geparst."""
+        import re
+
+        test_cases = [
+            # (filename, expected_start_year, expected_start_month)
+            ("038739e1cdec_rsds_1hr_HOSTRADA-v1-0_BE_gn_2020010100-2020013123.nc", 2020, 1),
+            ("03a46d3c85a0_hurs_1hr_HOSTRADA-v1-0_BE_gn_2023120100-2023123123.nc", 2023, 12),
+            ("rsds_1hr_HOSTRADA-v1-0_BE_gn_2019050100-2019053123.nc", 2019, 5),  # ohne Prefix
+        ]
+
+        for filename, expected_year, expected_month in test_cases:
+            match = re.search(
+                r"_gn_(\d{4})(\d{2})\d{2}\d{2}-(\d{4})(\d{2})\d{2}\d{2}\.nc$",
+                filename
+            )
+            assert match is not None, f"Pattern nicht gefunden in: {filename}"
+            year, month = int(match.group(1)), int(match.group(2))
+            assert year == expected_year, f"Falsches Jahr für {filename}: {year}"
+            assert month == expected_month, f"Falscher Monat für {filename}: {month}"
+
+    def test_invalid_filenames_not_matched(self):
+        """Test: Ungültige Dateinamen werden nicht gematched."""
+        import re
+
+        invalid_filenames = [
+            "random_file.nc",
+            "data_2023.nc",
+            "HOSTRADA_2023010100.nc",  # Falsches Format
+        ]
+
+        for filename in invalid_filenames:
+            match = re.search(
+                r"_gn_(\d{4})(\d{2})\d{2}\d{2}-(\d{4})(\d{2})\d{2}\d{2}\.nc$",
+                filename
+            )
+            assert match is None, f"Sollte nicht matchen: {filename}"
