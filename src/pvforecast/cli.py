@@ -507,8 +507,10 @@ def cmd_predict(args: argparse.Namespace, config: Config) -> int:
         return 1
 
     # Prognose erstellen (mode="predict" für Zukunftsprognose ohne Produktions-Lags)
+    model_version = metrics.get("model_version") if metrics else None
     forecast = predict(
-        model, weather_df, config.latitude, config.longitude, config.peak_kwp, mode="predict"
+        model, weather_df, config.latitude, config.longitude, config.peak_kwp,
+        mode="predict", model_version=model_version
     )
 
     # Ausgabe formatieren
@@ -564,8 +566,10 @@ def cmd_today(args: argparse.Namespace, config: Config) -> int:
         return 1
 
     # Prognose berechnen
+    model_version = metrics.get("model_version") if metrics else None
     forecast = predict(
-        model, weather_df, config.latitude, config.longitude, config.peak_kwp, mode="predict"
+        model, weather_df, config.latitude, config.longitude, config.peak_kwp,
+        mode="predict", model_version=model_version
     )
 
     # Ausgabe
