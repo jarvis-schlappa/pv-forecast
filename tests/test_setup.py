@@ -968,3 +968,60 @@ class TestHOSTRADADateParsing:
                 filename
             )
             assert match is None, f"Sollte nicht matchen: {filename}"
+
+
+class TestXGBoostCheckBeforeTraining:
+    """Tests für XGBoost-Verfügbarkeitsprüfung vor Training."""
+
+    def test_xgboost_not_available_offers_install(self, tmp_path):
+        """Test: Bei fehlendem XGBoost wird Installation angeboten."""
+        outputs = []
+        inputs = iter(["n"])  # Installation ablehnen → Fallback auf RF
+
+        wizard = SetupWizard(
+            output_func=lambda x: outputs.append(x),
+            input_func=lambda _: next(inputs),
+        )
+
+        with patch("pvforecast.config._default_model_path") as mock_model_path:
+            mock_model_path.return_value = tmp_path / "model.pkl"
+
+            # Mock Database mit Wetterdaten
+            with patch("pvforecast.db.Database") as MockDB:
+                mock_db = MagicMock()
+                mock_db.get_weather_count.return_value = 1000
+                MockDB.return_value = mock_db
+
+                # Mock train function
+                with patch("pvforecast.model.train") as mock_train:
+                    mock_model = MagicMock()
+                    mock_metrics = {"mape": 0.25}
+                    mock_train.return_value = (mock_model, mock_metrics)
+
+                    with patch("pvforecast.model.save_model"):
+                        from pvforecast.config import Config
+
+                        config = Config(
+                            latitude=51.83,
+                            longitude=7.28,
+                            peak_kwp=9.92,
+                            db_path=tmp_path / "test.db",
+                        )
+
+                        # Simuliere XGBoost Import-Fehler
+                        import builtins
+
+                        original_import = builtins.__import__
+
+                        def mock_import(name, *args, **kwargs):
+                            if name == "xgboost":
+                                raise ImportError("No module named 'xgboost'")
+                            return original_import(name, *args, **kwargs)
+
+                        with patch.object(builtins, "__import__", mock_import):
+                            wizard._execute_training("xgb", config)
+
+        # Sollte Warnung ausgeben
+        assert any("XGBoost ist nicht installiert" in str(o) for o in outputs)
+        # Sollte Fallback anbieten
+        assert any("Fallback auf RandomForest" in str(o) for o in outputs)
