@@ -828,18 +828,18 @@ class SetupWizard:
         try:
             from pvforecast.config import _default_model_path
             from pvforecast.db import Database
-            from pvforecast.model import load_training_data, save_model, train
+            from pvforecast.model import save_model, train
 
             db = Database(config.db_path)
             model_path = _default_model_path()
 
-            # Lade Trainingsdaten
-            df = load_training_data(db, peak_kwp=config.peak_kwp)
-
             # Training durchführen
             model, metrics = train(
-                df=df,
+                db=db,
+                lat=config.latitude,
+                lon=config.longitude,
                 model_type=model_type,
+                peak_kwp=config.peak_kwp,
             )
 
             # Modell speichern
