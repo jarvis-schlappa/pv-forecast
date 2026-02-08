@@ -565,6 +565,31 @@ class TestXGBoostIntegration:
             pipeline = _create_pipeline("xgb")
             assert pipeline is not None
 
+    def test_reload_xgboost_function_exists(self):
+        """Test: reload_xgboost Funktion existiert und ist aufrufbar."""
+        from pvforecast.model import reload_xgboost
+
+        assert callable(reload_xgboost)
+
+    def test_reload_xgboost_returns_bool(self):
+        """Test: reload_xgboost gibt boolean zurück."""
+        from pvforecast.model import reload_xgboost
+
+        result = reload_xgboost()
+        assert isinstance(result, bool)
+
+    def test_reload_xgboost_updates_globals(self):
+        """Test: reload_xgboost aktualisiert XGBOOST_AVAILABLE wenn erfolgreich."""
+        from pvforecast import model
+        from pvforecast.model import reload_xgboost
+
+        # Wenn XGBoost verfügbar ist, sollte reload True zurückgeben
+        # und die Globals korrekt setzen
+        result = reload_xgboost()
+        if result:
+            assert model.XGBOOST_AVAILABLE is True
+            assert model.XGBOOST_ERROR is None
+
 
 class TestLoadTrainingData:
     """Tests für load_training_data()."""

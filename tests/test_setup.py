@@ -302,23 +302,33 @@ class TestPromptModel:
         assert model_type == "xgb"
         assert xgb_installed is True
 
+    @patch("pvforecast.setup.reload_xgboost", return_value=True)
     @patch("pvforecast.setup.subprocess.run")
     @patch("sys.platform", "linux")  # Simulate non-macOS to skip libomp check
-    def test_install_xgboost_on_demand(self, mock_run):
+    def test_install_xgboost_on_demand(self, mock_run, mock_reload):
         """Test: XGBoost wird bei Bedarf installiert."""
         mock_run.return_value = MagicMock(returncode=0)
 
         inputs = iter(["2"])  # Wähle XGBoost
 
         # Simuliere dass xgboost nicht installiert ist
+        import builtins
         import sys
 
         original = sys.modules.get("xgboost")
         if "xgboost" in sys.modules:
             del sys.modules["xgboost"]
 
+        # Selektiv nur xgboost-Import mocken
+        original_import = builtins.__import__
+
+        def selective_import(name, *args, **kwargs):
+            if name == "xgboost":
+                raise ImportError("No module named 'xgboost'")
+            return original_import(name, *args, **kwargs)
+
         try:
-            with patch("builtins.__import__", side_effect=ImportError("No module")):
+            with patch.object(builtins, "__import__", side_effect=selective_import):
                 wizard = SetupWizard(
                     output_func=lambda x: None,
                     input_func=lambda _: next(inputs),
@@ -332,6 +342,7 @@ class TestPromptModel:
         assert model_type == "xgb"
         assert xgb_installed is True
         mock_run.assert_called_once()
+        mock_reload.assert_called_once()
 
     @patch("pvforecast.setup.subprocess.run")
     @patch("sys.platform", "linux")  # Simulate non-macOS to skip libomp check

@@ -17,6 +17,7 @@ from pathlib import Path
 
 from pvforecast.config import Config, WeatherConfig, get_config_path
 from pvforecast.geocoding import GeocodingError, geocode
+from pvforecast.model import reload_xgboost
 
 
 @dataclass
@@ -816,6 +817,16 @@ class SetupWizard:
                 text=True,
             )
             self.output("   ✓ XGBoost installiert")
+
+            # Wichtig: XGBoost im laufenden Prozess verfügbar machen
+            # Der normale Import-Cache verhindert sonst, dass das neu
+            # installierte Paket erkannt wird
+            if not reload_xgboost():
+                self.output("   ⚠️  XGBoost installiert, aber Import fehlgeschlagen")
+                self.output("   💡 Starte pvforecast neu für Training")
+                self.output("")
+                return False
+
             self.output("")
             return True
 
