@@ -591,7 +591,8 @@ class TestLoadTrainingData:
                 )
                 conn.execute(
                     """INSERT INTO weather_history
-                    (timestamp, ghi_wm2, cloud_cover_pct, temperature_c, wind_speed_ms, humidity_pct, dhi_wm2, dni_wm2)
+                    (timestamp, ghi_wm2, cloud_cover_pct, temperature_c,
+                    wind_speed_ms, humidity_pct, dhi_wm2, dni_wm2)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
                     (ts, 400, 20, 15, 3, 60, 100, 300),
                 )
@@ -621,7 +622,8 @@ class TestLoadTrainingData:
                 )
                 conn.execute(
                     """INSERT INTO weather_history
-                    (timestamp, ghi_wm2, cloud_cover_pct, temperature_c, wind_speed_ms, humidity_pct, dhi_wm2, dni_wm2)
+                    (timestamp, ghi_wm2, cloud_cover_pct, temperature_c,
+                    wind_speed_ms, humidity_pct, dhi_wm2, dni_wm2)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
                     (ts, 400, 20, 15, 3, 60, 100, 300),
                 )
@@ -652,7 +654,8 @@ class TestLoadTrainingData:
                 )
                 conn.execute(
                     """INSERT INTO weather_history
-                    (timestamp, ghi_wm2, cloud_cover_pct, temperature_c, wind_speed_ms, humidity_pct, dhi_wm2, dni_wm2)
+                    (timestamp, ghi_wm2, cloud_cover_pct, temperature_c,
+                    wind_speed_ms, humidity_pct, dhi_wm2, dni_wm2)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
                     (ts, 400, 20, 15, 3, 60, 100, 300),
                 )
@@ -665,7 +668,8 @@ class TestLoadTrainingData:
                 )
                 conn.execute(
                     """INSERT INTO weather_history
-                    (timestamp, ghi_wm2, cloud_cover_pct, temperature_c, wind_speed_ms, humidity_pct, dhi_wm2, dni_wm2)
+                    (timestamp, ghi_wm2, cloud_cover_pct, temperature_c,
+                    wind_speed_ms, humidity_pct, dhi_wm2, dni_wm2)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
                     (ts, 500, 15, 18, 2, 55, 120, 350),
                 )
