@@ -1061,6 +1061,26 @@ class SetupWizard:
                     self._training_completed = False
                     return False
 
+            # Prüfe ob gewähltes Modell verfügbar ist
+            if model_type == "xgb":
+                try:
+                    import xgboost  # noqa: F401
+                except ImportError:
+                    self.output("   ⚠️  XGBoost ist nicht installiert!")
+                    self.output("")
+                    response = self.input("   Jetzt installieren? [J/n]: ").strip().lower()
+                    if response not in ("n", "nein", "no"):
+                        if self._install_xgboost():
+                            self.output("")
+                        else:
+                            self.output("   → Fallback auf RandomForest")
+                            self.output("")
+                            model_type = "rf"
+                    else:
+                        self.output("   → Fallback auf RandomForest")
+                        self.output("")
+                        model_type = "rf"
+
             # Training durchführen
             model, metrics = train(
                 db=db,
