@@ -424,6 +424,71 @@ def _create_pipeline(model_type: ModelType) -> Pipeline:
         )
 
 
+def load_training_data(
+    db: Database,
+    lat: float,
+    lon: float,
+    peak_kwp: float | None = None,
+    since_year: int | None = None,
+    min_samples: int = 100,
+) -> tuple[pd.DataFrame, pd.Series]:
+    """Lädt und bereitet Trainingsdaten vor.
+
+    Lädt PV-Produktionsdaten mit zugehörigen Wetterdaten aus der Datenbank
+    und erstellt Features für das ML-Training.
+
+    Args:
+        db: Datenbankverbindung
+        lat: Breitengrad für Sonnenstand-Berechnung
+        lon: Längengrad für Sonnenstand-Berechnung
+        peak_kwp: Anlagenleistung für Normalisierung (optional)
+        since_year: Nur Daten ab diesem Jahr verwenden (optional)
+        min_samples: Mindestanzahl benötigter Datensätze (default: 100)
+
+    Returns:
+        Tuple von (X, y) - Features DataFrame und Zielvariable Series
+
+    Raises:
+        ValueError: Wenn zu wenig Trainingsdaten vorhanden sind
+    """
+    with db.connect() as conn:
+        query = """
+            SELECT
+                p.timestamp,
+                p.production_w,
+                w.ghi_wm2,
+                w.cloud_cover_pct,
+                w.temperature_c,
+                w.wind_speed_ms,
+                w.humidity_pct,
+                w.dhi_wm2,
+                w.dni_wm2
+            FROM pv_readings p
+            INNER JOIN weather_history w ON p.timestamp = w.timestamp
+            WHERE p.curtailed = 0
+              AND p.production_w >= 0
+              AND w.ghi_wm2 IS NOT NULL
+        """
+        params: list[str] = []
+        if since_year:
+            query += " AND p.timestamp >= strftime('%s', ?)"
+            params.append(f"{since_year}-01-01")
+        df = pd.read_sql_query(query, conn, params=params if params else None)
+
+    if len(df) < min_samples:
+        raise ValueError(
+            f"Zu wenig Trainingsdaten: {len(df)} (mindestens {min_samples} benötigt)"
+        )
+
+    logger.info(f"Trainingsdaten: {len(df)} Datensätze")
+
+    # Features erstellen (mode="train" für historische Daten)
+    X = prepare_features(df, lat, lon, peak_kwp=peak_kwp, mode="train")
+    y = df["production_w"]
+
+    return X, y
+
+
 def train(
     db: Database,
     lat: float,
@@ -450,42 +515,12 @@ def train(
     else:
         logger.info("Lade Trainingsdaten aus Datenbank...")
 
-    with db.connect() as conn:
-        # Join PV und Wetter-Daten
-        query = """
-            SELECT
-                p.timestamp,
-                p.production_w,
-                w.ghi_wm2,
-                w.cloud_cover_pct,
-                w.temperature_c,
-                w.wind_speed_ms,
-                w.humidity_pct,
-                w.dhi_wm2,
-                w.dni_wm2
-            FROM pv_readings p
-            INNER JOIN weather_history w ON p.timestamp = w.timestamp
-            WHERE p.curtailed = 0  -- Keine abgeregelten Daten
-              AND p.production_w >= 0
-              AND w.ghi_wm2 IS NOT NULL
-        """
-        params: list[str] = []
-        if since_year:
-            query += " AND p.timestamp >= strftime('%s', ?)"
-            params.append(f"{since_year}-01-01")
-        df = pd.read_sql_query(query, conn, params=params if params else None)
-
-    if len(df) < 100:
-        raise ValueError(f"Zu wenig Trainingsdaten: {len(df)} (mindestens 100 benötigt)")
-
-    logger.info(f"Trainingsdaten: {len(df)} Datensätze")
-
-    # Features erstellen (mode="train" für historische Daten)
-    X = prepare_features(df, lat, lon, peak_kwp=peak_kwp, mode="train")
-    y = df["production_w"]
+    X, y = load_training_data(
+        db, lat, lon, peak_kwp=peak_kwp, since_year=since_year, min_samples=100
+    )
 
     # Zeitbasierter Split (80% Training, 20% Test)
-    split_idx = int(len(df) * 0.8)
+    split_idx = int(len(X) * 0.8)
     X_train, X_test = X.iloc[:split_idx], X.iloc[split_idx:]
     y_train, y_test = y.iloc[:split_idx], y.iloc[split_idx:]
 
@@ -521,7 +556,7 @@ def train(
         "mae": round(mae, 2),
         "rmse": round(rmse, 2),
         "r2": round(r2, 4),
-        "n_samples": len(df),
+        "n_samples": len(X),
         "n_train": len(X_train),
         "n_test": len(X_test),
         "model_type": model_type,
@@ -563,39 +598,9 @@ def tune(
     """
     logger.info(f"Starte Hyperparameter-Tuning ({n_iter} Iterationen, {cv_splits}-fold CV)...")
 
-    # Daten laden (gleiche Query wie train())
-    with db.connect() as conn:
-        query = """
-            SELECT
-                p.timestamp,
-                p.production_w,
-                w.ghi_wm2,
-                w.cloud_cover_pct,
-                w.temperature_c,
-                w.wind_speed_ms,
-                w.humidity_pct,
-                w.dhi_wm2,
-                w.dni_wm2
-            FROM pv_readings p
-            INNER JOIN weather_history w ON p.timestamp = w.timestamp
-            WHERE p.curtailed = 0
-              AND p.production_w >= 0
-              AND w.ghi_wm2 IS NOT NULL
-        """
-        params: list[str] = []
-        if since_year:
-            query += " AND p.timestamp >= strftime('%s', ?)"
-            params.append(f"{since_year}-01-01")
-        df = pd.read_sql_query(query, conn, params=params if params else None)
-
-    if len(df) < 500:
-        raise ValueError(f"Zu wenig Daten für Tuning: {len(df)} (mindestens 500 empfohlen)")
-
-    logger.info(f"Tuning-Daten: {len(df)} Datensätze")
-
-    # Features erstellen (mode="train" für historische Daten)
-    X = prepare_features(df, lat, lon, peak_kwp=peak_kwp, mode="train")
-    y = df["production_w"]
+    X, y = load_training_data(
+        db, lat, lon, peak_kwp=peak_kwp, since_year=since_year, min_samples=500
+    )
 
     # Parameter-Suchraum definieren
     if model_type == "xgb":
@@ -665,7 +670,7 @@ def tune(
         )
 
     # Split für Training/Test (80/20)
-    split_idx = int(len(df) * 0.8)
+    split_idx = int(len(X) * 0.8)
     X_train = X.iloc[:split_idx]
     y_train = y.iloc[:split_idx]
     X_test = X.iloc[split_idx:]
@@ -694,7 +699,7 @@ def tune(
         "mae": round(mae, 2),
         "rmse": round(rmse, 2),
         "r2": round(r2, 4),
-        "n_samples": len(df),
+        "n_samples": len(X),
         "n_train": len(X_train),
         "n_test": len(X_test),
         "model_type": model_type,
@@ -783,39 +788,10 @@ def tune_optuna(
 
     logger.info(f"Starte Optuna-Tuning ({n_trials} Trials, {cv_splits}-fold CV)...")
 
-    # Daten laden
-    with db.connect() as conn:
-        query = """
-            SELECT
-                p.timestamp,
-                p.production_w,
-                w.ghi_wm2,
-                w.cloud_cover_pct,
-                w.temperature_c,
-                w.wind_speed_ms,
-                w.humidity_pct,
-                w.dhi_wm2,
-                w.dni_wm2
-            FROM pv_readings p
-            INNER JOIN weather_history w ON p.timestamp = w.timestamp
-            WHERE p.curtailed = 0
-              AND p.production_w >= 0
-              AND w.ghi_wm2 IS NOT NULL
-        """
-        params: list[str] = []
-        if since_year:
-            query += " AND p.timestamp >= strftime('%s', ?)"
-            params.append(f"{since_year}-01-01")
-        df = pd.read_sql_query(query, conn, params=params if params else None)
-
-    if len(df) < 500:
-        raise ValueError(f"Zu wenig Daten für Tuning: {len(df)} (mindestens 500 empfohlen)")
-
-    logger.info(f"Tuning-Daten: {len(df)} Datensätze")
-
-    # Features erstellen (mode="train" für historische Daten)
-    X = prepare_features(df, lat, lon, peak_kwp=peak_kwp, mode="train")
-    y = df["production_w"].values
+    X, y = load_training_data(
+        db, lat, lon, peak_kwp=peak_kwp, since_year=since_year, min_samples=500
+    )
+    y = y.values  # Convert to numpy array for Optuna
 
     # TimeSeriesSplit für CV
     cv = TimeSeriesSplit(n_splits=cv_splits)
@@ -926,7 +902,7 @@ def tune_optuna(
 
     # Auf allen Daten trainieren (für finales Modell)
     # Aber Test-Evaluation auf den letzten 20%
-    split_idx = int(len(df) * 0.8)
+    split_idx = int(len(X) * 0.8)
     X_train_full = X.iloc[:split_idx]
     y_train_full = y[:split_idx]
     X_test = X.iloc[split_idx:]
@@ -954,7 +930,7 @@ def tune_optuna(
         "mae": round(mae, 2),
         "rmse": round(rmse, 2),
         "r2": round(r2, 4),
-        "n_samples": len(df),
+        "n_samples": len(X),
         "n_test": len(X_test),
         "model_type": model_type,
         "tuned": True,
