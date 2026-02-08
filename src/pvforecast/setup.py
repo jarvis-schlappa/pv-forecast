@@ -525,15 +525,23 @@ class SetupWizard:
                 self.output("   ⚠️  Keine NetCDF-Dateien gefunden")
                 return 0
 
-            # Extrahiere Jahreszahlen aus Dateinamen (Format: *_YYYYMM*.nc)
+            # Extrahiere Jahreszahlen aus Dateinamen
+            # Format: *_gn_YYYYMMDDHH-YYYYMMDDHH.nc
             import re
 
             years_months = set()
+            # HOSTRADA-Pattern: *_gn_YYYYMMDDHH-YYYYMMDDHH.nc
+            hostrada_pattern = r"_gn_(\d{4})(\d{2})\d{2}\d{2}-(\d{4})(\d{2})\d{2}\d{2}\.nc$"
             for f in nc_files:
-                # Suche nach YYYYMM Pattern
-                matches = re.findall(r"(\d{4})(\d{2})\d{2}", f.name)
-                for year, month in matches:
-                    years_months.add((int(year), int(month)))
+                match = re.search(hostrada_pattern, f.name)
+                if match:
+                    start_year, start_month = int(match.group(1)), int(match.group(2))
+                    end_year, end_month = int(match.group(3)), int(match.group(4))
+                    # Validierung
+                    if 1 <= start_month <= 12 and 1995 <= start_year <= 2100:
+                        years_months.add((start_year, start_month))
+                    if 1 <= end_month <= 12 and 1995 <= end_year <= 2100:
+                        years_months.add((end_year, end_month))
 
             if not years_months:
                 self.output("   ⚠️  Konnte Datumsbereich nicht ermitteln")
