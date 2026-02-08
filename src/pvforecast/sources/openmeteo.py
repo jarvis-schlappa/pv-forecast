@@ -254,7 +254,7 @@ class OpenMeteoSource(ForecastSource, HistoricalSource):
         weather_dates = pd.to_datetime(df["timestamp"], unit="s", utc=True)
         weather_dates_local = weather_dates.dt.tz_convert(local_tz).dt.date
         today_mask = weather_dates_local == today
-        
+
         if today_mask.sum() == 0:
             # Edge case at midnight/date boundary - return unfiltered data
             logger.warning(f"No weather data exactly for {today}, returning {len(df)} hours")
