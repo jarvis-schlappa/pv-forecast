@@ -57,6 +57,48 @@ except Exception as e:
     XGBOOST_ERROR = f"unknown: {e}"
     logger.debug(f"XGBoost unbekannter Fehler: {e}")
 
+
+def reload_xgboost() -> bool:
+    """Versucht XGBoost nach einer Runtime-Installation neu zu laden.
+
+    Wird aufgerufen, wenn XGBoost während der Setup-Session via pip
+    installiert wurde. Der normale Import-Cache verhindert sonst,
+    dass das neu installierte Paket erkannt wird.
+
+    Returns:
+        True wenn XGBoost jetzt verfügbar ist, False sonst.
+    """
+    global XGBOOST_AVAILABLE, XGBOOST_ERROR, XGBRegressor
+
+    if XGBOOST_AVAILABLE:
+        return True  # Bereits verfügbar
+
+    try:
+        # Frischer Import-Versuch
+        import importlib
+
+        xgb_module = importlib.import_module("xgboost")
+        XGBRegressor = xgb_module.XGBRegressor
+        XGBOOST_AVAILABLE = True
+        XGBOOST_ERROR = None
+        logger.info("XGBoost erfolgreich nach Installation geladen")
+        return True
+    except ImportError:
+        XGBOOST_ERROR = "not_installed"
+        logger.debug("XGBoost immer noch nicht verfügbar")
+        return False
+    except OSError as e:
+        error_str = str(e).lower()
+        if "libomp" in error_str or "openmp" in error_str or "omp" in error_str:
+            XGBOOST_ERROR = "libomp_missing"
+        else:
+            XGBOOST_ERROR = f"os_error: {e}"
+        return False
+    except Exception as e:
+        XGBOOST_ERROR = f"unknown: {e}"
+        return False
+
+
 # pvlib ist optional - für Clear-Sky-Index
 PVLIB_AVAILABLE = False
 try:
