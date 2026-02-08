@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from datetime import datetime
-from math import asin, cos, pi, radians, sin
+from math import asin, cos, degrees, pi, radians, sin
 from pathlib import Path
 from typing import Literal
 from zoneinfo import ZoneInfo
@@ -190,7 +190,7 @@ def calculate_sun_elevation(timestamp: int, lat: float, lon: float) -> float:
     # Clamp to [-1, 1] to avoid math domain errors
     sin_elevation = max(-1, min(1, sin_elevation))
 
-    elevation = asin(sin_elevation) * 180 / 3.14159
+    elevation = degrees(asin(sin_elevation))
 
     return elevation
 
