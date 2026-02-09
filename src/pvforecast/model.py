@@ -461,6 +461,7 @@ def load_training_data(
     lon: float,
     peak_kwp: float | None = None,
     since_year: int | None = None,
+    until_year: int | None = None,
     min_samples: int = 100,
 ) -> tuple[pd.DataFrame, pd.Series]:
     """Lädt und bereitet Trainingsdaten vor.
@@ -474,6 +475,7 @@ def load_training_data(
         lon: Längengrad für Sonnenstand-Berechnung
         peak_kwp: Anlagenleistung für Normalisierung (optional)
         since_year: Nur Daten ab diesem Jahr verwenden (optional)
+        until_year: Nur Daten bis zu diesem Jahr verwenden (optional, inklusive)
         min_samples: Mindestanzahl benötigter Datensätze (default: 100)
 
     Returns:
@@ -504,6 +506,9 @@ def load_training_data(
         if since_year:
             query += " AND p.timestamp >= strftime('%s', ?)"
             params.append(f"{since_year}-01-01")
+        if until_year:
+            query += " AND p.timestamp < strftime('%s', ?)"
+            params.append(f"{until_year + 1}-01-01")
         df = pd.read_sql_query(query, conn, params=params if params else None)
 
     if len(df) < min_samples:
@@ -526,6 +531,7 @@ def train(
     lon: float,
     model_type: ModelType = "rf",
     since_year: int | None = None,
+    until_year: int | None = None,
     peak_kwp: float | None = None,
 ) -> tuple[Pipeline, dict]:
     """
@@ -537,17 +543,22 @@ def train(
         lon: Längengrad
         model_type: 'rf' für RandomForest (default), 'xgb' für XGBoost
         since_year: Nur Daten ab diesem Jahr verwenden (optional)
+        until_year: Nur Daten bis zu diesem Jahr verwenden (optional, inklusive)
 
     Returns:
         (sklearn Pipeline, metrics dict mit 'mape', 'mae', 'n_samples', 'model_type')
     """
-    if since_year:
+    if since_year and until_year:
+        logger.info(f"Lade Trainingsdaten {since_year}-{until_year}...")
+    elif since_year:
         logger.info(f"Lade Trainingsdaten ab {since_year}...")
+    elif until_year:
+        logger.info(f"Lade Trainingsdaten bis {until_year}...")
     else:
         logger.info("Lade Trainingsdaten aus Datenbank...")
 
     X, y = load_training_data(
-        db, lat, lon, peak_kwp=peak_kwp, since_year=since_year, min_samples=100
+        db, lat, lon, peak_kwp=peak_kwp, since_year=since_year, until_year=until_year, min_samples=100
     )
 
     # Zeitbasierter Split (80% Training, 20% Test)
@@ -610,6 +621,7 @@ def tune(
     n_iter: int = 50,
     cv_splits: int = 5,
     since_year: int | None = None,
+    until_year: int | None = None,
     peak_kwp: float | None = None,
 ) -> tuple[Pipeline, dict, dict]:
     """
@@ -623,6 +635,7 @@ def tune(
         n_iter: Anzahl der Kombinationen (default: 50)
         cv_splits: Anzahl der CV-Splits (default: 5)
         since_year: Nur Daten ab diesem Jahr verwenden (optional)
+        until_year: Nur Daten bis zu diesem Jahr verwenden (optional, inklusive)
 
     Returns:
         (beste Pipeline, metrics dict, beste Parameter dict)
@@ -630,7 +643,7 @@ def tune(
     logger.info(f"Starte Hyperparameter-Tuning ({n_iter} Iterationen, {cv_splits}-fold CV)...")
 
     X, y = load_training_data(
-        db, lat, lon, peak_kwp=peak_kwp, since_year=since_year, min_samples=500
+        db, lat, lon, peak_kwp=peak_kwp, since_year=since_year, until_year=until_year, min_samples=500
     )
 
     # Parameter-Suchraum definieren
@@ -787,6 +800,7 @@ def tune_optuna(
     timeout: int | None = None,
     show_progress: bool = True,
     since_year: int | None = None,
+    until_year: int | None = None,
     peak_kwp: float | None = None,
 ) -> tuple[Pipeline, dict, dict]:
     """
@@ -807,6 +821,7 @@ def tune_optuna(
         timeout: Maximale Laufzeit in Sekunden (optional)
         show_progress: Progress-Bar anzeigen (default: True)
         since_year: Nur Daten ab diesem Jahr verwenden (optional)
+        until_year: Nur Daten bis zu diesem Jahr verwenden (optional, inklusive)
 
     Returns:
         (beste Pipeline, metrics dict, beste Parameter dict)
@@ -820,7 +835,7 @@ def tune_optuna(
     logger.info(f"Starte Optuna-Tuning ({n_trials} Trials, {cv_splits}-fold CV)...")
 
     X, y = load_training_data(
-        db, lat, lon, peak_kwp=peak_kwp, since_year=since_year, min_samples=500
+        db, lat, lon, peak_kwp=peak_kwp, since_year=since_year, until_year=until_year, min_samples=500
     )
     y = y.values  # Convert to numpy array for Optuna
 
