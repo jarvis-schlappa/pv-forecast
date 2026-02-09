@@ -43,7 +43,12 @@ from .formatters import (
     get_weather_emoji,
     print_evaluation_result,
 )
-from .helpers import get_forecast_source, get_historical_source
+from .helpers import (
+    fetch_and_archive_forecast,
+    get_forecast_source,
+    get_historical_source,
+    _archive_forecast,
+)
 
 # Module-level quiet flag (set by cli.__init__.set_quiet_mode)
 _quiet_mode = False
@@ -70,8 +75,7 @@ def cmd_fetch_forecast(args: argparse.Namespace, config: Config) -> int:
     print(f"🌤️  Fetching forecast from {source_name}...")
 
     try:
-        source = get_forecast_source(config, source_name)
-        weather_df = source.fetch_forecast(hours=hours)
+        weather_df = fetch_and_archive_forecast(config, hours, source_name)
 
     except WeatherSourceError as e:
         print(f"❌ Fehler: {e}", file=sys.stderr)
@@ -304,7 +308,7 @@ def cmd_predict(args: argparse.Namespace, config: Config) -> int:
     import pandas as pd
 
     tz = ZoneInfo(config.timezone)
-    source_name = getattr(args, "source", None)
+    source_name = getattr(args, "source", None) or config.weather.forecast_provider
 
     # Modell laden
     try:
@@ -321,10 +325,9 @@ def cmd_predict(args: argparse.Namespace, config: Config) -> int:
     # Genug Stunden holen um alle Ziel-Tage abzudecken
     hours_needed = (args.days + 1) * 24  # +1 Tag Puffer
 
-    # Wettervorhersage holen
+    # Wettervorhersage holen (und automatisch archivieren)
     try:
-        source = get_forecast_source(config, source_name)
-        weather_df = source.fetch_forecast(hours=hours_needed)
+        weather_df = fetch_and_archive_forecast(config, hours_needed, source_name)
     except WeatherSourceError as e:
         print(f"❌ Fehler bei Wetterabfrage: {e}", file=sys.stderr)
         return 1
@@ -370,7 +373,7 @@ def cmd_today(args: argparse.Namespace, config: Config) -> int:
     """Zeigt Prognose für heute (ganzer Tag)."""
 
     tz = ZoneInfo(config.timezone)
-    source_name = getattr(args, "source", None)
+    source_name = getattr(args, "source", None) or config.weather.forecast_provider
     full_day = getattr(args, "full", False)
 
     # Modell laden
@@ -384,10 +387,17 @@ def cmd_today(args: argparse.Namespace, config: Config) -> int:
     today = datetime.now(tz).date()
     now_hour = datetime.now(tz).hour
 
-    # Wetterdaten für heute holen
+    # Wetterdaten für heute holen (und automatisch archivieren)
     try:
         source = get_forecast_source(config, source_name)
         weather_df = source.fetch_today(str(tz))
+
+        # Forecast archivieren für spätere Analyse
+        try:
+            _archive_forecast(config, weather_df, source_name)
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).debug(f"Forecast-Archivierung fehlgeschlagen: {e}")
 
         # MOSMIX liefert nur Prognose ab jetzt (keine past_hours)
         if source_name == "mosmix" and full_day and now_hour > 6:
