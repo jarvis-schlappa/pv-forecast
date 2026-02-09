@@ -8,7 +8,7 @@ from contextlib import contextmanager
 from pathlib import Path
 
 # Schema Version für Migrations
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 
 SCHEMA_SQL = """
 -- PV-Ertragsdaten (aus E3DC CSV)
@@ -42,9 +42,28 @@ CREATE TABLE IF NOT EXISTS metadata (
     value   TEXT
 );
 
+-- Forecast-Archiv (für Forecast vs Reality Analyse)
+-- Speichert jeden abgerufenen Forecast mit Erstellungszeitpunkt
+CREATE TABLE IF NOT EXISTS forecast_history (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    issued_at       INTEGER NOT NULL,     -- Wann der Forecast erstellt wurde (Unix timestamp)
+    target_time     INTEGER NOT NULL,     -- Für welchen Zeitpunkt die Vorhersage gilt
+    source          TEXT NOT NULL,        -- 'open-meteo', 'mosmix', 'gfs', etc.
+    ghi_wm2         REAL,                 -- Globalstrahlung W/m²
+    cloud_cover_pct INTEGER,              -- Bewölkung %
+    temperature_c   REAL,                 -- Temperatur °C
+    wind_speed_ms   REAL,                 -- Windgeschwindigkeit m/s
+    humidity_pct    INTEGER,              -- Relative Luftfeuchtigkeit %
+    dhi_wm2         REAL,                 -- Diffusstrahlung W/m²
+    dni_wm2         REAL,                 -- Direktnormalstrahlung W/m²
+    UNIQUE(issued_at, target_time, source)  -- Keine Duplikate
+);
+
 -- Indizes für schnelle Zeitbereichs-Abfragen
 CREATE INDEX IF NOT EXISTS idx_pv_timestamp ON pv_readings(timestamp);
 CREATE INDEX IF NOT EXISTS idx_weather_timestamp ON weather_history(timestamp);
+CREATE INDEX IF NOT EXISTS idx_forecast_target ON forecast_history(target_time);
+CREATE INDEX IF NOT EXISTS idx_forecast_issued ON forecast_history(issued_at);
 """
 
 # Migration von Schema v1 zu v2
@@ -57,6 +76,26 @@ ALTER TABLE weather_history ADD COLUMN dhi_wm2 REAL;
 # Migration von Schema v2 zu v3
 MIGRATION_V2_TO_V3 = """
 ALTER TABLE weather_history ADD COLUMN dni_wm2 REAL;
+"""
+
+# Migration von Schema v3 zu v4
+MIGRATION_V3_TO_V4 = """
+CREATE TABLE IF NOT EXISTS forecast_history (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    issued_at       INTEGER NOT NULL,
+    target_time     INTEGER NOT NULL,
+    source          TEXT NOT NULL,
+    ghi_wm2         REAL,
+    cloud_cover_pct INTEGER,
+    temperature_c   REAL,
+    wind_speed_ms   REAL,
+    humidity_pct    INTEGER,
+    dhi_wm2         REAL,
+    dni_wm2         REAL,
+    UNIQUE(issued_at, target_time, source)
+);
+CREATE INDEX IF NOT EXISTS idx_forecast_target ON forecast_history(target_time);
+CREATE INDEX IF NOT EXISTS idx_forecast_issued ON forecast_history(issued_at);
 """
 
 
@@ -89,6 +128,8 @@ class Database:
                 self._migrate_v1_to_v2(conn)
             if current_version < 3:
                 self._migrate_v2_to_v3(conn)
+            if current_version < 4:
+                self._migrate_v3_to_v4(conn)
 
             # Schema-Version setzen
             conn.execute(
@@ -116,6 +157,10 @@ class Database:
 
         if "dni_wm2" not in columns:
             conn.execute("ALTER TABLE weather_history ADD COLUMN dni_wm2 REAL")
+
+    def _migrate_v3_to_v4(self, conn: sqlite3.Connection) -> None:
+        """Migration von Schema v3 zu v4: Forecast-Archiv hinzufügen."""
+        conn.executescript(MIGRATION_V3_TO_V4)
 
     def _enable_wal_mode(self) -> None:
         """Aktiviert WAL-Mode für bessere Parallelität."""
@@ -196,3 +241,56 @@ class Database:
                 (start_ts, end_ts),
             ).fetchall()
             return {row[0]: row[1] for row in result}
+
+    def store_forecast(
+        self,
+        issued_at: int,
+        source: str,
+        forecasts: list[dict],
+    ) -> int:
+        """
+        Speichert Forecast-Daten für spätere Analyse.
+
+        Args:
+            issued_at: Unix timestamp wann der Forecast erstellt wurde
+            source: Quelle des Forecasts ('open-meteo', 'mosmix', etc.)
+            forecasts: Liste von Dicts mit target_time und Wetterdaten
+
+        Returns:
+            Anzahl der gespeicherten Einträge
+        """
+        with self.connect() as conn:
+            count = 0
+            for f in forecasts:
+                try:
+                    conn.execute(
+                        """
+                        INSERT OR REPLACE INTO forecast_history
+                        (issued_at, target_time, source, ghi_wm2, cloud_cover_pct,
+                         temperature_c, wind_speed_ms, humidity_pct, dhi_wm2, dni_wm2)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """,
+                        (
+                            issued_at,
+                            f["target_time"],
+                            source,
+                            f.get("ghi_wm2"),
+                            f.get("cloud_cover_pct"),
+                            f.get("temperature_c"),
+                            f.get("wind_speed_ms"),
+                            f.get("humidity_pct"),
+                            f.get("dhi_wm2"),
+                            f.get("dni_wm2"),
+                        ),
+                    )
+                    count += 1
+                except sqlite3.IntegrityError:
+                    pass  # Duplikat, ignorieren
+            conn.commit()
+            return count
+
+    def get_forecast_count(self) -> int:
+        """Gibt die Anzahl der Forecast-Einträge zurück."""
+        with self.connect() as conn:
+            result = conn.execute("SELECT COUNT(*) FROM forecast_history").fetchone()
+            return result[0] if result else 0
