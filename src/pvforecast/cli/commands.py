@@ -539,10 +539,15 @@ def cmd_train(args: argparse.Namespace, config: Config) -> int:
     # Training
     model_type = getattr(args, "model", "rf")
     since_year = getattr(args, "since", None)
+    until_year = getattr(args, "until", None)
     model_name = "XGBoost" if model_type == "xgb" else "RandomForest"
 
-    if since_year:
+    if since_year and until_year:
+        qprint(f"🧠 Trainiere {model_name} Modell (Daten {since_year}-{until_year})...")
+    elif since_year:
         qprint(f"🧠 Trainiere {model_name} Modell (Daten ab {since_year})...")
+    elif until_year:
+        qprint(f"🧠 Trainiere {model_name} Modell (Daten bis {until_year})...")
     else:
         qprint(f"🧠 Trainiere {model_name} Modell...")
 
@@ -554,6 +559,7 @@ def cmd_train(args: argparse.Namespace, config: Config) -> int:
             config.longitude,
             model_type,
             since_year=since_year,
+            until_year=until_year,
             peak_kwp=config.peak_kwp,
         )
     except ValueError as e:
@@ -576,8 +582,9 @@ def cmd_train(args: argparse.Namespace, config: Config) -> int:
         print(f"   R²:   {metrics['r2']:.3f}")
         print(f"   Trainingsdaten: {metrics['n_train']}")
         print(f"   Testdaten: {metrics['n_test']}")
-        if since_year:
-            print(f"   Daten ab: {since_year}")
+        if since_year or until_year:
+            range_str = f"{since_year or 'Anfang'}-{until_year or 'Ende'}"
+            print(f"   Zeitraum: {range_str}")
         print(f"   Modell: {config.model_path}")
 
     return 0
@@ -620,6 +627,7 @@ def cmd_tune(args: argparse.Namespace, config: Config) -> int:
     cv_splits = getattr(args, "cv", 5)
     timeout = getattr(args, "timeout", None)
     since_year = getattr(args, "since", None)
+    until_year = getattr(args, "until", None)
     model_name = "XGBoost" if model_type == "xgb" else "RandomForest"
     method_name = "Optuna" if method == "optuna" else "RandomizedSearchCV"
 
@@ -630,8 +638,9 @@ def cmd_tune(args: argparse.Namespace, config: Config) -> int:
     qprint(f"   CV-Splits: {cv_splits}")
     if timeout and method == "optuna":
         qprint(f"   Timeout: {timeout}s")
-    if since_year:
-        qprint(f"   Daten ab: {since_year}")
+    if since_year or until_year:
+        range_str = f"{since_year or 'Anfang'}-{until_year or 'Ende'}"
+        qprint(f"   Zeitraum: {range_str}")
     qprint()
     qprint("⏳ Das kann einige Minuten dauern...")
     qprint()
@@ -649,6 +658,7 @@ def cmd_tune(args: argparse.Namespace, config: Config) -> int:
                 timeout=timeout,
                 show_progress=True,
                 since_year=since_year,
+                until_year=until_year,
                 peak_kwp=config.peak_kwp,
             )
         else:
@@ -660,6 +670,7 @@ def cmd_tune(args: argparse.Namespace, config: Config) -> int:
                 n_iter=n_iter,
                 cv_splits=cv_splits,
                 since_year=since_year,
+                until_year=until_year,
                 peak_kwp=config.peak_kwp,
             )
     except DependencyError as e:

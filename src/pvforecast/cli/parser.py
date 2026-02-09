@@ -178,6 +178,13 @@ def create_parser() -> argparse.ArgumentParser:
         help="Nur Daten ab diesem Jahr verwenden (z.B. --since 2022)",
     )
     p_train.add_argument(
+        "--until",
+        type=int,
+        default=None,
+        metavar="YEAR",
+        help="Nur Daten bis zu diesem Jahr verwenden (z.B. --until 2023)",
+    )
+    p_train.add_argument(
         "-q",
         "--quiet",
         action="store_true",
@@ -223,6 +230,13 @@ def create_parser() -> argparse.ArgumentParser:
         default=None,
         metavar="YEAR",
         help="Nur Daten ab diesem Jahr verwenden (z.B. --since 2022)",
+    )
+    p_tune.add_argument(
+        "--until",
+        type=int,
+        default=None,
+        metavar="YEAR",
+        help="Nur Daten bis zu diesem Jahr verwenden (z.B. --until 2023)",
     )
     p_tune.add_argument(
         "-q",
