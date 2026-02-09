@@ -14,6 +14,10 @@ from pvforecast.config import Config, get_config_path
 from pvforecast.data_loader import import_csv_files
 from pvforecast.db import Database
 from pvforecast.doctor import Doctor
+from pvforecast.forecast_accuracy import (
+    analyze_forecast_accuracy,
+    format_accuracy_report,
+)
 from pvforecast.model import (
     ModelNotFoundError,
     evaluate,
@@ -1036,5 +1040,69 @@ def cmd_config(args: argparse.Namespace, config: Config) -> int:
     print("💾 Pfade:")
     print(f"   Datenbank: {config.db_path}")
     print(f"   Modell:    {config.model_path}")
+
+    return 0
+
+
+def cmd_forecast_accuracy(args: argparse.Namespace, config: Config) -> int:
+    """Analysiert die Genauigkeit der gesammelten Forecasts."""
+    db = Database(config.db_path)
+
+    days = getattr(args, "days", None)
+    source = getattr(args, "source", None)
+    output_format = getattr(args, "format", "table")
+
+    qprint("📊 Analysiere Forecast-Genauigkeit...")
+    if days:
+        qprint(f"   Zeitraum: letzte {days} Tage")
+    if source:
+        qprint(f"   Quelle: {source}")
+    qprint()
+
+    report = analyze_forecast_accuracy(db, days=days, source_filter=source)
+
+    if output_format == "json":
+        # JSON output
+        import json as json_module
+
+        output = {
+            "analysis_start": report.analysis_start,
+            "analysis_end": report.analysis_end,
+            "total_forecasts": report.total_forecasts,
+            "matched_forecasts": report.matched_forecasts,
+            "sources": [
+                {
+                    "source": src.source,
+                    "total_count": src.total_count,
+                    "overall_mae": src.overall_mae,
+                    "overall_rmse": src.overall_rmse,
+                    "overall_bias": src.overall_bias,
+                    "by_horizon": [
+                        {
+                            "horizon": h.horizon_label,
+                            "count": h.count,
+                            "mae": h.mae,
+                            "rmse": h.rmse,
+                            "bias": h.bias,
+                        }
+                        for h in src.by_horizon
+                    ],
+                }
+                for src in report.sources
+            ],
+            "correlations": [
+                {
+                    "source_a": c.source_a,
+                    "source_b": c.source_b,
+                    "pearson_r": c.pearson_r,
+                    "common_points": c.common_points,
+                }
+                for c in report.correlations
+            ],
+        }
+        print(json_module.dumps(output, indent=2))
+    else:
+        # Table output
+        print(format_accuracy_report(report))
 
     return 0

@@ -257,6 +257,30 @@ def create_parser() -> argparse.ArgumentParser:
         help="Jahr für Evaluation",
     )
 
+    # forecast-accuracy
+    p_accuracy = subparsers.add_parser(
+        "forecast-accuracy",
+        help="Analysiert Forecast-Genauigkeit vs. Ground Truth",
+    )
+    p_accuracy.add_argument(
+        "--days",
+        type=int,
+        default=None,
+        help="Nur die letzten N Tage analysieren (default: alle)",
+    )
+    p_accuracy.add_argument(
+        "--source",
+        choices=["mosmix", "open-meteo"],
+        default=None,
+        help="Nur diese Quelle analysieren (default: alle)",
+    )
+    p_accuracy.add_argument(
+        "--format",
+        choices=["table", "json"],
+        default="table",
+        help="Ausgabeformat (default: table)",
+    )
+
     # config
     p_config = subparsers.add_parser("config", help="Konfiguration verwalten")
     p_config.add_argument(
