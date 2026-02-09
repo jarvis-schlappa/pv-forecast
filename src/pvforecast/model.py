@@ -360,21 +360,11 @@ def prepare_features(
     features["ghi_lag_3h"] = features["ghi"].shift(3).fillna(0)
     features["ghi_rolling_3h"] = features["ghi"].rolling(3, min_periods=1).mean()
 
-    # Produktions-Lags (abhängig von mode und Datenverfügbarkeit)
-    if "production_w" in df.columns and mode in ("train", "today"):
-        # Historische Produktionsdaten verfügbar
-        production = df["production_w"].reset_index(drop=True)
-        features["production_lag_1h"] = production.shift(1).fillna(0)
-        features["production_lag_2h"] = production.shift(2).fillna(0)
-        features["production_lag_3h"] = production.shift(3).fillna(0)
-        features["production_lag_24h"] = production.shift(24).fillna(0)
-    else:
-        # Keine Produktionsdaten oder predict-Modus → Nullen
-        # Wichtig: Features müssen trotzdem existieren für konsistentes Feature-Set
-        features["production_lag_1h"] = 0.0
-        features["production_lag_2h"] = 0.0
-        features["production_lag_3h"] = 0.0
-        features["production_lag_24h"] = 0.0
+    # production_lag Features entfernt (#170):
+    # - Im Predict-Modus immer 0, da keine Produktionsdaten verfügbar
+    # - Führte zu massiver Unterschätzung im Forecast (Faktor 2-3)
+    # - Backtests zeigten gute Werte, weil dort echte Daten verfügbar waren
+    # - Modell muss ohne diese Features trainiert werden für konsistente Forecasts
 
     return features
 
