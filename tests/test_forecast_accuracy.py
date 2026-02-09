@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 import math
-import tempfile
-from pathlib import Path
 
 import pytest
 
@@ -71,7 +69,9 @@ class TestAnalyzeForecastAccuracy:
                 # Simulated GHI: peaks at noon
                 ghi = max(0, 500 * math.sin(math.pi * hour / 12) if 6 <= hour <= 18 else 0)
                 conn.execute(
-                    "INSERT INTO weather_history (timestamp, ghi_wm2, cloud_cover_pct, temperature_c) VALUES (?, ?, ?, ?)",
+                    """INSERT INTO weather_history
+                       (timestamp, ghi_wm2, cloud_cover_pct, temperature_c)
+                       VALUES (?, ?, ?, ?)""",
                     (ts, ghi, 20, 10),
                 )
 
@@ -86,13 +86,13 @@ class TestAnalyzeForecastAccuracy:
                 forecast_ghi_mosmix = actual_ghi * 0.95
 
                 conn.execute(
-                    """INSERT INTO forecast_history 
+                    """INSERT INTO forecast_history
                        (issued_at, target_time, source, ghi_wm2, cloud_cover_pct, temperature_c)
                        VALUES (?, ?, ?, ?, ?, ?)""",
                     (issued_at, target_ts, "open-meteo", forecast_ghi_om, 18, 11),
                 )
                 conn.execute(
-                    """INSERT INTO forecast_history 
+                    """INSERT INTO forecast_history
                        (issued_at, target_time, source, ghi_wm2, cloud_cover_pct, temperature_c)
                        VALUES (?, ?, ?, ?, ?, ?)""",
                     (issued_at, target_ts, "mosmix", forecast_ghi_mosmix, 22, 9),
@@ -243,7 +243,9 @@ class TestFormatAccuracyReport:
                     overall_mae=50.0,
                     overall_rmse=65.0,
                     overall_bias=10.0,
-                    by_horizon=[HorizonMetrics(f"bucket{i}", 10, 40.0, 50.0, 5.0) for i in range(6)],
+                    by_horizon=[
+                        HorizonMetrics(f"bucket{i}", 10, 40.0, 50.0, 5.0) for i in range(6)
+                    ],
                 ),
                 SourceMetrics(
                     source="mosmix",
@@ -251,7 +253,9 @@ class TestFormatAccuracyReport:
                     overall_mae=45.0,
                     overall_rmse=60.0,
                     overall_bias=-5.0,
-                    by_horizon=[HorizonMetrics(f"bucket{i}", 10, 35.0, 45.0, -3.0) for i in range(6)],
+                    by_horizon=[
+                        HorizonMetrics(f"bucket{i}", 10, 35.0, 45.0, -3.0) for i in range(6)
+                    ],
                 ),
             ],
             correlations=[
