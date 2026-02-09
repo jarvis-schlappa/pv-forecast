@@ -16,6 +16,7 @@ Vollständige Dokumentation aller `pvforecast`-Befehle.
 | [`train`](#pvforecast-train) | Modell trainieren |
 | [`tune`](#pvforecast-tune) | Hyperparameter-Tuning |
 | [`evaluate`](#pvforecast-evaluate) | Modell evaluieren |
+| [`forecast-accuracy`](#pvforecast-forecast-accuracy) | Forecast-Genauigkeit analysieren |
 | [`status`](#pvforecast-status) | Status anzeigen |
 | [`config`](#pvforecast-config) | Konfiguration verwalten |
 
@@ -511,6 +512,85 @@ pvforecast evaluate
 # Nur 2024 evaluieren
 pvforecast evaluate --year 2024
 ```
+
+---
+
+### `pvforecast forecast-accuracy`
+
+Analysiert die Genauigkeit der gesammelten Forecasts gegen Ground Truth (HOSTRADA).
+
+```bash
+pvforecast forecast-accuracy [OPTIONEN]
+```
+
+| Option | Beschreibung | Default |
+|--------|--------------|---------|
+| `--days N` | Nur die letzten N Tage analysieren | alle |
+| `--source SOURCE` | Nur diese Quelle analysieren (mosmix, open-meteo) | alle |
+| `--format FORMAT` | Ausgabeformat (table, json) | table |
+
+**Voraussetzungen:**
+
+- Gesammelte Forecasts in `forecast_history` (via `today`/`predict` mit Archivierung)
+- HOSTRADA Ground Truth in `weather_history` für denselben Zeitraum
+
+**Analysen:**
+
+1. **GHI-Vergleich:** `forecast_history.ghi_wm2` vs `weather_history.ghi_wm2`
+2. **Horizont-Analyse:** MAE/RMSE nach Forecast-Horizont (0-1h, 1-6h, 6-24h, 24-48h, 48-72h, >72h)
+3. **Korrelation:** Pearson r zwischen Fehler-Vektoren verschiedener Quellen
+
+**Beispiele:**
+
+```bash
+# Alle Daten, alle Quellen
+pvforecast forecast-accuracy
+
+# Nur letzte 7 Tage
+pvforecast forecast-accuracy --days 7
+
+# Nur MOSMIX analysieren
+pvforecast forecast-accuracy --source mosmix
+
+# JSON-Output für Weiterverarbeitung
+pvforecast forecast-accuracy --format json
+```
+
+**Beispiel-Ausgabe:**
+
+```text
+Forecast Accuracy Report
+============================================================
+
+📅 Zeitraum: 2026-02-01 bis 2026-02-09
+📊 Forecasts: 841 gesamt, 320 mit Ground Truth
+
+📊 GHI-Vergleich (Forecast vs. HOSTRADA)
+------------------------------------------------------------
+Quelle       |      N |      MAE |     RMSE |     Bias
+             |        |   (W/m²) |   (W/m²) |   (W/m²)
+------------------------------------------------------------
+open-meteo   |    200 |     45.2 |     62.1 |    +10.3
+mosmix       |    120 |     42.8 |     58.4 |     -5.1
+
+📈 Nach Forecast-Horizont (MAE in W/m²)
+------------------------------------------------------------
+Quelle       |    0-1h|   1-6h|  6-24h| 24-48h| 48-72h|  >72h
+------------------------------------------------------------
+open-meteo   |    30.2|   38.5|   45.2|   52.1|   58.3|    --
+mosmix       |    28.1|   35.2|   42.8|   48.9|   55.1|    --
+
+🔗 Fehler-Korrelation zwischen Quellen
+------------------------------------------------------------
+   open-meteo ↔ mosmix: r=0.78 (n=120) (hohe Korrelation → gleiche Fehlerquellen)
+```
+
+**Interpretation:**
+
+- **MAE/RMSE:** Niedriger = besser. RMSE bestraft große Fehler stärker.
+- **Bias:** Positiv = Überprognose, Negativ = Unterprognose
+- **Horizont:** Zeigt wie schnell die Genauigkeit mit der Vorhersagezeit abnimmt
+- **Korrelation:** Hohe Korrelation (r > 0.7) = Quellen machen ähnliche Fehler → Ensemble bringt wenig
 
 ---
 
