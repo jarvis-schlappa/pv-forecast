@@ -558,7 +558,8 @@ def train(
         logger.info("Lade Trainingsdaten aus Datenbank...")
 
     X, y = load_training_data(
-        db, lat, lon, peak_kwp=peak_kwp, since_year=since_year, until_year=until_year, min_samples=100
+        db, lat, lon, peak_kwp=peak_kwp,
+        since_year=since_year, until_year=until_year, min_samples=100,
     )
 
     # Zeitbasierter Split (80% Training, 20% Test)
@@ -643,7 +644,8 @@ def tune(
     logger.info(f"Starte Hyperparameter-Tuning ({n_iter} Iterationen, {cv_splits}-fold CV)...")
 
     X, y = load_training_data(
-        db, lat, lon, peak_kwp=peak_kwp, since_year=since_year, until_year=until_year, min_samples=500
+        db, lat, lon, peak_kwp=peak_kwp,
+        since_year=since_year, until_year=until_year, min_samples=500,
     )
 
     # Parameter-Suchraum definieren
@@ -835,7 +837,8 @@ def tune_optuna(
     logger.info(f"Starte Optuna-Tuning ({n_trials} Trials, {cv_splits}-fold CV)...")
 
     X, y = load_training_data(
-        db, lat, lon, peak_kwp=peak_kwp, since_year=since_year, until_year=until_year, min_samples=500
+        db, lat, lon, peak_kwp=peak_kwp,
+        since_year=since_year, until_year=until_year, min_samples=500,
     )
     y = y.values  # Convert to numpy array for Optuna
 

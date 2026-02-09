@@ -44,10 +44,10 @@ from .formatters import (
     print_evaluation_result,
 )
 from .helpers import (
+    _archive_forecast,
     fetch_and_archive_forecast,
     get_forecast_source,
     get_historical_source,
-    _archive_forecast,
 )
 
 # Module-level quiet flag (set by cli.__init__.set_quiet_mode)
