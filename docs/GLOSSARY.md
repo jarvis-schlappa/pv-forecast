@@ -100,7 +100,7 @@ Bei PV-Forecast wird zeitbasiert gesplittet (ältere Daten zum Training, neuere 
 ### Feature Engineering
 **Merkmale ableiten** – aus Rohdaten neue, aussagekräftige Features berechnen.
 
-*Beispiel:* Aus GHI und Bewölkung wird `effective_irradiance` berechnet: GHI × (1 - Bewölkung/100)
+*Beispiel:* Aus GHI und Clear-Sky-GHI wird der `csi` (Clear-Sky-Index) berechnet.
 
 ---
 
