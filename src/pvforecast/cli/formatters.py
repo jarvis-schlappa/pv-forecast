@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 from zoneinfo import ZoneInfo
 
 from pvforecast.config import Config
@@ -161,8 +162,11 @@ def print_evaluation_result(result: EvaluationResult) -> None:
         month_data = result.monthly[result.monthly["month"] == month]
         if len(month_data) > 0:
             err = month_data.iloc[0]["error_pct"]
-            bar = "█" * min(10, int(abs(err) / 2))
-            sign = "+" if err > 0 else "-" if err < 0 else " "
-            print(f"   {month_names[month - 1]}: {sign}{abs(err):5.1f}% {bar}")
+            if math.isnan(err):
+                print(f"   {month_names[month - 1]}: keine Daten")
+            else:
+                bar = "█" * min(10, int(abs(err) / 2))
+                sign = "+" if err > 0 else "-" if err < 0 else " "
+                print(f"   {month_names[month - 1]}: {sign}{abs(err):5.1f}% {bar}")
         else:
             print(f"   {month_names[month - 1]}: keine Daten")
