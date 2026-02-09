@@ -280,7 +280,10 @@ def prepare_features(
 
     # Wetter-Features (Basis) - negative Werte auf 0 setzen (Datenqualität)
     features["ghi"] = df["ghi_wm2"].clip(lower=0)
-    features["cloud_cover"] = df["cloud_cover_pct"].clip(lower=0, upper=100)
+    # cloud_cover wird NICHT als Feature verwendet (#168):
+    # - Inkonsistent mit Strahlungsdaten (100% cloud bei hoher GHI)
+    # - Modell performt besser ohne (MAPE 28.9% vs 29.7%)
+    # - Strahlungsfeatures (GHI, DNI, CSI) sind bessere Indikatoren
     features["temperature"] = df["temperature_c"]
 
     # Erweiterte Wetter-Features (optional, Defaults wenn nicht vorhanden)
@@ -292,9 +295,6 @@ def prepare_features(
     features["wind_speed"] = features["wind_speed"].fillna(0.0).clip(lower=0)
     features["humidity"] = features["humidity"].fillna(50).clip(lower=0, upper=100)
     features["dhi"] = features["dhi"].fillna(0.0).clip(lower=0)
-
-    # Interaktions-Feature: Effektive Strahlung (GHI korrigiert um Bewölkung)
-    features["effective_irradiance"] = features["ghi"] * (1 - features["cloud_cover"] / 100)
 
     # Sonnenhöhe berechnen
     features["sun_elevation"] = df["timestamp"].apply(
@@ -359,7 +359,6 @@ def prepare_features(
     features["ghi_lag_1h"] = features["ghi"].shift(1).fillna(0)
     features["ghi_lag_3h"] = features["ghi"].shift(3).fillna(0)
     features["ghi_rolling_3h"] = features["ghi"].rolling(3, min_periods=1).mean()
-    features["cloud_trend"] = features["cloud_cover"].diff().fillna(0)
 
     # Produktions-Lags (abhängig von mode und Datenverfügbarkeit)
     if "production_w" in df.columns and mode in ("train", "today"):
@@ -1229,11 +1228,12 @@ def evaluate(
     total_error_kwh = total_predicted_kwh - total_actual_kwh
     total_error_pct = (total_error_kwh / total_actual_kwh) * 100 if total_actual_kwh > 0 else 0
 
-    # Wetter-Breakdown
+    # Wetter-Breakdown (basierend auf CSI statt cloud_cover, #168)
+    # CSI = Clear-Sky-Index: Verhältnis GHI zu theoretischem Maximum
     weather_categories = [
-        ("☀️ Klar (<20%)", X["cloud_cover"] < 20),
-        ("🌤️ Teilbewölkt (20-60%)", (X["cloud_cover"] >= 20) & (X["cloud_cover"] <= 60)),
-        ("☁️ Bewölkt (>60%)", X["cloud_cover"] > 60),
+        ("☀️ Klar (CSI>0.7)", X["csi"] > 0.7),
+        ("🌤️ Teilbewölkt (CSI 0.3-0.7)", (X["csi"] >= 0.3) & (X["csi"] <= 0.7)),
+        ("☁️ Bewölkt (CSI<0.3)", X["csi"] < 0.3),
     ]
 
     weather_breakdown = []

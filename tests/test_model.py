@@ -106,11 +106,9 @@ class TestPrepareFeatures:
         assert "doy_cos" in features.columns
         # Wetter-Features
         assert "ghi" in features.columns
-        assert "cloud_cover" in features.columns
         assert "temperature" in features.columns
         assert "sun_elevation" in features.columns
-        # Interaktions-Features
-        assert "effective_irradiance" in features.columns
+        # cloud_cover und effective_irradiance entfernt (#168)
 
         assert len(features) == 2
 
@@ -155,40 +153,6 @@ class TestPrepareFeatures:
         # Juli (Monat 7): sin(2π * 7/12) ≈ -0.5, cos(2π * 7/12) ≈ -0.866
         assert np.isclose(features.iloc[1]["month_sin"], -0.5, atol=1e-10)
         assert np.isclose(features.iloc[1]["month_cos"], -np.sqrt(3) / 2, atol=1e-10)
-
-    def test_effective_irradiance(self):
-        """Test: Effektive Strahlung wird korrekt berechnet."""
-        df = pd.DataFrame(
-            [
-                # GHI 1000, keine Wolken → effektiv 1000
-                {
-                    "timestamp": 1704067200,
-                    "ghi_wm2": 1000,
-                    "cloud_cover_pct": 0,
-                    "temperature_c": 20,
-                },
-                # GHI 1000, 50% Wolken → effektiv 500
-                {
-                    "timestamp": 1704110400,
-                    "ghi_wm2": 1000,
-                    "cloud_cover_pct": 50,
-                    "temperature_c": 20,
-                },
-                # GHI 1000, 100% Wolken → effektiv 0
-                {
-                    "timestamp": 1704153600,
-                    "ghi_wm2": 1000,
-                    "cloud_cover_pct": 100,
-                    "temperature_c": 20,
-                },
-            ]
-        )
-
-        features = prepare_features(df, 51.83, 7.28)
-
-        assert features.iloc[0]["effective_irradiance"] == 1000
-        assert features.iloc[1]["effective_irradiance"] == 500
-        assert features.iloc[2]["effective_irradiance"] == 0
 
     def test_peak_kwp_feature(self):
         """Test: peak_kwp wird als Feature hinzugefügt wenn angegeben."""
@@ -256,7 +220,7 @@ class TestPrepareFeatures:
         assert "ghi_lag_1h" in features.columns
         assert "ghi_lag_3h" in features.columns
         assert "ghi_rolling_3h" in features.columns
-        assert "cloud_trend" in features.columns
+        # cloud_trend entfernt (#168)
 
         # ghi_lag_1h: 0, 100, 200, 300 (erste ist 0 weil fillna)
         assert features.iloc[0]["ghi_lag_1h"] == 0
@@ -270,12 +234,6 @@ class TestPrepareFeatures:
         assert features.iloc[1]["ghi_rolling_3h"] == 150  # (100+200)/2
         assert features.iloc[2]["ghi_rolling_3h"] == 200  # (100+200+300)/3
         assert features.iloc[3]["ghi_rolling_3h"] == 300  # (200+300+400)/3
-
-        # cloud_trend: diff mit fillna(0)
-        assert features.iloc[0]["cloud_trend"] == 0  # fillna
-        assert features.iloc[1]["cloud_trend"] == 10  # 20-10
-        assert features.iloc[2]["cloud_trend"] == 10  # 30-20
-        assert features.iloc[3]["cloud_trend"] == -5  # 25-30
 
     def test_production_lag_features_train_mode(self):
         """Test: Produktions-Lags werden im train-Modus berechnet."""
