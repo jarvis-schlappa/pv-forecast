@@ -96,7 +96,9 @@ pvforecast train --model xgb
 |---------|--------------|
 | `ghi_lag_1h/3h` | GHI vor 1/3 Stunden |
 | `ghi_rolling_3h` | GHI Mittel letzte 3h |
-| `production_lag_1h/2h/3h/24h` | Produktion vor X Stunden (nur Training) |
+
+> **Hinweis:** `production_lag_*` Features wurden entfernt (#170).
+> Sie waren im Predict-Modus immer 0 und führten zu massiver Unterschätzung.
 
 ---
 
@@ -244,11 +246,12 @@ pvforecast evaluate --year 2024
 |-------|---------|-------------------|
 | #80 | Zyklische Features | -0.2% |
 | #83 | peak_kwp Normalisierung | Basis für Multi-Anlagen |
-| #82 | **Lag-Features (Wetter + Produktion)** | **-10%** |
+| #82 | **Lag-Features (Wetter)** | **-10%** |
 | #81 | CSI, DNI, Modultemperatur | -1.4% |
-| #168 | cloud_cover, effective_irradiance entfernt | **-0.8%** |
+| #168 | cloud_cover, effective_irradiance entfernt | -0.8% |
+| #170 | production_lag entfernt (Forecast-Fix) | +X% (Backtest), Forecast funktioniert |
 
-**Gesamt: MAPE 41.7% → ~29% (-12.7%)**
+**Hinweis:** Backtest-MAPE kann durch #170 steigen, aber Forecasts sind jetzt korrekt.
 
 ---
 
