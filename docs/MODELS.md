@@ -69,7 +69,6 @@ pvforecast train --model xgb
 | `month_sin/cos` | Monat (zyklisch) | Timestamp |
 | `day_of_year_sin/cos` | Tag im Jahr (zyklisch) | Timestamp |
 | `ghi` | Globalstrahlung (W/m²) | Open-Meteo |
-| `cloud_cover` | Bewölkung (%) | Open-Meteo |
 | `temperature` | Temperatur (°C) | Open-Meteo |
 | `sun_elevation` | Sonnenhöhe (°) | Berechnet |
 | `wind_speed` | Windgeschwindigkeit (m/s) | Open-Meteo |
@@ -77,11 +76,14 @@ pvforecast train --model xgb
 | `dhi` | Diffusstrahlung (W/m²) | Open-Meteo |
 | `dni` | Direktstrahlung (W/m²) | Open-Meteo |
 
+> **Hinweis:** `cloud_cover` wird absichtlich NICHT als Feature verwendet (#168).
+> Forecast-APIs liefern oft inkonsistente Daten (100% Bewölkung bei hoher GHI).
+> Die Strahlungsfeatures (GHI, DNI, CSI) sind bessere Indikatoren.
+
 **Abgeleitete Features (ab v0.1.0):**
 
 | Feature | Beschreibung | Berechnung |
 |---------|--------------|------------|
-| `effective_irradiance` | Effektive Strahlung | GHI × (1 - cloud_cover/100) |
 | `csi` | Clear-Sky-Index | GHI / Clear-Sky-GHI (pvlib) |
 | `diffuse_fraction` | Diffus-Anteil | DHI / (GHI + 1) |
 | `t_module` | Modultemperatur | NOCT-basiert |
@@ -94,7 +96,6 @@ pvforecast train --model xgb
 |---------|--------------|
 | `ghi_lag_1h/3h` | GHI vor 1/3 Stunden |
 | `ghi_rolling_3h` | GHI Mittel letzte 3h |
-| `cloud_trend` | Bewölkungsänderung |
 | `production_lag_1h/2h/3h/24h` | Produktion vor X Stunden (nur Training) |
 
 ---
@@ -241,12 +242,13 @@ pvforecast evaluate --year 2024
 
 | Issue | Feature | MAPE-Verbesserung |
 |-------|---------|-------------------|
-| #80 | Zyklische Features, effective_irradiance | -0.2% |
+| #80 | Zyklische Features | -0.2% |
 | #83 | peak_kwp Normalisierung | Basis für Multi-Anlagen |
 | #82 | **Lag-Features (Wetter + Produktion)** | **-10%** |
 | #81 | CSI, DNI, Modultemperatur | -1.4% |
+| #168 | cloud_cover, effective_irradiance entfernt | **-0.8%** |
 
-**Gesamt: MAPE 41.7% → 30.1% (-11.6%)**
+**Gesamt: MAPE 41.7% → ~29% (-12.7%)**
 
 ---
 
