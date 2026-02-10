@@ -48,22 +48,29 @@ Tägliche Dokumentation: Prognose vs. Realität, Modellverhalten, Auffälligkeit
 HEADER
 fi
 
-# Tagesertrag aus FHEM holen
-YIELD=$(curl -s "http://192.168.40.11:8084/fhem?cmd=get%20sonne%20-%20-%20${DATE}%20${NEXT}%204:sonne&XHR=1" | \
-grep -v "^#" | \
-awk -F'[_ ]' '
-{
-  split($2, t, ":")
-  ts = t[1]*3600 + t[2]*60 + t[3]
-  w = $3
-  if (prev_ts > 0 && ts > prev_ts) {
-    dt = (ts - prev_ts) / 3600.0
-    energy += ((w + prev_w) / 2) * dt
-  }
-  prev_ts = ts
-  prev_w = w
-}
-END { printf "%.1f", energy/1000 }')
+# Tagesertrag direkt vom E3DC (mit FHEM-Fallback)
+E3DC="sudo /Users/jarvis/projects/e3dcset/e3dcset-query.sh"
+DAYDATA=$($E3DC -H day 2>/dev/null)
+YIELD=$(echo "$DAYDATA" | grep "PV-Produktion" | grep -oE "[0-9]+\.[0-9]+" | head -1)
+
+if [ -z "$YIELD" ]; then
+    log "Warning: E3DC nicht erreichbar, Fallback auf FHEM"
+    YIELD=$(curl -s "http://192.168.40.11:8084/fhem?cmd=get%20sonne%20-%20-%20${DATE}%20${NEXT}%204:sonne&XHR=1" | \
+    grep -v "^#" | \
+    awk -F'[_ ]' '
+    {
+      split($2, t, ":")
+      ts = t[1]*3600 + t[2]*60 + t[3]
+      w = $3
+      if (prev_ts > 0 && ts > prev_ts) {
+        dt = (ts - prev_ts) / 3600.0
+        energy += ((w + prev_w) / 2) * dt
+      }
+      prev_ts = ts
+      prev_w = w
+    }
+    END { printf "%.1f", energy/1000 }')
+fi
 
 # Prognosen aus DB holen (letzter Forecast vor heute für heute)
 FORECASTS=$(python3 -c "
