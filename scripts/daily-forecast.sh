@@ -105,6 +105,49 @@ TEMP=$(curl -s "http://192.168.40.11:8083/fhem?cmd=jsonlist2%20heatronic%20ch_To
 
 log "Observation log updated: ${YIELD} kWh actual"
 
+# === E3DC Stundenwerte in pvforecast DB importieren ===
+log "Importing E3DC hourly data into DB..."
+$E3DC -H day --raw 2>/dev/null | python3 -c "
+import sys, csv, sqlite3
+from datetime import datetime, timezone, timedelta
+
+CET = timezone(timedelta(hours=1))
+db = sqlite3.connect('/Users/jarvis/.local/share/pvforecast/data.db')
+
+reader = csv.reader(sys.stdin)
+next(reader)  # header
+
+hourly = {}
+for row in reader:
+    dt = datetime.strptime(row[0], '%Y-%m-%d %H:%M').replace(tzinfo=CET)
+    hour = dt.replace(minute=0, second=0)
+    if hour not in hourly:
+        hourly[hour] = {'pv': [], 'cons': [], 'grid_in': [], 'grid_out': []}
+    hourly[hour]['pv'].append(float(row[1]))
+    hourly[hour]['cons'].append(float(row[6]))
+    hourly[hour]['grid_in'].append(float(row[4]))
+    hourly[hour]['grid_out'].append(float(row[5]))
+
+inserted = 0
+for hour_dt in sorted(hourly.keys()):
+    h = hourly[hour_dt]
+    if len(h['pv']) < 4:
+        continue  # unvollständige Stunde
+    ts = int(hour_dt.timestamp())
+    # E3DC raw = W Durchschnitt pro 15-Min, DB = Wh pro Stunde
+    pv = int(sum(h['pv']) * 0.25)
+    cons = int(sum(h['cons']) * 0.25)
+    feed = int(sum(h['grid_in']) * 0.25)
+    draw = int(sum(h['grid_out']) * 0.25)
+    db.execute(
+        'INSERT OR IGNORE INTO pv_readings (timestamp, production_w, consumption_w, grid_feed_w, grid_draw_w, soc_pct, curtailed) VALUES (?, ?, ?, ?, ?, NULL, 0)',
+        (ts, pv, cons, feed, draw))
+    inserted += db.total_changes and 1 or 0
+
+db.commit()
+print(f'{inserted} Stunden importiert')
+" 2>&1 | while read line; do log "DB: $line"; done
+
 # Cache morgen's Prognose für PV-Monitoring (um 23:00 = Prognose für morgen)
 FORECAST=$(pvforecast predict --days 1 2>/dev/null | grep -E "Erwarteter Tagesertrag" | grep -oE "[0-9]+\.[0-9]+" | head -1)
 if [ -n "$FORECAST" ]; then
