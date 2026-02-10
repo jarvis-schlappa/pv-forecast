@@ -1,0 +1,5 @@
+date,dcb,soh_pct,full_capacity_wh,design_capacity_wh,remaining_capacity_wh,cycles,voltage_v,current_a,status_flags,warning_flags,alarm_flags,error_flags
+2026-02-10,0,100.00,59.20,64.00,13.30,37,53.40,12.90,224,0,0,0
+2026-02-10,1,100.00,59.00,64.00,13.40,37,53.50,12.90,224,0,0,0
+2026-02-10,2,100.00,59.60,64.00,12.80,40,53.40,14.00,224,0,0,0
+2026-02-10,3,100.00,61.00,64.00,14.20,40,53.40,14.40,224,0,0,0
