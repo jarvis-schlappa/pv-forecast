@@ -56,8 +56,8 @@ else
     YIELD=$($E3DC -H day 2>/dev/null | grep "PV-Produktion" | grep -oE "[0-9]+\.[0-9]+" | head -1)
     YIELD=${YIELD:-0.0}
 
-    # Modell-Prognose: pvforecast today mit JSON (robust)
-    MODEL_FORECAST=$(pvforecast today --source open-meteo -q 2>/dev/null || echo "")
+    # Modell-Prognose: pvforecast today -q gibt "1.2 kWh" → nur Zahl extrahieren
+    MODEL_FORECAST=$(pvforecast today --source open-meteo -q 2>/dev/null | grep -oE '[0-9]+\.[0-9]+' | head -1 || echo "")
     # Fallback: parse aus JSON
     if [ -z "$MODEL_FORECAST" ]; then
         MODEL_FORECAST=$(pvforecast today --format json 2>/dev/null | python3 -c "import sys,json; print(json.load(sys.stdin).get('total_kwh',''))" 2>/dev/null || echo "")
@@ -100,8 +100,12 @@ for src in ['open-meteo', 'mosmix']:
             [ -n "$src" ] && echo "- **${src}** (${ts}): GHI-Summe ${ghi} W/m²"
         done
         if [ -n "$MODEL_FORECAST" ] && [ "$MODEL_FORECAST" != "0" ] && [ "$MODEL_FORECAST" != "0.0" ]; then
-            DEV=$(python3 -c "print(f'{(($YIELD - $MODEL_FORECAST) / $MODEL_FORECAST) * 100:.0f}')" 2>/dev/null || echo "?")
-            echo "- **Abweichung:** ${DEV}%"
+            DEV=$(python3 -c "
+y, f = float('${YIELD}'), float('${MODEL_FORECAST}')
+if f > 0: print(f'{((y - f) / f) * 100:.0f}')
+else: print('?')
+" 2>/dev/null || echo "?")
+            [ "$DEV" != "?" ] && echo "- **Abweichung:** ${DEV}%"
         fi
         echo "- **Außentemp:** ${TEMP} °C"
         echo ""
