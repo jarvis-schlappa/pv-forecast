@@ -112,42 +112,23 @@ Backtesting 2025 mit HOSTRADA-Daten statt Open-Meteo als Forecast-Input:
 
 ---
 
-## 5. Phase 2: MOS-Schicht + physikalisches PV-Modell
+## 5. Phase 2: Physikalisches PV-Modell + Residualkorrektur
 
-> **Aufwand:** 2–3 Tage · **Erwartetes MAPE:** 18–22%
+> **Aufwand:** 1.5–2 Tage · **Erwartetes MAPE:** 18–22%
 
-### 5.1 ML-basierte Strahlungskorrektur (MOS-Schicht)
+### ~~5.1 ML-basierte Strahlungskorrektur (MOS-Schicht)~~ — Deprioritisiert
 
-**Datensammlung (Voraussetzung) ✅**
+**Status: Auf Eis gelegt (12.02.2026)**
 
-```sql
--- Neue Tabelle (implementiert in v0.5.0)
-CREATE TABLE forecast_history (
-    id              INTEGER PRIMARY KEY,
-    issued_at       INTEGER NOT NULL,     -- Wann der Forecast erstellt wurde
-    target_time     INTEGER NOT NULL,     -- Für welchen Zeitpunkt
-    source          TEXT NOT NULL,        -- 'open-meteo', 'mosmix'
-    ghi_wm2         REAL,
-    cloud_cover_pct INTEGER,
-    temperature_c   REAL,
-    ...
-);
-```
+Die Gap-Analyse (Abschnitt 4.1) zeigt nach dem Timestamp-Fix nur noch 1.1% Wetter-Gap.
+Das Modell kompensiert Forecast-Fehler bereits über die Wetter-Lag-Features. Eine eigene
+MOS-Schicht ist den Aufwand nicht wert (~1 Tag Entwicklung für ~1% Verbesserung).
 
-**Trainings-Setup (nach 2-3 Monaten Datensammlung):**
-```python
-# Features: Open-Meteo Vorhersage + Kontext
-X = df[['openmeteo_ghi', 'openmeteo_cloud', 'clearsky_ghi',
-        'hour_sin', 'hour_cos', 'doy_sin', 'doy_cos']]
+Die Forecast-Datensammlung (Open-Meteo + MOSMIX → `forecast_history`) läuft weiter.
+Falls sich der Gap mit mehr Daten/Jahreszeiten als größer herausstellt, kann die MOS-Schicht
+nachträglich implementiert werden. Siehe `docs/FORECAST-ACCURACY.md` für laufende Auswertung.
 
-# Target: HOSTRADA-Messung (Ground Truth)
-y = df['hostrada_ghi']
-
-# Leichtes Modell
-mos_model = LGBMRegressor(n_estimators=100, max_depth=4)
-```
-
-### 5.2 pvlib PV-System-Modell (3 Arrays)
+### 5.2 pvlib PV-System-Modell (3 Arrays) — **Höchste Priorität**
 
 **Konfigurationserweiterung (TODO):**
 ```yaml
@@ -169,44 +150,35 @@ pv_system:
   mounting: rack
 ```
 
-### 5.3 Gesamtpipeline Phase 2
+### 5.3 Gesamtpipeline Phase 2 (revidiert)
+
+```
+Open-Meteo GHI/DHI  →  pvlib Transposition (3 Arrays)  →  POA pro Array
+POA + Temperatur     →  pvlib PVSystem                  →  Theor. Ertrag
+Theor. Ertrag        →  ML-Residualkorrektur            →  Reale Prognose
+```
 
 | Schritt | Methode | Input | Output |
 |---------|---------|-------|--------|
 | 1. Forecast sammeln | DB | API Response | `forecast_history` |
-| 2. Strahlungskorrektur | ML (LightGBM) | Open-Meteo GHI + Kontext | Korrigierte GHI/DHI |
-| 3. Transposition | pvlib (Perez) | Korr. GHI/DHI + Solpos | POA pro Array |
-| 4. PV-Modell | pvlib (PVSystem) | POA + Temperatur + Wind | Theor. Ertrag |
-| 5. Residualkorrektur | ML (LightGBM) | Theor. Ertrag + Solpos | Reale Prognose |
+| ~~2. Strahlungskorrektur~~ | ~~ML (LightGBM)~~ | — | ~~Deprioritisiert~~ |
+| 2. Transposition | pvlib (Perez) | GHI/DHI + Solpos | POA pro Array |
+| 3. PV-Modell | pvlib (PVSystem) | POA + Temperatur + Wind | Theor. Ertrag |
+| 4. Residualkorrektur | ML (LightGBM) | Theor. Ertrag + Solpos | Reale Prognose |
 
 ---
 
-## 6. Phase 3: Multi-NWP Ensemble + Unsicherheit
+## 6. Phase 3: Quantile Regression + optionales Ensemble
 
-> **Aufwand:** 3–5 Tage · **Erwartetes MAPE:** 15–20%
+> **Aufwand:** 1–2 Tage · **Erwartetes MAPE:** ~20% mit Konfidenzintervallen
 
-### 6.1 Datenquellen-Unabhängigkeit
-
-| Quelle | Basismodell | Unabhängigkeit | Kosten |
-|--------|-------------|----------------|--------|
-| Open-Meteo (aktuell) | ICON + IFS | – (Referenz) | 0 € |
-| MOSMIX | ICON + IFS (MOS) | Gering – gleiche Basis! | 0 € |
-| Open-Meteo GFS | GFS (NOAA) | **Hoch** – anderes Modell | 0 € |
-| Solcast | Satellit + NWP | Sehr hoch | ~20 €/Mon. |
-
-**Empfehlung:** Open-Meteo (Default) + Open-Meteo (GFS) als echtes Ensemble.
-
-### 6.2 Ensemble-Features
-
-```python
-features['ghi_spread']      = abs(openmeteo_ghi - gfs_ghi)
-features['ghi_mean']        = (openmeteo_ghi + gfs_ghi) / 2
-features['cloud_agreement'] = 1 - abs(openmeteo_cloud - gfs_cloud) / 100
-```
-
-### 6.3 Probabilistische Ausgabe (Quantile Regression)
+### 6.1 Probabilistische Ausgabe (Quantile Regression) — **Priorität**
 
 Statt Punktprognose: *„Morgen 12–18 kWh (80% Konfidenz), erwartet 15 kWh."*
+
+Besonders wertvoll bei bewölkten Tagen (aktuell 46% MAPE), wo eine Punktprognose
+irreführend genau wirkt. Die Breite des Konfidenzintervalls signalisiert dem Nutzer
+automatisch die Unsicherheit.
 
 ```python
 model_q10 = LGBMRegressor(objective='quantile', alpha=0.1)
@@ -214,26 +186,54 @@ model_q50 = LGBMRegressor(objective='quantile', alpha=0.5)
 model_q90 = LGBMRegressor(objective='quantile', alpha=0.9)
 ```
 
+### ~~6.2 Multi-NWP Ensemble~~ — Deprioritisiert
+
+Der Wetter-Gap von 1.1% zeigt, dass das Modell Forecast-Fehler bereits gut kompensiert.
+Ein zweites NWP-Modell (z.B. GFS) bringt voraussichtlich wenig Mehrwert.
+
+Die Forecast-Datensammlung (Open-Meteo + MOSMIX) läuft trotzdem weiter.
+Falls sich nach mehreren Monaten zeigt, dass der Gap saisonal größer wird
+(z.B. im Sommer bei Gewitterlagen), kann das Ensemble nachträglich ergänzt werden.
+
+| Quelle | Basismodell | Unabhängigkeit | Kosten | Status |
+|--------|-------------|----------------|--------|--------|
+| Open-Meteo (aktuell) | ICON + IFS | – (Referenz) | 0 € | ✅ Aktiv |
+| MOSMIX | ICON + IFS (MOS) | Gering | 0 € | ✅ Daten werden gesammelt |
+| Open-Meteo GFS | GFS (NOAA) | **Hoch** | 0 € | ⏸️ Optional |
+| Solcast | Satellit + NWP | Sehr hoch | ~20 €/Mon. | ❌ Nicht geplant |
+
 ---
 
-## 7. Umsetzungs-Roadmap
+## 7. Umsetzungs-Roadmap (revidiert 12.02.2026)
 
-| Phase | Maßnahme | Aufwand | MAPE-Ziel | Status |
-|-------|----------|---------|-----------|--------|
-| 1a | pvlib + Clear-Sky-Index | – | – | ✅ Erledigt |
-| 1b | Zyklische Zeitfeatures | – | – | ✅ Erledigt |
-| 1c | Diffuse Fraction, DNI, Modultemp. | – | – | ✅ Erledigt |
-| 1d | Wetter-Lags (1h, 3h, rolling) | – | 24.9% | ✅ Erledigt |
-| V | Vorab-Validierung | 0.5 Tage | – | ✅ Erledigt |
-| **2a** | **Forecast-Daten persistieren** | 0.5 Tage | – | ✅ **Erledigt (09.02.2026)** |
-| 2b | MOS-Schicht (Strahlungskorrektur) | 1 Tag | – | ⏳ Nach 2-3 Mon. Daten |
-| 2c | pvlib PV-System (3 Arrays) | 0.5 Tage | – | ⏳ Offen |
-| 2d | ML-Residualkorrektur | 0.5 Tage | 18–22% | ⏳ Offen |
-| 3a | Open-Meteo GFS als 2. Quelle | 0.5 Tage | – | ⏳ Offen |
-| 3b | Ensemble-Features | 0.5 Tage | – | ⏳ Offen |
-| 3c | Quantile Regression | 1 Tag | 15–20% | ⏳ Offen |
+### Abgeschlossen
 
-**Kritischer Pfad:** Forecast-Daten werden jetzt gesammelt (Phase 2a ✅). In 2-3 Monaten kann die MOS-Schicht trainiert werden.
+| Phase | Maßnahme | MAPE | Status |
+|-------|----------|------|--------|
+| 1a | pvlib + Clear-Sky-Index | – | ✅ |
+| 1b | Zyklische Zeitfeatures | – | ✅ |
+| 1c | Diffuse Fraction, DNI, Modultemp. | – | ✅ |
+| 1d | Wetter-Lags (1h, 3h, rolling) | – | ✅ |
+| V | Vorab-Validierung + Gap-Analyse | – | ✅ |
+| 2a | Forecast-Daten persistieren | – | ✅ |
+| T | Timestamp-Fix (PRs #178, #179, #183) | 25.3% | ✅ |
+
+### Nächste Schritte (priorisiert)
+
+| Prio | Maßnahme | Aufwand | Impact | Status |
+|------|----------|---------|--------|--------|
+| 🔴 1 | **pvlib PV-System (3 Arrays)** | 0.5–1 Tag | MAPE -3–5% | ⏳ Wartet auf Anlagendaten |
+| 🟠 2 | **ML-Residualkorrektur** | 0.5 Tag | MAPE -2–3% | ⏳ Nach pvlib |
+| 🟡 3 | **Quantile Regression** | 1 Tag | Bessere UX | ⏳ Unabhängig umsetzbar |
+
+### Deprioritisiert
+
+| Maßnahme | Grund | Status |
+|----------|-------|--------|
+| MOS-Schicht (Strahlungskorrektur) | Wetter-Gap nur 1.1% | ⏸️ Auf Eis |
+| Multi-NWP Ensemble (GFS) | Geringer Mehrwert bei 1.1% Gap | ⏸️ Optional |
+
+**Kritischer Pfad:** Anlagendaten (Azimut, Neigung, kWp pro Array) für pvlib 3 Arrays.
 
 ---
 
@@ -252,14 +252,16 @@ model_q90 = LGBMRegressor(objective='quantile', alpha=0.9)
 
 ## 9. Zusammenfassung
 
-**Phase 1 ist abgeschlossen** (MAPE aktuell 25.3% eval). Nach dem Timestamp-Fix (PRs #178, #179, #183) ist der Wetter-Gap auf 1.1% geschrumpft — die MOS-Schicht hat weniger Potenzial als erwartet. Größtes Potenzial liegt bei pvlib (3 Arrays) und Residualkorrektur.
+**Phase 1 + Timestamp-Fix sind abgeschlossen** (MAPE 25.3% eval). Der Wetter-Gap ist auf 1.1% geschrumpft – das Modell kompensiert Forecast-Fehler bereits durch Lag-Features. Die MOS-Schicht und das NWP-Ensemble sind daher deprioritisiert.
+
+**Strategie-Shift:** Statt Wetterkorrektur liegt der Fokus jetzt auf **physikalischer Modellierung** (pvlib 3 Arrays) und **Residualkorrektur** (Verschattung, WR-Verluste). Das sind die verbleibenden ~24% MAPE.
 
 **Nächste Schritte:**
-1. ✅ Forecast-Daten-Logging läuft (Open-Meteo + MOSMIX)
-2. ⏳ 2-3 Monate Daten sammeln
-3. ⏳ MOS-Schicht trainieren
-4. ⏳ pvlib mit 3 Arrays konfigurieren (braucht Anlagen-Daten)
-5. ⏳ Residualkorrektur für Verschattung
+1. ⏳ **pvlib 3 Arrays** konfigurieren (wartet auf Anlagendaten: Azimut, Neigung, kWp)
+2. ⏳ **Residualkorrektur** implementieren (Verschattung, WR-Verluste)
+3. ⏳ **Quantile Regression** für Unsicherheitsbänder (besonders bei bewölkten Tagen)
+4. 📊 Forecast-Datensammlung läuft weiter (Open-Meteo + MOSMIX → `FORECAST-ACCURACY.md`)
 
-**Restaufwand:** 5–8 Arbeitstage für Phase 2 + 3.  
-**Realistisches MAPE-Ziel:** 15–20%, mit < 10% an klaren Tagen.
+**Restaufwand:** 2–3 Arbeitstage für Phase 2 + 3.  
+**Realistisches MAPE-Ziel:** 18–22%, mit < 10% an klaren Tagen.  
+**Langfristig (mit pvlib + Residual):** 15–20%.
