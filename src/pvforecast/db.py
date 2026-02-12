@@ -175,7 +175,7 @@ class Database:
         Idempotent: only runs if schema_version < 5.
         """
         conn.execute("UPDATE forecast_history SET target_time = target_time - 3600")
-        logger.info("Migrated forecast_history: target_time shifted by -3600s (interval-end → interval-start)")
+        logger.info("Migrated forecast_history: target_time shifted by -3600s")
 
     def _enable_wal_mode(self) -> None:
         """Aktiviert WAL-Mode für bessere Parallelität."""
