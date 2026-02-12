@@ -362,6 +362,10 @@ class MOSMIXSource(ForecastSource):
         # Create DataFrame
         df = pd.DataFrame(data)
 
+        # MOSMIX Rad1h is "preceding hour sum" (= interval-end).
+        # Normalize to interval-start convention (-1h), consistent with PV data.
+        df["timestamp"] = df["timestamp"] - 3600
+
         # Calculate humidity from dewpoint (if available)
         if "dewpoint_c" in df.columns:
             df["humidity_pct"] = [
