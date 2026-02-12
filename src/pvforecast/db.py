@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
+import logging
 import sqlite3
 from collections.abc import Generator
 from contextlib import contextmanager
 from pathlib import Path
 
+logger = logging.getLogger(__name__)
+
 # Schema Version für Migrations
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 
 SCHEMA_SQL = """
 -- PV-Ertragsdaten (aus E3DC CSV)
@@ -130,6 +133,8 @@ class Database:
                 self._migrate_v2_to_v3(conn)
             if current_version < 4:
                 self._migrate_v3_to_v4(conn)
+            if current_version < 5:
+                self._migrate_v4_to_v5(conn)
 
             # Schema-Version setzen
             conn.execute(
@@ -161,6 +166,16 @@ class Database:
     def _migrate_v3_to_v4(self, conn: sqlite3.Connection) -> None:
         """Migration von Schema v3 zu v4: Forecast-Archiv hinzufügen."""
         conn.executescript(MIGRATION_V3_TO_V4)
+
+    def _migrate_v4_to_v5(self, conn: sqlite3.Connection) -> None:
+        """Migration von Schema v4 zu v5: forecast_history Timestamps normalisieren.
+
+        Shifts target_time and issued_at by -3600s to match interval-start
+        convention applied to pv_readings and weather_history in PR #178/#179.
+        Idempotent: only runs if schema_version < 5.
+        """
+        conn.execute("UPDATE forecast_history SET target_time = target_time - 3600")
+        logger.info("Migrated forecast_history: target_time shifted by -3600s (interval-end → interval-start)")
 
     def _enable_wal_mode(self) -> None:
         """Aktiviert WAL-Mode für bessere Parallelität."""
