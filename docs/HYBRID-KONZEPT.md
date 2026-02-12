@@ -234,8 +234,33 @@ Falls sich nach mehreren Monaten zeigt, dass der Gap saisonal größer wird
 
 | Prio | Maßnahme | Aufwand | Impact | Status |
 |------|----------|---------|--------|--------|
-| 🔴 1 | **ML-Residualkorrektur** (theor. Ertrag vs. real) | 0.5–1 Tag | MAPE -2–3% | ⏳ Offen |
-| 🟡 2 | **Quantile Regression** (Unsicherheitsbänder) | 1 Tag | Bessere UX | ⏳ Offen |
+| 🔴 1 | **Fehler-Diagnose** (siehe unten) | 0.5 Tag | Richtungsentscheidung | ⏳ Offen |
+| 🟠 2 | **ML-Residualkorrektur** (theor. Ertrag vs. real) | 0.5–1 Tag | MAPE -2–3% | ⏳ Nach Diagnose |
+| 🟡 3 | **Quantile Regression** (Unsicherheitsbänder) | 1 Tag | Bessere UX | ⏳ Unabhängig umsetzbar |
+
+### Prio 1: Fehler-Diagnose (vor Residualkorrektur!)
+
+Bevor die Architektur geändert wird, muss klar sein *wo genau* der verbleibende Fehler (~29% MAPE) herkommt. Blinde Optimierung verschwendet Aufwand.
+
+**Analysen:**
+
+| # | Analyse | Was sie zeigt | Aufwand |
+|---|---------|---------------|---------|
+| 1 | **Feature Importance** (XGBoost) | Nutzt das Modell die neuen POA-Features? Wenn nicht → Berechnung prüfen | 10 min |
+| 2 | **Fehler nach Tageszeit** (morgens/mittags/abends) | Wo hilft die 3-Array-Modellierung? Morgens/abends sollte SO vs. NW den größten Unterschied machen | 15 min |
+| 3 | **Fehler nach Saison** (Monat/Quartal) | Winter vs. Sommer, Verschattung ändert sich mit Sonnenstand | 15 min |
+| 4 | **Top-Fehler-Tage** (>50% Abweichung) | Schnee? Teilabschattung? WR-Ausfall? Systematisch oder Ausreißer? | 15 min |
+| 5 | **Fehler nach Wetterlage** (klar/teil/bewölkt) | Wo steckt das größte Restpotenzial? (Bewölkt = 46% MAPE) | 10 min |
+
+**Entscheidungsmatrix nach Diagnose:**
+
+| Befund | → Maßnahme |
+|--------|------------|
+| POA-Features haben Importance ~0 | Berechnung/Integration prüfen |
+| Fehler konzentriert morgens/abends | 3-Array-Modell bringt was, Residualkorrektur sinnvoll |
+| Fehler konzentriert im Winter | Verschattung/Schnee, Residualkorrektur mit saisonalen Features |
+| Fehler bei bestimmten Tagen (Ausreißer) | Datenqualität prüfen (WR-Ausfälle, E3DC-Lücken) |
+| Fehler gleichmäßig verteilt | Modell-Limit erreicht, Quantile Regression priorisieren |
 
 ### Deprioritisiert
 
