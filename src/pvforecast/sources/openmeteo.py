@@ -164,6 +164,10 @@ class OpenMeteoSource(ForecastSource, HistoricalSource):
         # Convert to Unix timestamp
         df["timestamp"] = df["timestamp"].astype("int64") // 10**9
 
+        # Open-Meteo radiation data is "preceding hour mean" (= interval-end).
+        # Normalize to interval-start convention (-1h), consistent with PV data.
+        df["timestamp"] = df["timestamp"] - 3600
+
         # Fill NaN with defaults
         df["ghi_wm2"] = df["ghi_wm2"].fillna(0.0)
         df["cloud_cover_pct"] = df["cloud_cover_pct"].fillna(0).astype(int)

@@ -103,7 +103,8 @@ def load_e3dc_csv(csv_path: Path) -> pd.DataFrame:
 
     # E3DC Timestamps = Intervallende → auf Intervallanfang shiften (-1h)
     # E3DC meldet z.B. 08:00 für Produktion von 07:00-08:00.
-    # Wir normalisieren auf Intervallanfang (wie Open-Meteo, DWD).
+    # Wir normalisieren auf Intervallanfang. Open-Meteo/DWD Wetterdaten
+    # werden ebenfalls auf Intervallanfang normalisiert (siehe weather.py).
     df["timestamp"] = df["timestamp"] - 3600
 
     # Abregelung erkennen: wenn curtail_limit_w < production_w + Toleranz

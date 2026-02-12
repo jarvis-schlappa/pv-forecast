@@ -304,6 +304,11 @@ def _parse_weather_response(data: dict) -> pd.DataFrame:
     # Timestamps sind bereits UTC, zu Unix konvertieren
     df["timestamp"] = df["timestamp"].astype("int64") // 10**9
 
+    # Open-Meteo Strahlungsdaten sind "preceding hour mean" (= Intervallende).
+    # Wir normalisieren auf Intervallanfang-Konvention (-1h), konsistent mit PV-Daten.
+    # Siehe: https://open-meteo.com/en/docs ("Preceding hour mean" bei GHI/DHI/DNI)
+    df["timestamp"] = df["timestamp"] - 3600
+
     # None/NaN handling
     df["ghi_wm2"] = df["ghi_wm2"].fillna(0.0)
     df["cloud_cover_pct"] = df["cloud_cover_pct"].fillna(0).astype(int)

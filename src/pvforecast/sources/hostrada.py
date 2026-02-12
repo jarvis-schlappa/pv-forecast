@@ -387,6 +387,10 @@ class HOSTRADASource(HistoricalSource):
         result = pd.DataFrame()
         result["timestamp"] = df.index.astype(np.int64) // 10**9  # Unix timestamp
 
+        # DWD HOSTRADA hourly data uses preceding-hour convention (interval-end).
+        # Normalize to interval-start convention (-1h), consistent with PV data.
+        result["timestamp"] = result["timestamp"] - 3600
+
         # GHI
         if "ghi" in df.columns:
             result["ghi_wm2"] = df["ghi"].values
