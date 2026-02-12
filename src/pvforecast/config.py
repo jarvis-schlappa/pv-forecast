@@ -95,6 +95,10 @@ class Config:
     # PV-Array-Konfiguration (optional, für Multi-Array POA-Berechnung)
     pv_arrays: list[PVArrayConfig] = field(default_factory=list)
 
+    # Inbetriebnahme-Datum (optional, für Degradations-Feature)
+    # ISO-Format: "2018-08-20" oder nur Jahr: "2018"
+    install_date: str | None = None
+
     # Legacy: weather_provider (deprecated, use weather.forecast_provider)
     weather_provider: str = "open-meteo"
 
@@ -129,6 +133,7 @@ class Config:
             "system": {
                 "peak_kwp": self.peak_kwp,
                 "name": self.system_name,
+                **({"install_date": self.install_date} if self.install_date else {}),
             },
             "data": {
                 "db_path": str(self.db_path),
@@ -190,6 +195,8 @@ class Config:
                 kwargs["peak_kwp"] = float(sys["peak_kwp"])
             if "name" in sys:
                 kwargs["system_name"] = str(sys["name"])
+            if "install_date" in sys:
+                kwargs["install_date"] = str(sys["install_date"])
 
         # Data paths
         if "data" in data:
