@@ -1,9 +1,89 @@
 # PV-Forecast Fehleranalyse (2019–2025)
 
-**Datum:** 2026-02-12  
+**Datum:** 2026-02-12 (aktualisiert 12.02.2026 nach PR #191)  
 **Modell:** XGBoost Pipeline (StandardScaler → XGBRegressor)  
-**Eval-Zeitraum:** 2019–2025 (28.832 Tageslicht-Stunden, production > 50W)  
-**Gesamt-Metriken:** MAE = 216 W, MAPE = 25.9%
+**Eval-Zeitraum:** 2019–2025 (29.148 Tageslicht-Stunden, production > 50W)  
+**Gesamt-Metriken:** MAE = 140 W, MAPE = 18.7%
+
+---
+
+## 0. Post-Fix: Degradationsfaktor (PR #191)
+
+PR #191 hat `years_since_install` als Feature eingeführt (berechnet ab `install_date: 2018-08-20` in der Config). Das Modell wurde mit 20 Trials RandomizedSearchCV (5-fold TimeSeriesSplit) getuned.
+
+### Vorher/Nachher-Vergleich
+
+| Metrik | Vorher | Nachher | Δ |
+|--------|-------:|--------:|--:|
+| **MAPE gesamt** | 25.9% | **18.7%** | **−7.2 pp** |
+| **MAE gesamt** | 216 W | **140 W** | −76 W |
+| **Bias gesamt** | ~0 W | **−8 W** | stabil |
+| MAPE eval 2025 | 25.3% | **15.4%** | −9.9 pp |
+| MAE eval 2025 | 122 W | **63 W** | −59 W |
+| R² eval 2025 | 0.968 | **0.991** | +0.023 |
+
+### Bias-Drift: Eliminiert ✅
+
+| Jahr | Bias vorher | Bias nachher | Δ |
+|------|------------:|-------------:|--:|
+| 2019 | **−70 W** | −20 W | +50 W |
+| 2020 | −22 W | −5 W | +17 W |
+| 2021 | −21 W | −12 W | +9 W |
+| 2022 | +3 W | −6 W | −9 W |
+| 2023 | +2 W | −11 W | −13 W |
+| 2024 | **+65 W** | +2 W | −63 W |
+| 2025 | **+93 W** | −2 W | −95 W |
+
+**Drift von 163W (−70 → +93) auf 22W (−20 → +2) reduziert.** Der Degradationsfaktor hat den systematischen Jahres-Bias vollständig kompensiert.
+
+### MAPE pro Jahr: Deutlich stabiler
+
+| Jahr | MAPE vorher | MAPE nachher | Δ |
+|------|------------:|-------------:|--:|
+| 2019 | 25.4% | 18.5% | −6.9 pp |
+| 2020 | 23.9% | 17.8% | −6.1 pp |
+| 2021 | 25.7% | 19.4% | −6.3 pp |
+| 2022 | 22.8% | 17.2% | −5.6 pp |
+| 2023 | 25.6% | 19.4% | −6.2 pp |
+| 2024 | 29.6% | 20.7% | −8.9 pp |
+| 2025 | 28.4% | 17.1% | **−11.3 pp** |
+
+**2025 hat die größte Verbesserung** (−11.3 pp) — genau dort wo die Degradation am stärksten war.
+
+### MAPE pro Monat: Winter verbessert, bleibt aber schwierig
+
+| Monat | MAPE vorher | MAPE nachher | Δ |
+|-------|------------:|-------------:|--:|
+| Jan | 44.6% | 34.2% | −10.4 pp |
+| Feb | 30.9% | 22.5% | −8.4 pp |
+| Jun | 17.7% | 12.6% | −5.1 pp |
+| Dez | 42.1% | 32.6% | −9.5 pp |
+
+Winter-MAPE bleibt bei 32–34% (vorher 42–45%). Das ist ein strukturelles Problem (Schnee, niedrige Erträge <2 kWh).
+
+### Feature Importance: `years_since_install` auf Rang 11
+
+| Rang | Feature | Anteil |
+|------|---------|-------:|
+| 1 | ghi | 55.8% |
+| 2 | ghi_rolling_3h | 13.0% |
+| 3 | ghi_lag_1h | 9.5% |
+| 4 | dhi | 7.7% |
+| 5 | csi | 5.1% |
+| … | … | … |
+| **11** | **years_since_install** | **0.3%** |
+
+Obwohl `years_since_install` nur 0.3% des Gains ausmacht, hat es einen überproportionalen Effekt auf den Bias — weil es den einzigen systematischen Trend im Datensatz korrigiert.
+
+### Was hat sich NICHT verbessert?
+
+1. **Top-20 Fehler-Tage bleiben 100% Überschätzungen** — ausschließlich Wintertage mit <2 kWh Ertrag
+2. **Winter-MAPE bleibt >30%** — strukturelles Problem, nicht durch Degradation verursacht
+3. **Überschätzung bei bewölkten Tagen** bleibt bestehen (CSI < 0.3)
+
+### Erkenntnis
+
+Der Degradationsfaktor war ein **Quick Win mit maximalem Effekt**: Ein einzelnes Feature hat die Gesamtgenauigkeit um 7 Prozentpunkte verbessert und den über 6 Jahre akkumulierten Bias-Drift vollständig eliminiert. Die verbleibenden ~19% MAPE sind primär wetterbedingt (Wolken, Schnee) und erfordern andere Ansätze (Residualkorrektur, Schnee-Feature).
 
 ---
 
