@@ -639,7 +639,10 @@ def load_training_data(
     logger.info(f"Trainingsdaten: {len(df)} Datensätze")
 
     # Features erstellen (mode="train" für historische Daten)
-    X = prepare_features(df, lat, lon, peak_kwp=peak_kwp, mode="train", pv_arrays=pv_arrays, install_date=install_date)
+    X = prepare_features(
+        df, lat, lon, peak_kwp=peak_kwp, mode="train",
+        pv_arrays=pv_arrays, install_date=install_date,
+    )
     y = df["production_w"]
 
     return X, y
@@ -1203,7 +1206,10 @@ def predict(
         )
 
     # Features erstellen (mode bestimmt ob Produktions-Lags verfügbar)
-    X = prepare_features(weather_df, lat, lon, peak_kwp=peak_kwp, mode=mode, pv_arrays=pv_arrays, install_date=install_date)
+    X = prepare_features(
+        weather_df, lat, lon, peak_kwp=peak_kwp, mode=mode,
+        pv_arrays=pv_arrays, install_date=install_date,
+    )
 
     # Vorhersage
     predictions = model.predict(X)
@@ -1298,7 +1304,10 @@ def evaluate(
         raise ValueError(f"Keine Daten für {year} gefunden")
 
     # Features erstellen und Vorhersagen machen
-    X = prepare_features(df, lat, lon, peak_kwp, mode="train", pv_arrays=pv_arrays, install_date=install_date)
+    X = prepare_features(
+        df, lat, lon, peak_kwp, mode="train",
+        pv_arrays=pv_arrays, install_date=install_date,
+    )
     y_true = df["production_w"].values
     y_pred = model.predict(X)
 
