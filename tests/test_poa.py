@@ -4,9 +4,19 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 
 import pandas as pd
+import pytest
 
 from pvforecast.config import Config, PVArrayConfig
 from pvforecast.model import calculate_poa_features, prepare_features
+
+try:
+    import pvlib  # noqa: F401
+
+    HAS_PVLIB = True
+except ImportError:
+    HAS_PVLIB = False
+
+requires_pvlib = pytest.mark.skipif(not HAS_PVLIB, reason="pvlib not installed")
 
 UTC_TZ = ZoneInfo("UTC")
 
@@ -42,6 +52,7 @@ def _make_df(hours_utc: list[int], month: int = 6, day: int = 21,
 class TestPOAFeatures:
     """Tests für POA-Berechnung."""
 
+    @requires_pvlib
     def test_poa_total_positive_daytime(self):
         """POA should be positive during daytime."""
         df = _make_df([6, 8, 10, 12, 14, 16])
@@ -49,6 +60,7 @@ class TestPOAFeatures:
         # Daytime POA should be > 0
         assert (features["poa_total"] > 0).any()
 
+    @requires_pvlib
     def test_poa_ratio_reasonable(self):
         """POA/GHI ratio should be in reasonable range."""
         df = _make_df([8, 10, 12, 14, 16])
@@ -58,6 +70,7 @@ class TestPOAFeatures:
         assert (ratios >= 0).all()
         assert (ratios <= 3).all()
 
+    @requires_pvlib
     def test_so_array_better_morning(self):
         """SO (140°) array should get more POA in the morning than NW (320°)."""
         # Morning: 7 UTC = 9 MESZ
@@ -96,6 +109,7 @@ class TestPOAFeatures:
         features = prepare_features(df, LAT, LON, pv_arrays=[])
         assert (features["poa_total"] == 0).all()
 
+    @requires_pvlib
     def test_backward_compatible_feature_count(self):
         """With arrays, features should have poa_total and poa_ratio columns."""
         df = _make_df([10, 12])
