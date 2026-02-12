@@ -52,7 +52,7 @@ if grep -q "^## ${DATE}$" "$LOG_FILE" 2>/dev/null; then
     log "Observation log already has entry for ${DATE}, skipping"
 else
     # Tagesertrag direkt vom E3DC (via RSCP)
-    E3DC="sudo /Users/jarvis/projects/e3dcset/e3dcset-query.sh"
+    E3DC="sudo /Users/jarvis/projects/e3dcset-fork/e3dcset-query.sh"
     YIELD=$($E3DC -H day 2>/dev/null | grep "PV-Produktion" | grep -oE "[0-9]+\.[0-9]+" | head -1)
     YIELD=${YIELD:-0.0}
 
@@ -116,7 +116,7 @@ fi
 
 # === E3DC Stundenwerte in pvforecast DB importieren ===
 log "Importing E3DC hourly data into DB..."
-E3DC="sudo /Users/jarvis/projects/e3dcset/e3dcset-query.sh"
+E3DC="sudo /Users/jarvis/projects/e3dcset-fork/e3dcset-query.sh"
 $E3DC -H day --raw 2>/dev/null | python3 -c "
 import sys, csv, sqlite3
 from datetime import datetime, timezone, timedelta
@@ -129,7 +129,7 @@ next(reader)  # header
 
 hourly = {}
 for row in reader:
-    dt = datetime.strptime(row[0], '%Y-%m-%d %H:%M').replace(tzinfo=CET)
+    dt = datetime.fromtimestamp(int(row[0]), tz=CET)
     hour = dt.replace(minute=0, second=0)
     if hour not in hourly:
         hourly[hour] = {'pv': [], 'cons': [], 'grid_in': [], 'grid_out': []}
@@ -143,7 +143,8 @@ for hour_dt in sorted(hourly.keys()):
     h = hourly[hour_dt]
     if len(h['pv']) < 4:
         continue  # unvollständige Stunde
-    ts = int(hour_dt.timestamp())
+    # E3DC Timestamps = Intervallende → Intervallanfang (-1h)
+    ts = int(hour_dt.timestamp()) - 3600
     pv = int(sum(h['pv']) * 0.25)
     cons = int(sum(h['cons']) * 0.25)
     feed = int(sum(h['grid_in']) * 0.25)
