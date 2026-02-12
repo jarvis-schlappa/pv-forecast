@@ -30,11 +30,17 @@ def test_e3dc_timestamp_shifted_to_interval_start(sample_csv):
     # sample_csv erste Zeile: "01.06.2024 06:00:00" (CEST = UTC+2)
     # E3DC-Timestamp 06:00 CEST = 04:00 UTC (Intervallende)
     # Nach Shift -1h: 03:00 UTC (Intervallanfang = 05:00 CEST)
-    first_ts = df["timestamp"].iloc[0]
+    first_ts = int(df["timestamp"].iloc[0])
     expected = int(datetime(2024, 6, 1, 3, 0, 0, tzinfo=timezone.utc).timestamp())
     assert first_ts == expected, (
         f"Erster Timestamp {first_ts} != erwartet {expected} "
         f"(06:00 CEST → 04:00 UTC → -1h = 03:00 UTC)"
+    )
+
+    # Zusätzlich: Differenz zwischen erstem und zweitem Timestamp = 3600s (1h)
+    second_ts = int(df["timestamp"].iloc[1])
+    assert second_ts - first_ts == 3600, (
+        f"Stunden-Abstand {second_ts - first_ts}s != 3600s"
     )
 
 
