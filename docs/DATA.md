@@ -64,9 +64,10 @@ pvforecast import \
 
 1. **Parsing:** CSV lesen, Spalten erkennen
 2. **Konvertierung:** Deutsches Datumsformat → UTC Unix Timestamp
-3. **Abregelung:** Wenn `Solarproduktion >= Abregelungsgrenze * 0.95` → `curtailed=1`
-4. **Deduplizierung:** Existierende Timestamps werden übersprungen
-5. **Speichern:** In SQLite-Datenbank
+3. **Timestamp-Normalisierung:** E3DC meldet Intervallende (z.B. 08:00 = Produktion 07:00-08:00) → Shift um -3600s auf Intervallanfang (07:00)
+4. **Abregelung:** Wenn `Solarproduktion >= Abregelungsgrenze * 0.95` → `curtailed=1`
+5. **Deduplizierung:** Existierende Timestamps werden übersprungen
+6. **Speichern:** In SQLite-Datenbank
 
 ---
 
@@ -151,7 +152,7 @@ Beim Training werden fehlende historische Wetterdaten automatisch nachgeladen:
 
 ---
 
-## Timezones
+## Timezones & Timestamp-Konvention
 
 | Kontext | Timezone |
 |---------|----------|
@@ -161,6 +162,14 @@ Beim Training werden fehlende historische Wetterdaten automatisch nachgeladen:
 | CLI-Ausgabe | Europe/Berlin (konfigurierbar) |
 
 Alle Timestamps werden intern als Unix-Timestamps (Sekunden seit 1970-01-01 UTC) gespeichert.
+
+### Intervallanfang-Konvention
+
+Alle Timestamps in der Datenbank repräsentieren den **Anfang** des Stundenintervalls:
+
+- Timestamp `07:00` = Daten für die Stunde **07:00 bis 08:00**
+- E3DC, Open-Meteo, HOSTRADA und MOSMIX liefern Daten als "preceding hour" (Intervallende) → werden beim Import um **-3600s** auf Intervallanfang normalisiert
+- Diese Konvention gilt einheitlich für `pv_readings`, `weather_history` und `forecast_history`
 
 ---
 
