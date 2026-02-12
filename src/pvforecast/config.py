@@ -34,6 +34,16 @@ def _default_hostrada_cache() -> Path:
 
 
 @dataclass
+class PVArrayConfig:
+    """Konfiguration für ein einzelnes PV-Array (Dachfläche)."""
+
+    name: str = ""
+    azimuth: float = 180.0  # pvlib convention: 0°=N, 180°=S
+    tilt: float = 30.0
+    kwp: float = 0.0
+
+
+@dataclass
 class MOSMIXConfig:
     """MOSMIX-spezifische Konfiguration."""
 
@@ -81,6 +91,9 @@ class Config:
 
     # Weather sources (new)
     weather: WeatherConfig = field(default_factory=WeatherConfig)
+
+    # PV-Array-Konfiguration (optional, für Multi-Array POA-Berechnung)
+    pv_arrays: list[PVArrayConfig] = field(default_factory=list)
 
     # Legacy: weather_provider (deprecated, use weather.forecast_provider)
     weather_provider: str = "open-meteo"
@@ -132,6 +145,12 @@ class Config:
                     "local_dir": self.weather.hostrada.local_dir,
                 },
             },
+            "pv_system": {
+                "arrays": [
+                    {"name": a.name, "azimuth": a.azimuth, "tilt": a.tilt, "kwp": a.kwp}
+                    for a in self.pv_arrays
+                ],
+            } if self.pv_arrays else {},
             # Legacy (deprecated)
             "api": {
                 "weather_provider": self.weather_provider,
@@ -204,6 +223,20 @@ class Config:
                 mosmix=mosmix_cfg,
                 hostrada=hostrada_cfg,
             )
+
+        # PV system arrays
+        if "pv_system" in data:
+            pv_sys = data["pv_system"]
+            if "arrays" in pv_sys and pv_sys["arrays"]:
+                kwargs["pv_arrays"] = [
+                    PVArrayConfig(
+                        name=str(a.get("name", "")),
+                        azimuth=float(a.get("azimuth", 180)),
+                        tilt=float(a.get("tilt", 30)),
+                        kwp=float(a.get("kwp", 0)),
+                    )
+                    for a in pv_sys["arrays"]
+                ]
 
         # Legacy API section (deprecated, for backwards compatibility)
         if "api" in data:

@@ -237,6 +237,78 @@ def calculate_sun_elevation(timestamp: int, lat: float, lon: float) -> float:
     return elevation
 
 
+def calculate_poa_features(
+    timestamps: pd.DatetimeIndex,
+    ghi: pd.Series,
+    dhi: pd.Series,
+    dni: pd.Series,
+    sun_elevation: pd.Series,
+    lat: float,
+    lon: float,
+    arrays: list,
+) -> dict[str, pd.Series]:
+    """
+    Berechnet gewichtete POA-Irradiance für Multi-Array PV-Systeme.
+
+    Args:
+        timestamps: DatetimeIndex (UTC)
+        ghi: Global Horizontal Irradiance [W/m²]
+        dhi: Diffuse Horizontal Irradiance [W/m²]
+        dni: Direct Normal Irradiance [W/m²]
+        sun_elevation: Sonnenhöhe in Grad
+        lat: Breitengrad
+        lon: Längengrad
+        arrays: Liste von PVArrayConfig-Objekten
+
+    Returns:
+        Dict mit 'poa_total' und 'poa_ratio' als pd.Series
+    """
+    from pvlib.irradiance import get_extra_radiation, get_total_irradiance
+    from pvlib.solarposition import get_solarposition
+
+    solar_pos = get_solarposition(timestamps, lat, lon)
+    solar_zenith = solar_pos["apparent_zenith"]
+    solar_azimuth = solar_pos["azimuth"]
+    dni_extra = get_extra_radiation(timestamps)
+
+    total_kwp = sum(a.kwp for a in arrays)
+    if total_kwp == 0:
+        n = len(ghi)
+        return {"poa_total": pd.Series(np.zeros(n)), "poa_ratio": pd.Series(np.zeros(n))}
+
+    # Weighted sum of POA across arrays
+    poa_weighted = np.zeros(len(ghi))
+
+    for array in arrays:
+        weight = array.kwp / total_kwp
+        try:
+            poa = get_total_irradiance(
+                surface_tilt=array.tilt,
+                surface_azimuth=array.azimuth,
+                solar_zenith=solar_zenith,
+                solar_azimuth=solar_azimuth,
+                dni=dni.values,
+                ghi=ghi.values,
+                dhi=dhi.values,
+                dni_extra=dni_extra,
+                model="perez",
+            )
+            poa_global = np.nan_to_num(poa["poa_global"].values, nan=0.0)
+            poa_global = np.clip(poa_global, 0, None)
+            poa_weighted += weight * poa_global
+        except Exception as e:
+            logger.warning(f"POA-Berechnung für Array '{array.name}' fehlgeschlagen: {e}")
+            # Fallback: use GHI as approximation
+            poa_weighted += weight * ghi.values
+
+    poa_total = pd.Series(poa_weighted, index=ghi.index)
+    # POA/GHI ratio (with protection against division by zero)
+    ghi_safe = ghi.replace(0, np.nan)
+    poa_ratio = (poa_total / ghi_safe).fillna(0).clip(0, 3)
+
+    return {"poa_total": poa_total, "poa_ratio": poa_ratio}
+
+
 FeatureMode = Literal["train", "today", "predict"]
 
 
@@ -246,6 +318,7 @@ def prepare_features(
     lon: float,
     peak_kwp: float | None = None,
     mode: FeatureMode = "train",
+    pv_arrays: list | None = None,
 ) -> pd.DataFrame:
     """
     Erstellt Feature-DataFrame für ML-Modell.
@@ -352,6 +425,32 @@ def prepare_features(
     else:
         # Fallback wenn pvlib nicht verfügbar
         features["csi"] = 0.0
+
+    # === POA-Features (Multi-Array) ===
+    if pv_arrays and PVLIB_AVAILABLE and len(df) > 0:
+        try:
+            # DNI: use column if available, else estimate from GHI/DHI
+            dni_for_poa = features["dni"] if "dni" in features.columns and features["dni"].sum() > 0 else (features["ghi"] - features["dhi"]).clip(lower=0)
+
+            poa_feats = calculate_poa_features(
+                timestamps=pd.DatetimeIndex(timestamps),
+                ghi=features["ghi"].reset_index(drop=True),
+                dhi=features["dhi"].reset_index(drop=True),
+                dni=dni_for_poa.reset_index(drop=True),
+                sun_elevation=features["sun_elevation"].reset_index(drop=True),
+                lat=lat,
+                lon=lon,
+                arrays=pv_arrays,
+            )
+            features["poa_total"] = poa_feats["poa_total"].values
+            features["poa_ratio"] = poa_feats["poa_ratio"].values
+        except Exception as e:
+            logger.warning(f"POA-Feature-Berechnung fehlgeschlagen: {e}")
+            features["poa_total"] = 0.0
+            features["poa_ratio"] = 0.0
+    else:
+        features["poa_total"] = 0.0
+        features["poa_ratio"] = 0.0
 
     # === Lag-Features ===
 
@@ -463,6 +562,7 @@ def load_training_data(
     since_year: int | None = None,
     until_year: int | None = None,
     min_samples: int = 100,
+    pv_arrays: list | None = None,
 ) -> tuple[pd.DataFrame, pd.Series]:
     """Lädt und bereitet Trainingsdaten vor.
 
@@ -519,7 +619,7 @@ def load_training_data(
     logger.info(f"Trainingsdaten: {len(df)} Datensätze")
 
     # Features erstellen (mode="train" für historische Daten)
-    X = prepare_features(df, lat, lon, peak_kwp=peak_kwp, mode="train")
+    X = prepare_features(df, lat, lon, peak_kwp=peak_kwp, mode="train", pv_arrays=pv_arrays)
     y = df["production_w"]
 
     return X, y
@@ -533,6 +633,7 @@ def train(
     since_year: int | None = None,
     until_year: int | None = None,
     peak_kwp: float | None = None,
+    pv_arrays: list | None = None,
 ) -> tuple[Pipeline, dict]:
     """
     Trainiert Modell auf allen Daten in der Datenbank.
@@ -560,6 +661,7 @@ def train(
     X, y = load_training_data(
         db, lat, lon, peak_kwp=peak_kwp,
         since_year=since_year, until_year=until_year, min_samples=100,
+        pv_arrays=pv_arrays,
     )
 
     # Zeitbasierter Split (80% Training, 20% Test)
@@ -1049,6 +1151,7 @@ def predict(
     peak_kwp: float | None = None,
     mode: FeatureMode = "predict",
     model_version: str | None = None,
+    pv_arrays: list | None = None,
 ) -> Forecast:
     """
     Erstellt Prognose basierend auf Wettervorhersage.
@@ -1074,7 +1177,7 @@ def predict(
         )
 
     # Features erstellen (mode bestimmt ob Produktions-Lags verfügbar)
-    X = prepare_features(weather_df, lat, lon, peak_kwp=peak_kwp, mode=mode)
+    X = prepare_features(weather_df, lat, lon, peak_kwp=peak_kwp, mode=mode, pv_arrays=pv_arrays)
 
     # Vorhersage
     predictions = model.predict(X)
@@ -1117,6 +1220,7 @@ def evaluate(
     lon: float,
     peak_kwp: float | None = None,
     year: int | None = None,
+    pv_arrays: list | None = None,
 ) -> EvaluationResult:
     """
     Evaluiert das Modell gegen historische Daten (Backtesting).
@@ -1167,7 +1271,7 @@ def evaluate(
         raise ValueError(f"Keine Daten für {year} gefunden")
 
     # Features erstellen und Vorhersagen machen
-    X = prepare_features(df, lat, lon, peak_kwp, mode="train")
+    X = prepare_features(df, lat, lon, peak_kwp, mode="train", pv_arrays=pv_arrays)
     y_true = df["production_w"].values
     y_pred = model.predict(X)
 
