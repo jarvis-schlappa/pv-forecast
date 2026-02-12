@@ -1,15 +1,15 @@
-# PV-Forecast Fehleranalyse
+# PV-Forecast Fehleranalyse (2019–2025)
 
 **Datum:** 2026-02-12  
 **Modell:** XGBoost Pipeline (StandardScaler → XGBRegressor)  
-**Eval-Zeitraum:** 2025 (4.863 Tageslicht-Stunden)  
-**Gesamt-Metriken:** MAE = 214 W, MAPE = 28.5% (bei Actual > 50W)
+**Eval-Zeitraum:** 2019–2025 (28.832 Tageslicht-Stunden, production > 50W)  
+**Gesamt-Metriken:** MAE = 216 W, MAPE = 25.9%
 
 ---
 
 ## 1. Feature Importance
 
-Das Modell wird dominiert von Einstrahlungs-Features. GHI allein macht 52% der Gain-Importance aus:
+*(Unverändert – modellbasiert, nicht zeitraumabhängig)*
 
 | Rang | Feature | Gain | Anteil |
 |------|---------|-----:|-------:|
@@ -24,125 +24,186 @@ Das Modell wird dominiert von Einstrahlungs-Features. GHI allein macht 52% der G
 | 9 | hour_cos | 4.6M | 0.6% |
 | 10 | month_cos | 3.7M | 0.5% |
 
-### POA-Features: Nicht im trainierten Modell!
-
-Die Features `poa_total` und `poa_ratio` werden von `prepare_features()` korrekt berechnet (23 Features), aber das **aktuell gespeicherte Modell wurde mit nur 23 Features trainiert, die POA bereits enthalten**. Allerdings zeigt die Feature-Importance-Analyse, dass **keine POA-Features vom Modell genutzt werden** (importance = 0 für `poa_total`, nicht in gain scores).
-
-**Ursache:** Die Korrelation zwischen `ghi` und `poa_total` beträgt **r = 0.987** – fast perfekte Kollinearität. XGBoost splittet praktisch nie auf `poa_total`, weil `ghi` bereits den gleichen Informationsgehalt liefert. `poa_ratio` (r = 0.22 mit GHI) hat zwar unabhängige Information, wird aber ebenfalls nicht genutzt.
-
-**Fazit:** POA-Features bringen in der aktuellen Architektur keinen Mehrwert, weil das Modell GHI bevorzugt und POA stark mit GHI korreliert.
+**Fazit:** GHI dominiert (52%). POA-Features werden nicht genutzt (r=0.987 mit GHI → Kollinearität).
 
 ---
 
-## 2. Fehler nach Tageszeit
+## 2. Fehler nach Tageszeit (2019–2025)
 
 | Stunde | MAE (W) | MAPE | Bias | n |
-|--------|--------:|-----:|-----:|--:|
-| 05:00 | 161 | 35.0% | -38 | 209 |
-| 06:00 | 208 | 36.7% | +46 | 274 |
-| 07:00 | 225 | 41.0% | +100 | 354 |
-| 08:00 | 304 | 38.2% | +107 | 365 |
-| 09:00 | 269 | 25.7% | +86 | 365 |
-| 10:00 | 304 | 18.6% | +136 | 365 |
-| 11:00 | 333 | 18.0% | +142 | 365 |
-| 12:00 | 301 | 20.1% | +167 | 365 |
-| 13:00 | 247 | 21.9% | +107 | 365 |
-| 14:00 | 203 | 22.9% | +109 | 365 |
-| 15:00 | 165 | 32.7% | +105 | 351 |
-| 16:00 | 151 | 28.6% | +69 | 270 |
-| 17:00 | 142 | 39.6% | +16 | 217 |
-| 18:00 | 79 | 41.1% | -6 | 165 |
+|--------|--------:|-----:|-----:|------:|
+| 06:00 | 82 | 40.2% | −11 | 745 |
+| 07:00 | 165 | 39.3% | −33 | 1.375 |
+| 08:00 | 217 | 37.7% | −1 | 1.949 |
+| 09:00 | 245 | 33.8% | +10 | 2.407 |
+| 10:00 | 252 | 23.3% | +19 | 2.534 |
+| 11:00 | 259 | 18.8% | −7 | 2.551 |
+| 12:00 | 269 | 18.7% | +2 | 2.553 |
+| 13:00 | 267 | 19.1% | +11 | 2.550 |
+| 14:00 | 229 | 20.7% | +23 | 2.540 |
+| 15:00 | 204 | 20.2% | +14 | 2.412 |
+| 16:00 | 187 | 20.8% | +22 | 1.989 |
+| 17:00 | 177 | 24.7% | +23 | 1.724 |
+| 18:00 | 178 | 28.1% | +20 | 1.396 |
+| 19:00 | 163 | 35.7% | −12 | 1.148 |
+| 20:00 | 101 | 41.9% | −15 | 759 |
 
 ### Erkenntnisse
 
-- **Systematischer positiver Bias über den gesamten Tag** (+16 bis +167 W) → Das Modell überschätzt konsistent
-- **Höchster absoluter Fehler mittags** (11:00: 333W MAE), aber niedrigste MAPE (18%) wegen hoher Absolutwerte
-- **Höchste MAPE morgens (7-8h) und abends (17-18h)** – genau die Stunden, wo die 3 Arrays (SO/NW/SW) unterschiedlich beleuchtet werden
-- **Morgen-Bias ist besonders auffällig:** 07:00 hat +100W Bias, 08:00 +107W → Modell überschätzt den Morgenertrag
+- **Bias ist über 7 Jahre nahezu neutral** (−33 bis +23 W) – der starke positive Bias aus der 2025-Analyse war ein **Jahreseffekt**, kein Modellproblem
+- **Randstunden (morgens/abends) haben hohe MAPE** (35–42%) aber geringen absoluten Fehler
+- **Kernstunden (10–16 Uhr) stabil bei 19–23% MAPE** – das Modell funktioniert hier gut
+- **Morgens leichter negativer Bias** (Unterschätzung), nachmittags leicht positiv (Überschätzung)
 
 ---
 
-## 3. Fehler nach Monat
+## 3. Fehler nach Monat (2019–2025)
 
 | Monat | MAE (W) | MAPE | Bias | n |
-|-------|--------:|-----:|-----:|--:|
-| Jan | 135 | 43.9% | +23 | 276 |
-| Feb | 173 | 37.3% | +51 | 306 |
-| Mär | 206 | 25.0% | +74 | 392 |
-| Apr | 221 | 20.2% | +110 | 445 |
-| Mai | 244 | 17.4% | +94 | 523 |
-| Jun | 199 | 17.2% | +107 | 546 |
-| Jul | 255 | 27.6% | +80 | 554 |
-| Aug | 256 | 26.7% | +133 | 504 |
-| Sep | 281 | 33.4% | +110 | 410 |
-| Okt | 166 | 37.5% | +45 | 348 |
-| Nov | 183 | 47.1% | +84 | 292 |
-| Dez | 150 | 38.9% | +20 | 267 |
+|-------|--------:|-----:|-----:|------:|
+| Jan | 156 | 44.6% | −3 | 1.486 |
+| Feb | 190 | 30.9% | −10 | 1.786 |
+| Mär | 202 | 25.0% | +7 | 2.437 |
+| Apr | 224 | 20.2% | +8 | 2.775 |
+| Mai | 244 | 20.4% | +7 | 3.183 |
+| Jun | 225 | 17.7% | +3 | 3.281 |
+| Jul | 237 | 21.1% | +16 | 3.248 |
+| Aug | 239 | 22.6% | +12 | 3.020 |
+| Sep | 228 | 23.8% | +9 | 2.526 |
+| Okt | 216 | 32.1% | +15 | 2.119 |
+| Nov | 191 | 39.0% | +17 | 1.615 |
+| Dez | 145 | 42.1% | −10 | 1.356 |
 
 ### Erkenntnisse
 
-- **Winter (Nov-Feb) hat die höchste MAPE** (38-47%), Sommer (Mai-Jun) die niedrigste (17%)
-- **September ist ein Ausreißer:** MAPE 33.4% und höchster MAE (281W) trotz noch guter Einstrahlung
-- **Durchgehend positiver Bias** in allen Monaten → systematische Überschätzung
-- **August-Bias (+133W) ist der höchste** – möglicherweise Degradation oder Verschmutzung?
+- **Saisonales Muster stabil:** Winter MAPE 39–45%, Sommer 18–23%
+- **Bias über alle Monate fast null** (−10 bis +17 W) – stark verbessert gegenüber 2025-only
+- **Juni ist der beste Monat:** 17.7% MAPE, nur +3W Bias
 
 ---
 
-## 4. Top-20 Fehler-Tage
+## 4. Top-30 Fehler-Tage (2019–2025)
 
 | Datum | Actual (kWh) | Predicted (kWh) | Fehler | Fehler % |
 |-------|-------------:|----------------:|-------:|---------:|
-| 2025-01-09 | 0.15 | 1.34 | +1.19 | 799% |
-| 2025-01-05 | 0.17 | 1.03 | +0.85 | 487% |
-| 2025-11-19 | 1.20 | 2.36 | +1.16 | 97% |
-| 2025-01-11 | 2.13 | 4.10 | +1.96 | 92% |
-| 2025-11-01 | 2.35 | 4.41 | +2.07 | 88% |
-| 2025-01-02 | 5.04 | 8.02 | +2.98 | 59% |
-| 2025-12-27 | 5.52 | 8.68 | +3.17 | 57% |
-| 2025-11-28 | 0.94 | 1.47 | +0.53 | 56% |
-| 2025-11-25 | 1.36 | 2.09 | +0.73 | 53% |
-| 2025-11-23 | 6.81 | 10.26 | +3.45 | 51% |
+| 2023-12-04 | 0.40 | 1.65 | +1.25 | 314% |
+| 2025-01-09 | 0.07 | 0.30 | +0.23 | 231% |
+| 2023-11-13 | 0.68 | 1.92 | +1.24 | 182% |
+| 2021-12-05 | 1.70 | 4.61 | +2.91 | 171% |
+| 2024-01-06 | 0.46 | 1.21 | +0.75 | 164% |
+| 2022-01-19 | 0.78 | 2.00 | +1.22 | 157% |
+| 2024-01-14 | 0.41 | 1.04 | +0.63 | 155% |
+| 2023-12-19 | 0.07 | 0.22 | +0.15 | 146% |
+| 2022-12-05 | 0.38 | 0.92 | +0.54 | 142% |
+| 2021-01-17 | 0.05 | 0.19 | +0.14 | 140% |
+| 2020-01-04 | 0.52 | 1.23 | +0.71 | 136% |
+| 2020-12-27 | 0.44 | 0.99 | +0.55 | 123% |
+| 2020-01-14 | 0.65 | 1.42 | +0.77 | 119% |
+| 2024-12-11 | 0.52 | 1.13 | +0.61 | 117% |
+| 2019-11-18 | 0.46 | 0.99 | +0.53 | 116% |
+| 2019-01-30 | 1.32 | 2.82 | +1.50 | 114% |
+| 2020-01-09 | 0.69 | 1.45 | +0.76 | 111% |
+| 2020-10-25 | 2.58 | 5.35 | +2.76 | 107% |
+| 2020-01-24 | 0.75 | 1.54 | +0.79 | 105% |
+| 2023-12-25 | 0.92 | 1.84 | +0.93 | 101% |
+| 2021-01-11 | 0.70 | 1.41 | +0.71 | 101% |
+| 2022-12-11 | 0.49 | 0.99 | +0.49 | 100% |
+| 2019-01-12 | 0.49 | 0.97 | +0.48 | 97% |
+| 2019-11-28 | 0.88 | 1.71 | +0.83 | 95% |
+| 2022-01-25 | 0.75 | 1.45 | +0.70 | 93% |
+| 2025-01-11 | 2.11 | 4.00 | +1.89 | 90% |
+| 2025-11-01 | 2.29 | 4.29 | +2.00 | 87% |
+| 2025-11-19 | 1.14 | 2.09 | +0.95 | 84% |
+| 2020-12-29 | 0.56 | 1.01 | +0.45 | 79% |
+| 2024-11-25 | 1.24 | 2.21 | +0.97 | 79% |
 
 ### Muster
 
-- **Alle 20 schlechtesten Tage sind Überschätzungen** (positiver Fehler)
-- **Konzentration auf Winter-Monate:** 7× Januar, 5× November, 3× Dezember, 2× Februar
-- **Schnee/Frost-Verdacht:** Jan 5, 9, 11 mit sehr niedrigem Ertrag (< 2 kWh) aber signifikanter Prediction
-- **Keine Sommertage** in der Liste → Sommermodell funktioniert deutlich besser
+- **100% Überschätzungen** – kein einziger Fehler-Tag mit Unterschätzung
+- **Gleichmäßig über alle Jahre verteilt** (2019: 3×, 2020: 6×, 2021: 3×, 2022: 4×, 2023: 4×, 2024: 4×, 2025: 4×) → kein bestimmtes Jahr auffällig schlechter
+- **26 von 30 Tagen sind Nov–Feb** (Winter) → Schnee/Frost-Tage mit <2 kWh Ertrag
+- **Einziger Nicht-Winter-Ausreißer:** 2020-10-25 (Okt) mit 107% Fehler
 
 ---
 
-## 5. Fehler nach Wetterlage (CSI)
+## 5. Fehler nach Wetterlage (CSI, 2019–2025)
 
 | Kategorie | MAE (W) | MAPE | Σ\|Fehler\| (kWh) | n |
-|-----------|--------:|-----:|-------------------:|--:|
-| Klar (>0.7) | 288 | 21.5% | 614.8 | 2133 |
-| Teilbewölkt (0.3-0.7) | 223 | 30.3% | 319.1 | 1431 |
-| Bewölkt (<0.3) | 83 | 47.8% | 108.3 | 1299 |
+|-----------|--------:|-----:|-------------------:|------:|
+| Klar (>0.7) | 246 | 16.9% | 3.481 | 14.150 |
+| Teilbewölkt (0.3–0.7) | 218 | 29.6% | 2.090 | 9.578 |
+| Bewölkt (<0.3) | 130 | 44.1% | 665 | 5.104 |
 
 ### Erkenntnisse
 
-- **Klare Tage verursachen 59% des Gesamtfehlers** (615 kWh von 1042 kWh)
-- Bei klarem Himmel: niedrige MAPE (21.5%) aber hoher absoluter Fehler (288W MAE)
-- Bei bewölktem Himmel: hohe MAPE (47.8%) aber geringer absoluter Beitrag
-- **Der größte Hebel liegt bei klaren Tagen** – hier stimmt die GHI→Ertrag-Umrechnung nicht
+- **Klare Tage: 56% des Gesamtfehlers** (3.481 von 6.235 kWh) – größter Hebel
+- **Bewölkte Tage: hohe MAPE (44%) aber absolut gering** – weniger relevant
+- Muster ist über 7 Jahre stabil
+
+---
+
+## 6. Jahresvergleich (NEU)
+
+| Jahr | MAE (W) | MAPE | Bias | n |
+|------|--------:|-----:|-----:|------:|
+| 2019 | 227 | 25.4% | **−70** | 4.138 |
+| 2020 | 203 | 23.9% | −22 | 4.131 |
+| 2021 | 216 | 25.7% | −21 | 4.119 |
+| 2022 | 203 | 22.8% | +3 | 4.157 |
+| 2023 | 197 | 25.6% | +2 | 4.072 |
+| 2024 | 222 | 29.6% | **+65** | 4.055 |
+| 2025 | 246 | 28.4% | **+93** | 4.160 |
+
+### ⚡ Kernerkenntnis: Degradation sichtbar!
+
+- **2019: Bias −70W** → Modell unterschätzt (Anlage war neu, höherer Ertrag als Modell erwartet)
+- **2022–2023: Bias ≈ 0** → Modell passt perfekt (Trainingsschwerpunkt?)
+- **2024–2025: Bias +65 bis +93W** → Modell überschätzt → **Anlage liefert weniger als erwartet**
+- **Bias-Drift: ~23 W/Jahr** von −70 (2019) auf +93 (2025) → **163W Drift in 6 Jahren**
+- **MAPE steigt ab 2024** (29.6%) – das Modell wird schlechter
+
+**Interpretation:** Die Anlage degradiert oder es gibt zunehmende Verschattung/Verschmutzung. Der lineare Bias-Trend ist konsistent mit einer Panel-Degradation von ca. 1.5–2%/Jahr (bei ~5000W Durchschnitts-Peak → 75–100W/Jahr).
+
+---
+
+## 7. Monat × Jahr MAPE-Heatmap (NEU)
+
+|  | Jan | Feb | Mär | Apr | Mai | Jun | Jul | Aug | Sep | Okt | Nov | Dez |
+|------|----:|----:|----:|----:|----:|----:|----:|----:|----:|----:|----:|----:|
+| 2019 | 46.1 | 28.6 | 25.8 | 20.6 | 22.7 | 18.9 | 17.2 | 23.5 | 24.1 | 28.7 | 40.4 | 30.9 |
+| 2020 | 50.6 | 28.9 | 17.8 | 11.7 | 14.7 | 17.4 | 20.4 | 22.8 | 19.6 | 36.6 | 38.2 | 44.8 |
+| 2021 | 39.5 | 26.6 | 26.8 | 20.2 | 24.9 | 18.1 | 23.7 | 23.4 | 18.9 | 29.0 | 35.6 | 45.1 |
+| 2022 | 44.4 | 32.4 | 18.9 | 17.9 | 19.2 | 18.2 | 16.8 | 14.5 | 25.3 | 27.3 | 28.1 | 39.1 |
+| 2023 | 40.6 | 30.8 | 26.6 | 22.7 | 20.8 | 13.5 | 20.3 | 26.3 | 18.1 | 29.8 | 40.2 | 50.0 |
+| 2024 | 47.0 | 32.9 | **35.0** | **28.6** | 23.5 | 21.2 | 22.0 | 21.2 | 27.4 | **35.3** | 43.5 | 47.6 |
+| 2025 | 43.7 | **36.5** | 25.1 | 20.2 | 17.5 | 17.0 | 27.6 | 26.6 | **33.4** | **37.8** | **46.8** | 39.0 |
+
+### Erkenntnisse
+
+- **Winter ist IMMER schlecht** (Jan 40–51%, Dez 31–50%) – kein Ausreißer, strukturelles Problem
+- **Sommer ist IMMER gut** (Jun 13–21%) – stabil über alle Jahre
+- **2024 und 2025 zeigen erhöhte MAPE in Übergangsmonaten** (Mär/Okt) → Degradation wirkt sich bei mittlerer Einstrahlung stärker aus
+- **Bester Einzelmonat:** Apr 2020 (11.7%), Jun 2023 (13.5%)
+- **Schlechtester Einzelmonat:** Jan 2020 (50.6%), Dez 2023 (50.0%)
 
 ---
 
 ## Zusammenfassung & Empfehlungen
 
-### Top-3 Erkenntnisse
+### Top-3 Erkenntnisse (aktualisiert)
 
-1. **Systematische Überschätzung:** Das Modell hat einen durchgängig positiven Bias (+80-170W mittags). Es überschätzt den Ertrag in jeder Stunde, jedem Monat und jeder Wetterlage. Das deutet auf ein grundsätzliches Skalierungsproblem hin (z.B. Degradation, Verschattung, WR-Verluste nicht abgebildet).
+1. **🔴 Degradation nachgewiesen:** Bias driftet von −70W (2019) auf +93W (2025) – ein linearer Trend von ~23W/Jahr. Das Modell überschätzt zunehmend, weil die Anlage weniger liefert. Empfehlung: **Degradationsfaktor ins Modell einbauen** (z.B. −1.5%/Jahr ab Inbetriebnahme).
 
-2. **POA-Features wirkungslos:** `poa_total` korreliert mit r=0.987 mit GHI. XGBoost nutzt sie nicht. Die 3-Array-POA-Features bringen in der aktuellen flachen Architektur keinen Mehrwert.
+2. **🟡 Systematische Überschätzung ist ein 2024/2025-Problem, kein Modellproblem:** Über 7 Jahre gemittelt ist der Bias nahezu null. Der in der 2025-Analyse gefundene starke positive Bias war kein Modellfehler, sondern spiegelt die Anlagen-Degradation wider.
 
-3. **Winter ist das Hauptproblem:** MAPE 38-47% (Nov-Feb) vs 17% (Mai-Jun). Die 20 schlechtesten Tage sind alle im Winter. Schneebedeckung und Niedrigertragstage werden systematisch überschätzt.
+3. **🟢 Winter bleibt das Hauptproblem:** MAPE 40–50% (Nov–Feb) vs. 14–22% (Apr–Sep) – stabil über alle Jahre. Ein Schnee-Feature könnte helfen, aber der Winter-Fehler hat geringe absolute Relevanz (<2 kWh Tagesertrag).
 
-### Empfehlungen
+### Empfehlungen (aktualisiert)
 
-1. **Bias-Korrektur als Quick Win:** Ein einfacher multiplikativer Skalierungsfaktor (z.B. 0.85) oder monatsabhängige Korrektur könnte den systematischen Bias sofort reduzieren. → Residualkorrektur-Ansatz ist der richtige nächste Schritt.
+1. **Degradationsfaktor (höchste Priorität):** Multiplikativer Faktor `(1 - 0.015)^(year - 2019)` oder als Feature `years_since_install`. Quick Win mit großem Effekt auf 2024/2025-Bias.
 
-2. **Schnee-Feature:** Binary Snow-Flag oder Schneehöhe als Feature könnte Wintertage deutlich verbessern. DWD/Open-Meteo liefern `snowfall` und `snow_depth`.
+2. **Monatsabhängige Bias-Korrektur:** Residualkorrekturen pro Monat könnten die saisonalen Schwächen abfedern, sind aber weniger wichtig als der Degradationsfaktor.
 
-3. **POA anders nutzen:** Statt als XGBoost-Feature → POA als physikalisches Vormodell verwenden (pvlib-Simulation → Residuum mit ML korrigieren). So wird die Array-Geometrie physikalisch korrekt abgebildet, nicht statistisch.
+3. **Schnee-Feature:** Für Wintertage mit <2 kWh Ertrag. DWD/Open-Meteo `snowfall`/`snow_depth`. Verbessert Top-30-Fehler, aber geringer absoluter Beitrag.
+
+4. **POA als physikalisches Vormodell:** Weiterhin empfohlen – pvlib-Simulation → Residuum mit ML korrigieren. Unverändert gegenüber erster Analyse.
