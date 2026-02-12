@@ -1,6 +1,5 @@
 """Tests für data_loader."""
 
-import sys
 from datetime import datetime, timezone
 
 import pytest
