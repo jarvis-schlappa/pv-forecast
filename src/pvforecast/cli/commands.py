@@ -359,6 +359,7 @@ def cmd_predict(args: argparse.Namespace, config: Config) -> int:
         model, weather_df, config.latitude, config.longitude, config.peak_kwp,
         mode="predict", model_version=model_version,
         pv_arrays=config.pv_arrays or None,
+        install_date=config.install_date,
     )
 
     # Ausgabe formatieren
@@ -441,6 +442,7 @@ def cmd_today(args: argparse.Namespace, config: Config) -> int:
         model, weather_df, config.latitude, config.longitude, config.peak_kwp,
         mode=predict_mode, model_version=model_version,
         pv_arrays=config.pv_arrays or None,
+        install_date=config.install_date,
     )
 
     # Ausgabe
@@ -578,6 +580,7 @@ def cmd_train(args: argparse.Namespace, config: Config) -> int:
             until_year=until_year,
             peak_kwp=config.peak_kwp,
             pv_arrays=config.pv_arrays or None,
+            install_date=config.install_date,
         )
     except ValueError as e:
         print(f"❌ Training fehlgeschlagen: {e}", file=sys.stderr)
@@ -677,6 +680,7 @@ def cmd_tune(args: argparse.Namespace, config: Config) -> int:
                 since_year=since_year,
                 until_year=until_year,
                 peak_kwp=config.peak_kwp,
+                install_date=config.install_date,
             )
         else:
             best_model, metrics, best_params = tune(
@@ -689,6 +693,7 @@ def cmd_tune(args: argparse.Namespace, config: Config) -> int:
                 since_year=since_year,
                 until_year=until_year,
                 peak_kwp=config.peak_kwp,
+                install_date=config.install_date,
             )
     except DependencyError as e:
         print(f"❌ {e}", file=sys.stderr)
@@ -825,6 +830,7 @@ def cmd_evaluate(args: argparse.Namespace, config: Config) -> int:
             peak_kwp=config.peak_kwp,
             year=year,
             pv_arrays=config.pv_arrays or None,
+            install_date=config.install_date,
         )
     except ValueError as e:
         print(f"❌ {e}")

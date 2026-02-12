@@ -305,6 +305,46 @@ class TestPrepareFeatures:
         assert features_with_dni.iloc[0]["dni"] == 700
 
 
+    def test_years_since_install_feature(self):
+        """Test: Degradations-Feature wird korrekt berechnet (#187)."""
+        df = pd.DataFrame(
+            [
+                {
+                    "timestamp": 1750000800,  # 2025-06-15 14:00 UTC
+                    "ghi_wm2": 500.0,
+                    "cloud_cover_pct": 20,
+                    "temperature_c": 22.0,
+                },
+            ]
+        )
+
+        # Mit install_date → Feature vorhanden
+        features = prepare_features(df, 51.83, 7.28, install_date="2018-08-20")
+        assert "years_since_install" in features.columns
+        years = features.iloc[0]["years_since_install"]
+        # 2025-06-15 minus 2018-08-20 ≈ 6.82 Jahre
+        assert 6.5 < years < 7.2, f"Expected ~6.82 years, got {years}"
+
+        # Ohne install_date → Feature NICHT vorhanden
+        features_no = prepare_features(df, 51.83, 7.28)
+        assert "years_since_install" not in features_no.columns
+
+    def test_years_since_install_invalid_date(self):
+        """Test: Ungültiges install_date wird ignoriert."""
+        df = pd.DataFrame(
+            [
+                {
+                    "timestamp": 1750000800,
+                    "ghi_wm2": 500.0,
+                    "cloud_cover_pct": 20,
+                    "temperature_c": 22.0,
+                },
+            ]
+        )
+        features = prepare_features(df, 51.83, 7.28, install_date="invalid")
+        assert "years_since_install" not in features.columns
+
+
 class TestSaveLoadModel:
     """Tests für Modell-Speicherung."""
 

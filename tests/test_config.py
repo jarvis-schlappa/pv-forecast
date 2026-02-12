@@ -267,6 +267,24 @@ class TestConfigFromDict:
         assert roundtrip.system_name == original.system_name
 
 
+    def test_install_date_roundtrip(self):
+        """Test: install_date wird korrekt gespeichert/geladen (#187)."""
+        config = Config(install_date="2018-08-20")
+        d = config.to_dict()
+        assert d["system"]["install_date"] == "2018-08-20"
+
+        restored = Config.from_dict(d)
+        assert restored.install_date == "2018-08-20"
+
+    def test_install_date_optional(self):
+        """Test: Ohne install_date bleibt None (#187)."""
+        config = Config.from_dict({})
+        assert config.install_date is None
+        # to_dict should not include install_date key
+        d = config.to_dict()
+        assert "install_date" not in d["system"]
+
+
 class TestLoadConfigValidation:
     """Tests für Validierung beim Laden."""
 
