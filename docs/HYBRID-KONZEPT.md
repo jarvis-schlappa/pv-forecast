@@ -128,27 +128,38 @@ Die Forecast-Datensammlung (Open-Meteo + MOSMIX → `forecast_history`) läuft w
 Falls sich der Gap mit mehr Daten/Jahreszeiten als größer herausstellt, kann die MOS-Schicht
 nachträglich implementiert werden. Siehe `docs/FORECAST-ACCURACY.md` für laufende Auswertung.
 
-### 5.2 pvlib PV-System-Modell (3 Arrays) — **Höchste Priorität**
+### 5.2 pvlib PV-System-Modell (3 Arrays) — ✅ Implementiert (PR #185, 12.02.2026)
 
-**Konfigurationserweiterung (TODO):**
+**Anlagenkonfiguration:**
 ```yaml
 pv_system:
   arrays:
-    - name: "Ausrichtung 1"
-      azimuth: ???          # Grad, 180 = Süd
-      tilt: ???             # Grad Neigung
-      kwp: ???
-    - name: "Ausrichtung 2"
-      azimuth: ???
-      tilt: ???
-      kwp: ???
-    - name: "Ausrichtung 3"
-      azimuth: ???
-      tilt: ???
-      kwp: ???
-  temperature_coefficient: -0.37  # %/°C
-  mounting: rack
+    - name: "Wohnhaus SO"
+      azimuth: 140          # Süd-Ost
+      tilt: 43
+      kwp: 6.08             # 19× Q.Peak DUO-G5 320Wp
+    - name: "Wohnhaus NW"
+      azimuth: 320          # Nord-West
+      tilt: 43
+      kwp: 2.56             # 8× Q.Peak DUO-G5 320Wp
+    - name: "Gauben SW"
+      azimuth: 229          # Süd-West
+      tilt: 43
+      kwp: 1.28             # 4× Q.Peak DUO-G5 320Wp
 ```
+
+**Implementierung:**
+- POA (Plane of Array) Irradiance pro Array via pvlib Perez-Transpositionsmodell
+- Gewichtete Summe nach kWp-Anteil als Feature `poa_total`
+- Verhältnis `poa_ratio` = POA/GHI als zusätzliches Feature
+- Rückwärtskompatibel: Ohne `pv_system.arrays` → bisheriges Verhalten (poa_total=0)
+- pvlib bleibt optional (`[physics]` extra)
+
+**Ergebnis nach Tune (100 Trials):**
+- MAPE: 29.0% (unverändert — XGBoost nutzt POA-Features kaum, da GHI+CSI+sun_elevation den Großteil abdecken)
+- MAE: 111W, R²: 0.963
+
+**Bewertung:** Die POA-Features sind implementiert und korrekt (Tests bestätigen: SO-Array hat morgens mehr POA als NW-Array). Der eigentliche Mehrwert wird bei der **Residualkorrektur** erwartet, wenn das Modell den theoretischen pvlib-Ertrag mit dem realen vergleichen kann.
 
 ### 5.3 Gesamtpipeline Phase 2 (revidiert)
 
@@ -217,14 +228,14 @@ Falls sich nach mehreren Monaten zeigt, dass der Gap saisonal größer wird
 | V | Vorab-Validierung + Gap-Analyse | – | ✅ |
 | 2a | Forecast-Daten persistieren | – | ✅ |
 | T | Timestamp-Fix (PRs #178, #179, #183) | 25.3% | ✅ |
+| 2b | pvlib 3 Arrays / POA-Features (PR #185) | 29.0% | ✅ |
 
 ### Nächste Schritte (priorisiert)
 
 | Prio | Maßnahme | Aufwand | Impact | Status |
 |------|----------|---------|--------|--------|
-| 🔴 1 | **pvlib PV-System (3 Arrays)** | 0.5–1 Tag | MAPE -3–5% | ⏳ Wartet auf Anlagendaten |
-| 🟠 2 | **ML-Residualkorrektur** | 0.5 Tag | MAPE -2–3% | ⏳ Nach pvlib |
-| 🟡 3 | **Quantile Regression** | 1 Tag | Bessere UX | ⏳ Unabhängig umsetzbar |
+| 🔴 1 | **ML-Residualkorrektur** (theor. Ertrag vs. real) | 0.5–1 Tag | MAPE -2–3% | ⏳ Offen |
+| 🟡 2 | **Quantile Regression** (Unsicherheitsbänder) | 1 Tag | Bessere UX | ⏳ Offen |
 
 ### Deprioritisiert
 
@@ -233,7 +244,7 @@ Falls sich nach mehreren Monaten zeigt, dass der Gap saisonal größer wird
 | MOS-Schicht (Strahlungskorrektur) | Wetter-Gap nur 1.1% | ⏸️ Auf Eis |
 | Multi-NWP Ensemble (GFS) | Geringer Mehrwert bei 1.1% Gap | ⏸️ Optional |
 
-**Kritischer Pfad:** Anlagendaten (Azimut, Neigung, kWp pro Array) für pvlib 3 Arrays.
+**Kritischer Pfad:** Residualkorrektur benötigt die jetzt vorhandenen POA-Features als Input.
 
 ---
 
@@ -257,11 +268,16 @@ Falls sich nach mehreren Monaten zeigt, dass der Gap saisonal größer wird
 **Strategie-Shift:** Statt Wetterkorrektur liegt der Fokus jetzt auf **physikalischer Modellierung** (pvlib 3 Arrays) und **Residualkorrektur** (Verschattung, WR-Verluste). Das sind die verbleibenden ~24% MAPE.
 
 **Nächste Schritte:**
-1. ⏳ **pvlib 3 Arrays** konfigurieren (wartet auf Anlagendaten: Azimut, Neigung, kWp)
-2. ⏳ **Residualkorrektur** implementieren (Verschattung, WR-Verluste)
-3. ⏳ **Quantile Regression** für Unsicherheitsbänder (besonders bei bewölkten Tagen)
+1. ✅ **pvlib 3 Arrays** implementiert (PR #185) — POA-Features verfügbar, MAPE noch unverändert (29.0%)
+2. ⏳ **Residualkorrektur** implementieren (theor. pvlib-Ertrag vs. realer Ertrag → Verschattung, WR-Verluste lernen)
+3. ⏳ **Quantile Regression** für Unsicherheitsbänder (besonders bei bewölkten Tagen mit 46% MAPE)
 4. 📊 Forecast-Datensammlung läuft weiter (Open-Meteo + MOSMIX → `FORECAST-ACCURACY.md`)
 
-**Restaufwand:** 2–3 Arbeitstage für Phase 2 + 3.  
+**Erkenntnis pvlib 3 Arrays:** Die POA-Features allein verbessern das End-to-End-XGBoost-Modell nicht,
+weil GHI + CSI + sun_elevation den Großteil der Information bereits liefern. Der Mehrwert entsteht erst
+bei der Residualkorrektur, wenn der theoretische pvlib-Ertrag als Baseline dient und das ML-Modell nur
+noch die Abweichung (Verschattung, Schnee, WR-Verluste) lernen muss.
+
+**Restaufwand:** 1.5–2 Arbeitstage für verbleibende Schritte.  
 **Realistisches MAPE-Ziel:** 18–22%, mit < 10% an klaren Tagen.  
-**Langfristig (mit pvlib + Residual):** 15–20%.
+**Langfristig (mit Residual + Quantile):** 15–20%.
