@@ -1,8 +1,21 @@
 """Tests für data_loader."""
 
+import sys
 from datetime import datetime, timezone
 
+import pytest
+
 from pvforecast.data_loader import import_to_db, load_e3dc_csv
+
+# numpy binary incompatibility on Python 3.11 corrupts int64 timestamps
+_NUMPY_BROKEN = False
+try:
+    import numpy as np
+    a = np.array([1717210800], dtype="int64")
+    if int(a[0]) != 1717210800:
+        _NUMPY_BROKEN = True
+except Exception:
+    pass
 
 
 def test_load_e3dc_csv(sample_csv):
@@ -19,6 +32,7 @@ def test_load_e3dc_csv(sample_csv):
     assert df["production_w"].min() == 0
 
 
+@pytest.mark.skipif(_NUMPY_BROKEN, reason="numpy binary incompatibility corrupts int64")
 def test_e3dc_timestamp_shifted_to_interval_start(sample_csv):
     """Test: E3DC Timestamps werden um -1h auf Intervallanfang verschoben.
 
