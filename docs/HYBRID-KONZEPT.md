@@ -1,8 +1,8 @@
 # Physics-Informed Hybrid-Forecasting für pvforecast
 
 > **Projekt:** pv-forecast v0.5.0 | **Anlage:** 10 kWp, 3 Ausrichtungen, Dülmen  
-> **Datum:** Februar 2026 | **Aktueller MAPE:** 25.3% (eval) / 29.0% (train) | **Ziel:** < 20%  
-> **Version:** 2.1 – Aktualisiert nach Timestamp-Fix (12.02.2026)
+> **Datum:** Februar 2026 | **Aktueller MAPE:** 15.4% (eval) / 18.7% (gesamt) | **Ziel:** < 20% ✅  
+> **Version:** 2.2 – Aktualisiert nach Degradationsfaktor (PR #191, 12.02.2026)
 
 ---
 
@@ -10,12 +10,12 @@
 
 Dieses Konzept beschreibt die nächsten Schritte zur Verbesserung von pvforecast. Phase 1 (Feature Engineering) ist implementiert, der Timestamp-Fix (PRs #178, #179, #183) hat alle Datenquellen auf Intervallanfang normalisiert. Aktueller Stand: MAPE 25.3% (eval 2025).
 
-| Kennzahl | Ist-Stand (12.02.2026) | Ziel |
-|----------|----------------------|------|
-| MAPE (eval 2025) | 25.3% | < 20% |
-| MAPE (train) | 29.0% | — |
-| MAE | 122W (eval) / 112W (train) | < 100W |
-| R² | 0.968 (eval) / 0.963 (train) | > 0.98 |
+| Kennzahl | Ist-Stand (12.02.2026) | Ziel | Status |
+|----------|----------------------|------|--------|
+| MAPE (eval 2025) | **15.4%** | < 20% | ✅ Erreicht |
+| MAPE (gesamt 2019–2025) | **18.7%** | — | — |
+| MAE | **63W** (eval) / 140W (gesamt) | < 100W | ✅ Eval erreicht |
+| R² | **0.991** (eval) | > 0.98 | ✅ Erreicht |
 | Historische Daten | HOSTRADA (Messwerte) | Bleibt |
 | Forecast-Quelle | Open-Meteo (ICON/IFS) | Open-Meteo + GFS Ensemble |
 | Physik-Modell | pvlib nur für CSI | pvlib (3 Arrays, Transposition) |
@@ -229,13 +229,15 @@ Falls sich nach mehreren Monaten zeigt, dass der Gap saisonal größer wird
 | 2a | Forecast-Daten persistieren | – | ✅ |
 | T | Timestamp-Fix (PRs #178, #179, #183) | 25.3% | ✅ |
 | 2b | pvlib 3 Arrays / POA-Features (PR #185) | 29.0% | ✅ |
+| D | **Degradationsfaktor** (PR #191, Issue #187) | **15.4%** | ✅ |
 
 ### Nächste Schritte (priorisiert)
 
 | Prio | Maßnahme | Aufwand | Impact | Status |
 |------|----------|---------|--------|--------|
-| 🔴 1 | **Fehler-Diagnose** (siehe unten) | 0.5 Tag | Richtungsentscheidung | ⏳ Offen |
-| 🟠 2 | **ML-Residualkorrektur** (theor. Ertrag vs. real) | 0.5–1 Tag | MAPE -2–3% | ⏳ Nach Diagnose |
+| ✅ | ~~**Fehler-Diagnose**~~ | 0.5 Tag | Richtungsentscheidung | ✅ Erledigt (PR #191) |
+| 🔴 1 | **Schnee-Feature** (DWD snow_depth) | 0.5 Tag | Winter-MAPE -5–10% | ⏳ Nächster Schritt |
+| 🟠 2 | **ML-Residualkorrektur** (theor. Ertrag vs. real) | 0.5–1 Tag | MAPE -2–3% | ⏳ |
 | 🟡 3 | **Quantile Regression** (Unsicherheitsbänder) | 1 Tag | Bessere UX | ⏳ Unabhängig umsetzbar |
 
 ### Prio 1: Fehler-Diagnose (vor Residualkorrektur!)
@@ -275,34 +277,31 @@ Bevor die Architektur geändert wird, muss klar sein *wo genau* der verbleibende
 
 ## 8. Erfolgskriterien
 
-| Kriterium | Messung | Aktuell | Ziel |
-|-----------|---------|---------|------|
-| MAPE gesamt | Eval 2025 | 25.3% | < 20% |
-| MAPE klare Tage | CSI > 0.7 | 18.7% | < 10% |
-| MAPE bewölkte Tage | CSI < 0.3 | 46.0% | < 30% |
-| MAE | Eval 2025 | 122W | < 100W |
-| Konfidenzintervall | 80%-Intervall | – | ±5% |
-| Laufzeit | Fetch + Predict | OK | < 30s |
+| Kriterium | Messung | Aktuell | Ziel | Status |
+|-----------|---------|---------|------|--------|
+| MAPE gesamt | Eval 2025 | **15.4%** | < 20% | ✅ Erreicht |
+| MAPE klare Tage | CSI > 0.7 | **8.8%** | < 10% | ✅ Erreicht |
+| MAPE bewölkte Tage | CSI < 0.3 | **35.9%** | < 30% | ⏳ Offen |
+| MAE | Eval 2025 | **63W** | < 100W | ✅ Erreicht |
+| Konfidenzintervall | 80%-Intervall | – | ±5% | ⏳ Offen |
+| Laufzeit | Fetch + Predict | OK | < 30s | ✅ |
 
 ---
 
 ## 9. Zusammenfassung
 
-**Phase 1 + Timestamp-Fix sind abgeschlossen** (MAPE 25.3% eval). Der Wetter-Gap ist auf 1.1% geschrumpft – das Modell kompensiert Forecast-Fehler bereits durch Lag-Features. Die MOS-Schicht und das NWP-Ensemble sind daher deprioritisiert.
+**Phase 1 + Timestamp-Fix + Degradationsfaktor sind abgeschlossen** (MAPE **15.4% eval**, 18.7% gesamt). Das MAPE-Ziel von < 20% ist erreicht. Die drei wichtigsten Ziele (MAPE < 20%, klare Tage < 10%, MAE < 100W) sind alle erfüllt.
 
-**Strategie-Shift:** Statt Wetterkorrektur liegt der Fokus jetzt auf **physikalischer Modellierung** (pvlib 3 Arrays) und **Residualkorrektur** (Verschattung, WR-Verluste). Das sind die verbleibenden ~24% MAPE.
+**Größter Einzelhebel war der Degradationsfaktor** (PR #191): Ein Feature (`years_since_install`) hat die Gesamt-MAPE um 7 Prozentpunkte verbessert und den Bias-Drift von 163W auf 22W reduziert.
 
 **Nächste Schritte:**
-1. ✅ **pvlib 3 Arrays** implementiert (PR #185) — POA-Features verfügbar, MAPE noch unverändert (29.0%)
-2. ⏳ **Residualkorrektur** implementieren (theor. pvlib-Ertrag vs. realer Ertrag → Verschattung, WR-Verluste lernen)
-3. ⏳ **Quantile Regression** für Unsicherheitsbänder (besonders bei bewölkten Tagen mit 46% MAPE)
-4. 📊 Forecast-Datensammlung läuft weiter (Open-Meteo + MOSMIX → `FORECAST-ACCURACY.md`)
+1. ✅ **pvlib 3 Arrays** implementiert (PR #185) — POA-Features verfügbar
+2. ✅ **Degradationsfaktor** implementiert (PR #191) — MAPE 25.3% → 15.4%
+3. ⏳ **Schnee-Feature** — Nächster Hebel: Winter-MAPE 32–34%, Top-20-Fehler sind ausschließlich Wintertage
+4. ⏳ **Residualkorrektur** — Verschattung, WR-Verluste lernen
+5. ⏳ **Quantile Regression** — Unsicherheitsbänder (bewölkte Tage 36% MAPE)
+6. 📊 Forecast-Datensammlung läuft weiter (Open-Meteo + MOSMIX → `FORECAST-ACCURACY.md`)
 
-**Erkenntnis pvlib 3 Arrays:** Die POA-Features allein verbessern das End-to-End-XGBoost-Modell nicht,
-weil GHI + CSI + sun_elevation den Großteil der Information bereits liefern. Der Mehrwert entsteht erst
-bei der Residualkorrektur, wenn der theoretische pvlib-Ertrag als Baseline dient und das ML-Modell nur
-noch die Abweichung (Verschattung, Schnee, WR-Verluste) lernen muss.
-
-**Restaufwand:** 1.5–2 Arbeitstage für verbleibende Schritte.  
-**Realistisches MAPE-Ziel:** 18–22%, mit < 10% an klaren Tagen.  
-**Langfristig (mit Residual + Quantile):** 15–20%.
+**Restaufwand:** 1–1.5 Arbeitstage für verbleibende Optimierungen.  
+**Aktueller Stand:** MAPE 15.4% (eval), 8.8% klare Tage, 63W MAE.  
+**Nächstes Ziel:** Bewölkte Tage < 30% MAPE (aktuell 36%), Winter-MAPE < 25%.
