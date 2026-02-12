@@ -3,9 +3,7 @@
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-import numpy as np
 import pandas as pd
-import pytest
 
 from pvforecast.config import Config, PVArrayConfig
 from pvforecast.model import calculate_poa_features, prepare_features

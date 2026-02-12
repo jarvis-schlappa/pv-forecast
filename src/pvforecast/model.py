@@ -430,7 +430,12 @@ def prepare_features(
     if pv_arrays and PVLIB_AVAILABLE and len(df) > 0:
         try:
             # DNI: use column if available, else estimate from GHI/DHI
-            dni_for_poa = features["dni"] if "dni" in features.columns and features["dni"].sum() > 0 else (features["ghi"] - features["dhi"]).clip(lower=0)
+            has_dni = "dni" in features.columns and features["dni"].sum() > 0
+            dni_for_poa = (
+                features["dni"]
+                if has_dni
+                else (features["ghi"] - features["dhi"]).clip(lower=0)
+            )
 
             poa_feats = calculate_poa_features(
                 timestamps=pd.DatetimeIndex(timestamps),
