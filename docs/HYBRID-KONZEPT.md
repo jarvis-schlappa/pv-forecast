@@ -1,20 +1,21 @@
 # Physics-Informed Hybrid-Forecasting für pvforecast
 
 > **Projekt:** pv-forecast v0.5.0 | **Anlage:** 10 kWp, 3 Ausrichtungen, Dülmen  
-> **Datum:** Februar 2026 | **Aktueller MAPE:** 24.9% | **Ziel:** < 20%  
-> **Version:** 2.0 – Angepasst an Implementierungsstand 09.02.2026
+> **Datum:** Februar 2026 | **Aktueller MAPE:** 25.3% (eval) / 29.0% (train) | **Ziel:** < 20%  
+> **Version:** 2.1 – Aktualisiert nach Timestamp-Fix (12.02.2026)
 
 ---
 
 ## 1. Executive Summary
 
-Dieses Konzept beschreibt die nächsten Schritte zur Verbesserung von pvforecast. Phase 1 (Feature Engineering) ist bereits implementiert und hat den MAPE von 30.1% auf 24.9% gesenkt. Die verbleibenden Phasen zielen auf die Umstellung von End-to-End-ML auf eine **Physics-Informed Hybrid-Pipeline**, bei der ML die Wettervorhersage korrigiert und pvlib die PV-Physik berechnet.
+Dieses Konzept beschreibt die nächsten Schritte zur Verbesserung von pvforecast. Phase 1 (Feature Engineering) ist implementiert, der Timestamp-Fix (PRs #178, #179, #183) hat alle Datenquellen auf Intervallanfang normalisiert. Aktueller Stand: MAPE 25.3% (eval 2025).
 
-| Kennzahl | Ist-Stand (v0.5.0) | Ziel |
-|----------|-------------------|------|
-| MAPE (trainiert) | 24.9% | < 20% |
-| MAE | 125W | < 100W |
-| R² | 0.97 | > 0.98 |
+| Kennzahl | Ist-Stand (12.02.2026) | Ziel |
+|----------|----------------------|------|
+| MAPE (eval 2025) | 25.3% | < 20% |
+| MAPE (train) | 29.0% | — |
+| MAE | 122W (eval) / 112W (train) | < 100W |
+| R² | 0.968 (eval) / 0.963 (train) | > 0.98 |
 | Historische Daten | HOSTRADA (Messwerte) | Bleibt |
 | Forecast-Quelle | Open-Meteo (ICON/IFS) | Open-Meteo + GFS Ensemble |
 | Physik-Modell | pvlib nur für CSI | pvlib (3 Arrays, Transposition) |
@@ -83,15 +84,23 @@ Die Residualkorrektur lernt implizit Verschattung durch umliegende Bebauung sowi
 
 ### 4.1 Obergrenze des Verbesserungspotenzials ✅
 
-**Status: Durchgeführt am 09.02.2026**
+**Status: Aktualisiert am 12.02.2026 (nach Timestamp-Fix)**
 
-Backtesting mit HOSTRADA-Daten statt Open-Meteo als Forecast-Input:
+Backtesting 2025 mit HOSTRADA-Daten statt Open-Meteo als Forecast-Input:
 
 | Metrik | Mit Forecast | Mit HOSTRADA (perfekt) | Gap |
 |--------|--------------|------------------------|-----|
-| MAPE | 29.4% | 23.3% | 6.1% |
+| MAPE | 25.3% | 24.2% | **1.1%** |
+| MAE | 122W | 121W | 1W |
+| R² | 0.968 | 0.969 | 0.001 |
 
-**Interpretation:** ~6% des Fehlers kommt von der Wettervorhersage, ~23% sind Modell-Limits (Verschattung, Schnee, etc.).
+*Zum Vergleich – vor Timestamp-Fix (09.02.2026): 29.4% → 23.3%, Gap 6.1%*
+
+**Interpretation:** Der Wetter-Gap ist nach dem Timestamp-Fix von 6.1% auf nur noch **1.1%** geschrumpft. Das bedeutet:
+- Das Modell kompensiert Forecast-Fehler bereits sehr gut durch die Feature-Lags
+- Die **MOS-Schicht (Phase 2b) hat deutlich weniger Potenzial** als ursprünglich angenommen (~1% statt ~6%)
+- Die verbleibenden ~24% MAPE sind primär **Modell-Limits** (Verschattung, Schnee, Wechselrichter-Verluste, etc.)
+- **Größtes Verbesserungspotenzial liegt jetzt bei pvlib (3 Arrays, Transposition) und Residualkorrektur**, nicht bei Wetterkorrektur
 
 ### 4.2 Weitere Tests (ausstehend)
 
@@ -232,10 +241,10 @@ model_q90 = LGBMRegressor(objective='quantile', alpha=0.9)
 
 | Kriterium | Messung | Aktuell | Ziel |
 |-----------|---------|---------|------|
-| MAPE gesamt | Testset, temporal split | 24.9% | < 20% |
-| MAPE klare Tage | CSI > 0.8 | ~10% | < 10% |
-| MAPE bewölkte Tage | CSI < 0.4 | Hoch | < 30% |
-| MAE | Testset | 125W | < 100W |
+| MAPE gesamt | Eval 2025 | 25.3% | < 20% |
+| MAPE klare Tage | CSI > 0.7 | 18.7% | < 10% |
+| MAPE bewölkte Tage | CSI < 0.3 | 46.0% | < 30% |
+| MAE | Eval 2025 | 122W | < 100W |
 | Konfidenzintervall | 80%-Intervall | – | ±5% |
 | Laufzeit | Fetch + Predict | OK | < 30s |
 
@@ -243,7 +252,7 @@ model_q90 = LGBMRegressor(objective='quantile', alpha=0.9)
 
 ## 9. Zusammenfassung
 
-**Phase 1 ist abgeschlossen** (MAPE 30.1% → 24.9%). Die verbleibende Lücke zum Ziel (< 20%) wird durch den Train/Predict-Gap verursacht.
+**Phase 1 ist abgeschlossen** (MAPE aktuell 25.3% eval). Nach dem Timestamp-Fix (PRs #178, #179, #183) ist der Wetter-Gap auf 1.1% geschrumpft — die MOS-Schicht hat weniger Potenzial als erwartet. Größtes Potenzial liegt bei pvlib (3 Arrays) und Residualkorrektur.
 
 **Nächste Schritte:**
 1. ✅ Forecast-Daten-Logging läuft (Open-Meteo + MOSMIX)
