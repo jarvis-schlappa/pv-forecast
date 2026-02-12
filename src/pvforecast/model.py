@@ -319,6 +319,7 @@ def prepare_features(
     peak_kwp: float | None = None,
     mode: FeatureMode = "train",
     pv_arrays: list | None = None,
+    install_date: str | None = None,
 ) -> pd.DataFrame:
     """
     Erstellt Feature-DataFrame für ML-Modell.
@@ -457,6 +458,19 @@ def prepare_features(
         features["poa_total"] = 0.0
         features["poa_ratio"] = 0.0
 
+    # === Degradations-Feature ===
+    # Kontinuierliches Feature für Anlagenalter, damit XGBoost die
+    # Degradation selbst lernen kann (#187)
+    if install_date is not None:
+        try:
+            install_dt = pd.Timestamp(install_date, tz="UTC")
+            # Kontinuierliches Alter in Jahren (z.B. 6.45)
+            features["years_since_install"] = (
+                (timestamps - install_dt).dt.total_seconds() / (365.25 * 24 * 3600)
+            )
+        except Exception as e:
+            logger.warning(f"install_date '{install_date}' ungültig: {e}")
+
     # === Lag-Features ===
 
     # Wetter-Lags (immer verfügbar, da Wetterdaten sequentiell)
@@ -568,6 +582,7 @@ def load_training_data(
     until_year: int | None = None,
     min_samples: int = 100,
     pv_arrays: list | None = None,
+    install_date: str | None = None,
 ) -> tuple[pd.DataFrame, pd.Series]:
     """Lädt und bereitet Trainingsdaten vor.
 
@@ -624,7 +639,10 @@ def load_training_data(
     logger.info(f"Trainingsdaten: {len(df)} Datensätze")
 
     # Features erstellen (mode="train" für historische Daten)
-    X = prepare_features(df, lat, lon, peak_kwp=peak_kwp, mode="train", pv_arrays=pv_arrays)
+    X = prepare_features(
+        df, lat, lon, peak_kwp=peak_kwp, mode="train",
+        pv_arrays=pv_arrays, install_date=install_date,
+    )
     y = df["production_w"]
 
     return X, y
@@ -639,6 +657,7 @@ def train(
     until_year: int | None = None,
     peak_kwp: float | None = None,
     pv_arrays: list | None = None,
+    install_date: str | None = None,
 ) -> tuple[Pipeline, dict]:
     """
     Trainiert Modell auf allen Daten in der Datenbank.
@@ -666,7 +685,7 @@ def train(
     X, y = load_training_data(
         db, lat, lon, peak_kwp=peak_kwp,
         since_year=since_year, until_year=until_year, min_samples=100,
-        pv_arrays=pv_arrays,
+        pv_arrays=pv_arrays, install_date=install_date,
     )
 
     # Zeitbasierter Split (80% Training, 20% Test)
@@ -731,6 +750,7 @@ def tune(
     since_year: int | None = None,
     until_year: int | None = None,
     peak_kwp: float | None = None,
+    install_date: str | None = None,
 ) -> tuple[Pipeline, dict, dict]:
     """
     Hyperparameter-Tuning mit RandomizedSearchCV.
@@ -753,6 +773,7 @@ def tune(
     X, y = load_training_data(
         db, lat, lon, peak_kwp=peak_kwp,
         since_year=since_year, until_year=until_year, min_samples=500,
+        install_date=install_date,
     )
 
     # Parameter-Suchraum definieren
@@ -911,6 +932,7 @@ def tune_optuna(
     since_year: int | None = None,
     until_year: int | None = None,
     peak_kwp: float | None = None,
+    install_date: str | None = None,
 ) -> tuple[Pipeline, dict, dict]:
     """
     Hyperparameter-Tuning mit Optuna (Bayesian Optimization).
@@ -946,6 +968,7 @@ def tune_optuna(
     X, y = load_training_data(
         db, lat, lon, peak_kwp=peak_kwp,
         since_year=since_year, until_year=until_year, min_samples=500,
+        install_date=install_date,
     )
     y = y.values  # Convert to numpy array for Optuna
 
@@ -1157,6 +1180,7 @@ def predict(
     mode: FeatureMode = "predict",
     model_version: str | None = None,
     pv_arrays: list | None = None,
+    install_date: str | None = None,
 ) -> Forecast:
     """
     Erstellt Prognose basierend auf Wettervorhersage.
@@ -1182,7 +1206,10 @@ def predict(
         )
 
     # Features erstellen (mode bestimmt ob Produktions-Lags verfügbar)
-    X = prepare_features(weather_df, lat, lon, peak_kwp=peak_kwp, mode=mode, pv_arrays=pv_arrays)
+    X = prepare_features(
+        weather_df, lat, lon, peak_kwp=peak_kwp, mode=mode,
+        pv_arrays=pv_arrays, install_date=install_date,
+    )
 
     # Vorhersage
     predictions = model.predict(X)
@@ -1226,6 +1253,7 @@ def evaluate(
     peak_kwp: float | None = None,
     year: int | None = None,
     pv_arrays: list | None = None,
+    install_date: str | None = None,
 ) -> EvaluationResult:
     """
     Evaluiert das Modell gegen historische Daten (Backtesting).
@@ -1276,7 +1304,10 @@ def evaluate(
         raise ValueError(f"Keine Daten für {year} gefunden")
 
     # Features erstellen und Vorhersagen machen
-    X = prepare_features(df, lat, lon, peak_kwp, mode="train", pv_arrays=pv_arrays)
+    X = prepare_features(
+        df, lat, lon, peak_kwp, mode="train",
+        pv_arrays=pv_arrays, install_date=install_date,
+    )
     y_true = df["production_w"].values
     y_pred = model.predict(X)
 
