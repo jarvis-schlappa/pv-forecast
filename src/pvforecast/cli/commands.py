@@ -357,7 +357,8 @@ def cmd_predict(args: argparse.Namespace, config: Config) -> int:
     model_version = metrics.get("model_version") if metrics else None
     forecast = predict(
         model, weather_df, config.latitude, config.longitude, config.peak_kwp,
-        mode="predict", model_version=model_version
+        mode="predict", model_version=model_version,
+        pv_arrays=config.pv_arrays or None,
     )
 
     # Ausgabe formatieren
@@ -438,7 +439,8 @@ def cmd_today(args: argparse.Namespace, config: Config) -> int:
     model_version = metrics.get("model_version") if metrics else None
     forecast = predict(
         model, weather_df, config.latitude, config.longitude, config.peak_kwp,
-        mode=predict_mode, model_version=model_version
+        mode=predict_mode, model_version=model_version,
+        pv_arrays=config.pv_arrays or None,
     )
 
     # Ausgabe
@@ -575,6 +577,7 @@ def cmd_train(args: argparse.Namespace, config: Config) -> int:
             since_year=since_year,
             until_year=until_year,
             peak_kwp=config.peak_kwp,
+            pv_arrays=config.pv_arrays or None,
         )
     except ValueError as e:
         print(f"❌ Training fehlgeschlagen: {e}", file=sys.stderr)
@@ -821,6 +824,7 @@ def cmd_evaluate(args: argparse.Namespace, config: Config) -> int:
             lon=config.longitude,
             peak_kwp=config.peak_kwp,
             year=year,
+            pv_arrays=config.pv_arrays or None,
         )
     except ValueError as e:
         print(f"❌ {e}")
