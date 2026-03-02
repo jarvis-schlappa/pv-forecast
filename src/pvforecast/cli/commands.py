@@ -10,6 +10,11 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
+from pvforecast.confidence import (
+    ConfidenceResult,
+    compute_confidence,
+    get_forecast_cloud_cover,
+)
 from pvforecast.config import Config, get_config_path
 from pvforecast.data_loader import import_csv_files
 from pvforecast.db import Database
@@ -41,6 +46,7 @@ from pvforecast.weather import (
 )
 
 from .formatters import (
+    format_confidence,
     format_duration,
     format_forecast_json,
     format_forecast_table,
@@ -362,6 +368,23 @@ def cmd_predict(args: argparse.Namespace, config: Config) -> int:
         install_date=config.install_date,
     )
 
+    # Konfidenzintervalle berechnen (pro Tag)
+    confidence_map: dict[str, ConfidenceResult] = {}
+    if getattr(args, "confidence", False):
+        log_path = Path(__file__).resolve().parents[3] / "docs" / "observation-log.md"
+        # Tages-Summen berechnen
+        daily_kwh: dict[str, float] = {}
+        for h in forecast.hourly:
+            day_key = h.timestamp.astimezone(tz).strftime("%Y-%m-%d")
+            daily_kwh[day_key] = daily_kwh.get(day_key, 0) + h.production_w / 1000
+
+        for day_str, day_kwh in daily_kwh.items():
+            avg_cloud = get_forecast_cloud_cover(config.db_path, day_str, source_name)
+            if avg_cloud is not None:
+                confidence_map[day_str] = compute_confidence(
+                    day_kwh, avg_cloud, log_path, config.db_path,
+                )
+
     # Ausgabe formatieren
     if args.format == "json":
         print(format_forecast_json(forecast))
@@ -370,7 +393,7 @@ def cmd_predict(args: argparse.Namespace, config: Config) -> int:
         for h in forecast.hourly:
             print(f"{h.timestamp.isoformat()},{h.production_w},{h.ghi_wm2},{h.cloud_cover_pct}")
     else:
-        print(format_forecast_table(forecast, config))
+        print(format_forecast_table(forecast, config, confidence_map=confidence_map))
 
     return 0
 
@@ -445,10 +468,24 @@ def cmd_today(args: argparse.Namespace, config: Config) -> int:
         install_date=config.install_date,
     )
 
+    # Konfidenzintervall berechnen
+    confidence = None
+    if getattr(args, "confidence", False):
+        log_path = Path(__file__).resolve().parents[3] / "docs" / "observation-log.md"
+        today_str = today.strftime("%Y-%m-%d")
+        avg_cloud = get_forecast_cloud_cover(config.db_path, today_str, source_name)
+        if avg_cloud is not None:
+            confidence = compute_confidence(
+                forecast.total_kwh, avg_cloud, log_path, config.db_path,
+            )
+
     # Ausgabe
     if _quiet_mode:
         # Kompakte Ausgabe bei --quiet
-        print(f"{forecast.total_kwh:.1f} kWh")
+        if confidence:
+            print(f"{forecast.total_kwh:.1f} kWh ({confidence.range_str})")
+        else:
+            print(f"{forecast.total_kwh:.1f} kWh")
     else:
         print()
         print(f"PV-Prognose für heute ({today.strftime('%d.%m.%Y')})")
@@ -456,6 +493,8 @@ def cmd_today(args: argparse.Namespace, config: Config) -> int:
         print()
         print("═" * 50)
         print(f"  Erwarteter Tagesertrag:  {forecast.total_kwh:>6.1f} kWh")
+        if confidence:
+            print(format_confidence(confidence))
         print("═" * 50)
         print()
         print("  Stundenwerte")
