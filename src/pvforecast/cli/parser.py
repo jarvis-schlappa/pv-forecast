@@ -125,6 +125,11 @@ def create_parser() -> argparse.ArgumentParser:
         default=None,
         help="Wetter-Datenquelle (default: aus Config)",
     )
+    p_predict.add_argument(
+        "--confidence",
+        action="store_true",
+        help="Konfidenzintervall (P10–P90) anzeigen",
+    )
 
     # import
     p_import = subparsers.add_parser("import", help="Importiert E3DC CSV-Dateien")
@@ -153,6 +158,11 @@ def create_parser() -> argparse.ArgumentParser:
         "--full",
         action="store_true",
         help="Ganzer Tag inkl. vergangener Stunden",
+    )
+    p_today.add_argument(
+        "--confidence",
+        action="store_true",
+        help="Konfidenzintervall (P10–P90) anzeigen",
     )
     p_today.add_argument(
         "-q",

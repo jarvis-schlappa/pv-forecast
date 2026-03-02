@@ -6,6 +6,7 @@ import json
 import math
 from zoneinfo import ZoneInfo
 
+from pvforecast.confidence import ConfidenceResult
 from pvforecast.config import Config
 from pvforecast.model import EvaluationResult, Forecast
 
@@ -38,7 +39,23 @@ def format_duration(seconds: float) -> str:
     return f"{minutes}m {secs}s"
 
 
-def format_forecast_table(forecast: Forecast, config: Config) -> str:
+def format_confidence(conf: ConfidenceResult) -> str:
+    """Formatiert Konfidenz-Ergebnis für Inline-Ausgabe (cmd_today)."""
+    lines = []
+    lines.append(f"  Konfidenzintervall:  {conf.range_str:>12}  (P10–P90)")
+    lines.append(
+        f"  Unsicherheit:        {conf.uncertainty_emoji} {conf.uncertainty:8}"
+        f"  ({conf.weather_emoji} {conf.weather_class}er Tag)"
+    )
+    lines.append(f"  {'':25}(basierend auf {conf.n_days} Tagen)")
+    return "\n".join(lines)
+
+
+def format_forecast_table(
+    forecast: Forecast,
+    config: Config,
+    confidence_map: dict[str, ConfidenceResult] | None = None,
+) -> str:
     """Formatiert Prognose als Tabelle."""
     tz = ZoneInfo(config.timezone)
     lines = []
@@ -51,14 +68,23 @@ def format_forecast_table(forecast: Forecast, config: Config) -> str:
     lines.append("Zusammenfassung")
     lines.append("─" * 60)
 
-    # Tages-Summen berechnen
+    # Tages-Summen berechnen (date_key und display_key getrennt)
     daily_kwh: dict[str, float] = {}
+    daily_date_key: dict[str, str] = {}  # display_key -> YYYY-MM-DD
     for h in forecast.hourly:
-        day_key = h.timestamp.astimezone(tz).strftime("%d.%m.")
-        daily_kwh[day_key] = daily_kwh.get(day_key, 0) + h.production_w / 1000
+        local = h.timestamp.astimezone(tz)
+        display_key = local.strftime("%d.%m.")
+        date_key = local.strftime("%Y-%m-%d")
+        daily_kwh[display_key] = daily_kwh.get(display_key, 0) + h.production_w / 1000
+        daily_date_key[display_key] = date_key
 
     for day, kwh in daily_kwh.items():
-        lines.append(f"  {day}:  {kwh:>6.1f} kWh")
+        date_key = daily_date_key[day]
+        conf = confidence_map.get(date_key) if confidence_map else None
+        if conf:
+            lines.append(f"  {day}:  {kwh:>6.1f} kWh  ({conf.range_str}, {conf.uncertainty_emoji})")
+        else:
+            lines.append(f"  {day}:  {kwh:>6.1f} kWh")
 
     lines.append("  " + "─" * 20)
     lines.append(f"  Gesamt:  {forecast.total_kwh:>6.1f} kWh")
