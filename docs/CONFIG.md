@@ -38,8 +38,8 @@ pvforecast config --show
 
 # Standort der PV-Anlage
 location:
-  latitude: 51.83      # Breitengrad
-  longitude: 7.28      # Längengrad
+  latitude: 51.48      # Breitengrad
+  longitude: 7.22      # Längengrad
 
 # Anlagen-Daten
 system:
@@ -53,7 +53,7 @@ weather:
   
   # MOSMIX-Einstellungen (DWD Vorhersage)
   mosmix:
-    station: P0051  # Dülmen - siehe Stationsliste unten
+    station: P0327  # Bochum - siehe Stationsliste unten
   
   # HOSTRADA-Einstellungen (DWD historische Rasterdaten)
   hostrada: {}  # Nutzt automatisch latitude/longitude
@@ -75,14 +75,14 @@ paths:
 
 | Parameter | CLI | Config | Default | Beschreibung |
 |-----------|-----|--------|---------|--------------|
-| Breitengrad | `--lat` | `location.latitude` | 51.83 | Breitengrad in Dezimalgrad |
-| Längengrad | `--lon` | `location.longitude` | 7.28 | Längengrad in Dezimalgrad |
+| Breitengrad | `--lat` | `location.latitude` | 51.48 | Breitengrad in Dezimalgrad |
+| Längengrad | `--lon` | `location.longitude` | 7.22 | Längengrad in Dezimalgrad |
 
 ### System
 
 | Parameter | CLI | Config | Default | Beschreibung |
 |-----------|-----|--------|---------|--------------|
-| Name | - | `system.name` | "Dülmen PV" | Name für Anzeige |
+| Name | - | `system.name` | "Bochum PV" | Name für Anzeige |
 | Peak-Leistung | - | `system.peak_kwp` | 9.92 | kWp der Anlage |
 
 ### Pfade
@@ -98,7 +98,7 @@ paths:
 |-----------|-----|--------|---------|--------------|
 | Forecast-Provider | `--source` | `weather.forecast_provider` | open-meteo | `mosmix` oder `open-meteo` |
 | Historical-Provider | `--source` | `weather.historical_provider` | open-meteo | `hostrada` oder `open-meteo` |
-| MOSMIX-Station | - | `weather.mosmix.station` | P0051 | MOSMIX-Stationskennung |
+| MOSMIX-Station | - | `weather.mosmix.station` | P0327 | MOSMIX-Stationskennung |
 
 ### Sonstige
 
@@ -144,7 +144,7 @@ Für mehrere Anlagen separate Datenbanken verwenden:
 ```bash
 # Anlage 1
 pvforecast --db ~/pv/anlage1.db import anlage1.csv
-pvforecast --db ~/pv/anlage1.db --lat 51.83 --lon 7.28 train
+pvforecast --db ~/pv/anlage1.db --lat 51.48 --lon 7.22 train
 
 # Anlage 2
 pvforecast --db ~/pv/anlage2.db import anlage2.csv
@@ -182,7 +182,7 @@ MOSMIX-Vorhersagen sind für einzelne Stationen verfügbar. Die Station wird üb
 ```yaml
 weather:
   mosmix:
-    station: P0051  # Dülmen
+    station: P0327  # Bochum
 ```
 
 **Stationsliste:** https://opendata.dwd.de/weather/local_forecasts/mos/MOSMIX_L/single_stations/
@@ -191,7 +191,7 @@ weather:
 
 | Station | Ort |
 |---------|-----|
-| P0051 | Dülmen |
+| P0327 | Bochum |
 | 10315 | Berlin-Tegel |
 | 10382 | Berlin-Schönefeld |
 | 10513 | Hamburg-Fuhlsbüttel |
@@ -221,7 +221,7 @@ Vor dem Download erscheint eine Warnung:
 ```
 ⚠️  HOSTRADA lädt komplette Deutschland-Raster herunter.
     Geschätzter Download: ~40.0 GB (7 Jahre × 5 Parameter)
-    Extrahierte Daten: wenige MB (nur Gridpunkt 51.85°N, 7.26°E)
+    Extrahierte Daten: wenige MB (nur Gridpunkt 51.48°N, 7.22°E)
 
 Fortfahren? [y/N]: 
 ```

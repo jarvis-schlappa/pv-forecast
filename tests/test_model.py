@@ -24,9 +24,9 @@ class TestSunElevation:
 
     def test_noon_summer_positive(self):
         """Test: Mittag im Sommer hat positive Elevation."""
-        # 21. Juni 2024, 12:00 UTC, Dülmen (51.83, 7.28)
+        # 21. Juni 2024, 12:00 UTC, Bochum (51.48, 7.22)
         ts = int(datetime(2024, 6, 21, 12, 0, tzinfo=UTC_TZ).timestamp())
-        elevation = calculate_sun_elevation(ts, 51.83, 7.28)
+        elevation = calculate_sun_elevation(ts, 51.48, 7.22)
 
         assert elevation > 50  # Sommer-Mittag sollte hoch sein
 
@@ -34,7 +34,7 @@ class TestSunElevation:
         """Test: Mitternacht hat negative Elevation."""
         # 21. Juni 2024, 00:00 UTC
         ts = int(datetime(2024, 6, 21, 0, 0, tzinfo=UTC_TZ).timestamp())
-        elevation = calculate_sun_elevation(ts, 51.83, 7.28)
+        elevation = calculate_sun_elevation(ts, 51.48, 7.22)
 
         assert elevation < 0
 
@@ -42,11 +42,11 @@ class TestSunElevation:
         """Test: Winter-Mittag ist niedriger als Sommer-Mittag."""
         # Sommer-Mittag
         ts_summer = int(datetime(2024, 6, 21, 12, 0, tzinfo=UTC_TZ).timestamp())
-        elev_summer = calculate_sun_elevation(ts_summer, 51.83, 7.28)
+        elev_summer = calculate_sun_elevation(ts_summer, 51.48, 7.22)
 
         # Winter-Mittag
         ts_winter = int(datetime(2024, 12, 21, 12, 0, tzinfo=UTC_TZ).timestamp())
-        elev_winter = calculate_sun_elevation(ts_winter, 51.83, 7.28)
+        elev_winter = calculate_sun_elevation(ts_winter, 51.48, 7.22)
 
         assert elev_winter < elev_summer
 
@@ -55,7 +55,7 @@ class TestSunElevation:
         ts = int(datetime(2024, 3, 21, 12, 0, tzinfo=UTC_TZ).timestamp())
 
         elev_equator = calculate_sun_elevation(ts, 0.0, 0.0)
-        elev_germany = calculate_sun_elevation(ts, 51.83, 7.28)
+        elev_germany = calculate_sun_elevation(ts, 51.48, 7.22)
 
         assert elev_equator > elev_germany
 
@@ -95,7 +95,7 @@ class TestPrepareFeatures:
             ]
         )
 
-        features = prepare_features(df, 51.83, 7.28)
+        features = prepare_features(df, 51.48, 7.22)
 
         # Zyklische Zeit-Features
         assert "hour_sin" in features.columns
@@ -124,7 +124,7 @@ class TestPrepareFeatures:
             ]
         )
 
-        features = prepare_features(df, 51.83, 7.28)
+        features = prepare_features(df, 51.48, 7.22)
 
         # Stunde 0: sin(0) = 0, cos(0) = 1
         assert np.isclose(features.iloc[0]["hour_sin"], 0, atol=1e-10)
@@ -145,7 +145,7 @@ class TestPrepareFeatures:
             ]
         )
 
-        features = prepare_features(df, 51.83, 7.28)
+        features = prepare_features(df, 51.48, 7.22)
 
         # Januar (Monat 1): sin(2π * 1/12) = 0.5, cos(2π * 1/12) ≈ 0.866
         assert np.isclose(features.iloc[0]["month_sin"], 0.5, atol=1e-10)
@@ -174,11 +174,11 @@ class TestPrepareFeatures:
         )
 
         # Ohne peak_kwp
-        features_no_kwp = prepare_features(df, 51.83, 7.28)
+        features_no_kwp = prepare_features(df, 51.48, 7.22)
         assert "peak_kwp" not in features_no_kwp.columns
 
         # Mit peak_kwp
-        features_with_kwp = prepare_features(df, 51.83, 7.28, peak_kwp=9.92)
+        features_with_kwp = prepare_features(df, 51.48, 7.22, peak_kwp=9.92)
         assert "peak_kwp" in features_with_kwp.columns
         assert features_with_kwp.iloc[0]["peak_kwp"] == 9.92
         assert features_with_kwp.iloc[1]["peak_kwp"] == 9.92
@@ -214,7 +214,7 @@ class TestPrepareFeatures:
             ]
         )
 
-        features = prepare_features(df, 51.83, 7.28)
+        features = prepare_features(df, 51.48, 7.22)
 
         # Wetter-Lags prüfen
         assert "ghi_lag_1h" in features.columns
@@ -262,7 +262,7 @@ class TestPrepareFeatures:
             ]
         )
 
-        features = prepare_features(df, 51.83, 7.28)
+        features = prepare_features(df, 51.48, 7.22)
 
         # diffuse_fraction prüfen
         assert "diffuse_fraction" in features.columns
@@ -286,7 +286,7 @@ class TestPrepareFeatures:
         df_no_dni = pd.DataFrame(
             [{"timestamp": 1704067200, "ghi_wm2": 500, "cloud_cover_pct": 20, "temperature_c": 15}]
         )
-        features_no_dni = prepare_features(df_no_dni, 51.83, 7.28)
+        features_no_dni = prepare_features(df_no_dni, 51.48, 7.22)
         assert features_no_dni.iloc[0]["dni"] == 0.0
 
         # Mit DNI
@@ -301,7 +301,7 @@ class TestPrepareFeatures:
                 }
             ]
         )
-        features_with_dni = prepare_features(df_with_dni, 51.83, 7.28)
+        features_with_dni = prepare_features(df_with_dni, 51.48, 7.22)
         assert features_with_dni.iloc[0]["dni"] == 700
 
 
@@ -319,14 +319,14 @@ class TestPrepareFeatures:
         )
 
         # Mit install_date → Feature vorhanden
-        features = prepare_features(df, 51.83, 7.28, install_date="2018-08-20")
+        features = prepare_features(df, 51.48, 7.22, install_date="2018-08-20")
         assert "years_since_install" in features.columns
         years = features.iloc[0]["years_since_install"]
         # 2025-06-15 minus 2018-08-20 ≈ 6.82 Jahre
         assert 6.5 < years < 7.2, f"Expected ~6.82 years, got {years}"
 
         # Ohne install_date → Feature NICHT vorhanden
-        features_no = prepare_features(df, 51.83, 7.28)
+        features_no = prepare_features(df, 51.48, 7.22)
         assert "years_since_install" not in features_no.columns
 
     def test_years_since_install_invalid_date(self):
@@ -341,7 +341,7 @@ class TestPrepareFeatures:
                 },
             ]
         )
-        features = prepare_features(df, 51.83, 7.28, install_date="invalid")
+        features = prepare_features(df, 51.48, 7.22, install_date="invalid")
         assert "years_since_install" not in features.columns
 
 
@@ -523,7 +523,7 @@ class TestLoadTrainingData:
                 )
             conn.commit()
 
-        X, y = load_training_data(db, lat=51.83, lon=7.28, min_samples=10)
+        X, y = load_training_data(db, lat=51.48, lon=7.22, min_samples=10)
 
         assert isinstance(X, pd.DataFrame)
         assert isinstance(y, pd.Series)
@@ -555,7 +555,7 @@ class TestLoadTrainingData:
             conn.commit()
 
         with pytest.raises(ValueError) as exc_info:
-            load_training_data(db, lat=51.83, lon=7.28, min_samples=100)
+            load_training_data(db, lat=51.48, lon=7.22, min_samples=100)
 
         assert "Zu wenig Trainingsdaten" in str(exc_info.value)
         assert "100" in str(exc_info.value)
@@ -601,12 +601,12 @@ class TestLoadTrainingData:
             conn.commit()
 
         # Alle Daten laden
-        X_all, y_all = load_training_data(db, lat=51.83, lon=7.28, min_samples=10)
+        X_all, y_all = load_training_data(db, lat=51.48, lon=7.22, min_samples=10)
         assert len(X_all) == 25
 
         # Nur ab 2024
         X_2024, y_2024 = load_training_data(
-            db, lat=51.83, lon=7.28, since_year=2024, min_samples=10
+            db, lat=51.48, lon=7.22, since_year=2024, min_samples=10
         )
         assert len(X_2024) == 15
 
@@ -629,7 +629,7 @@ class TestTune:
         db = Database(tmp_path / "test.db")
 
         with pytest.raises(ValueError) as exc_info:
-            tune(db, 51.83, 7.28, n_iter=2, cv_splits=2)
+            tune(db, 51.48, 7.22, n_iter=2, cv_splits=2)
 
         assert "Zu wenig Trainingsdaten" in str(exc_info.value)
 
@@ -675,7 +675,7 @@ class TestExtendedFeatures:
             }
         )
 
-        features = prepare_features(df, 51.83, 7.28)
+        features = prepare_features(df, 51.48, 7.22)
 
         assert "wind_speed" in features.columns
         assert "humidity" in features.columns
@@ -698,7 +698,7 @@ class TestExtendedFeatures:
             }
         )
 
-        features = prepare_features(df, 51.83, 7.28)
+        features = prepare_features(df, 51.48, 7.22)
 
         # Sollte Defaults verwenden
         assert features["wind_speed"].iloc[0] == 0.0
@@ -748,7 +748,7 @@ class TestOptunaIntegration:
         db = Database(tmp_path / "test.db")
 
         with pytest.raises(ValueError) as exc_info:
-            tune_optuna(db, 51.83, 7.28, n_trials=2, cv_splits=2)
+            tune_optuna(db, 51.48, 7.22, n_trials=2, cv_splits=2)
 
         assert "Zu wenig Trainingsdaten" in str(exc_info.value)
 
@@ -764,7 +764,7 @@ class TestOptunaIntegration:
         db = Database(tmp_path / "test.db")
 
         with pytest.raises(DependencyError) as exc_info:
-            model.tune_optuna(db, 51.83, 7.28, n_trials=2)
+            model.tune_optuna(db, 51.48, 7.22, n_trials=2)
 
         assert "optuna" in str(exc_info.value).lower()
 
@@ -785,7 +785,7 @@ class TestOptunaIntegration:
         db = Database(tmp_path / "test.db")
 
         with pytest.raises(DependencyError) as exc_info:
-            model.tune_optuna(db, 51.83, 7.28, model_type="xgb", n_trials=2)
+            model.tune_optuna(db, 51.48, 7.22, model_type="xgb", n_trials=2)
 
         assert "xgboost" in str(exc_info.value).lower()
 

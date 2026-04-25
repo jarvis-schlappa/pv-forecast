@@ -25,7 +25,7 @@
 |-----------|------|
 | Peak-Leistung | 9,92 kWp |
 | Ausrichtung | Mehrere Flächen, Hauptseite Süd-Ost |
-| Standort | Dülmen, NRW (51.83°N, 7.28°E) |
+| Standort | Bochum, NRW (51.48°N, 7.22°E) |
 | Speicher | E3/DC Hauskraftwerk (S10) |
 
 ### 2.2 Datenquellen
@@ -139,7 +139,7 @@ pvforecast status
 
 ```bash
 pvforecast --db ~/.local/share/pvforecast/data.db \
-           --lat 51.83 --lon 7.28 \
+           --lat 51.48 --lon 7.22 \
            predict
 ```
 
@@ -148,7 +148,7 @@ pvforecast --db ~/.local/share/pvforecast/data.db \
 ```
 $ pvforecast predict
 
-PV-Ertragsprognose für Dülmen (9.92 kWp)
+PV-Ertragsprognose für Bochum (9.92 kWp)
 Erstellt: 2026-02-04 17:00
 
 ═══════════════════════════════════════════════════════════
@@ -220,8 +220,8 @@ CREATE INDEX idx_weather_timestamp ON weather_history(timestamp);
 DEFAULTS = {
     "db_path": "~/.local/share/pvforecast/data.db",
     "model_path": "~/.local/share/pvforecast/model.pkl",
-    "latitude": 51.83,
-    "longitude": 7.28,
+    "latitude": 51.48,
+    "longitude": 7.22,
     "timezone": "Europe/Berlin",
     "peak_kwp": 9.92,
 }

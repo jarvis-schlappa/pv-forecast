@@ -1,6 +1,6 @@
 # Physics-Informed Hybrid-Forecasting für pvforecast
 
-> **Projekt:** pv-forecast v0.5.0 | **Anlage:** 10 kWp, 3 Ausrichtungen, Dülmen  
+> **Projekt:** pv-forecast v0.5.0 | **Anlage:** 10 kWp, 3 Ausrichtungen, Bochum  
 > **Datum:** Februar 2026 | **Aktueller MAPE:** 15.4% (eval) / 18.7% (gesamt) | **Ziel:** < 20% ✅  
 > **Version:** 2.2 – Aktualisiert nach Degradationsfaktor (PR #191, 12.02.2026)
 

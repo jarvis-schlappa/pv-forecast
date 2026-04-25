@@ -198,7 +198,7 @@ pvforecast train --model xgb
   - `pvforecast predict --source mosmix` / `pvforecast today --source mosmix`
   - `pvforecast fetch-forecast --source mosmix` für Rohdaten-Abruf
   - KML-Parser mit DHI-Schätzung (Erbs-Modell)
-  - Konfigurierbare MOSMIX-Station (Standard: P0051/Dülmen)
+  - Konfigurierbare MOSMIX-Station (Standard: P0327/Bochum)
 
 - **DWD HOSTRADA Historische Daten** – 1km-Rasterdaten für Training (#123)
   - `pvforecast fetch-historical --source hostrada`

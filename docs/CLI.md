@@ -63,15 +63,15 @@ pvforecast setup [OPTIONEN]
 ══════════════════════════════════════════════════
 
 1️⃣  Standort
-   Postleitzahl oder Ort: 48249
+   Postleitzahl oder Ort: 44787
    Suche...
-   → Dülmen, Nordrhein-Westfalen (51.85°N, 7.26°E)
+   → Bochum, Nordrhein-Westfalen (51.48°N, 7.22°E)
    Stimmt das? [J/n]: j
    ✓
 
 2️⃣  Anlage
    Peakleistung in kWp: 9.92
-   Name (optional) [Dülmen PV]: 
+   Name (optional) [Bochum PV]: 
    ✓
 
 3️⃣  XGBoost (bessere Prognose-Genauigkeit)
@@ -117,8 +117,8 @@ pvforecast doctor
  ✓ Python: 3.11.4
  ✓ pvforecast: 0.1.0
  ✓ Config: ~/.config/pvforecast/config.yaml
- ✓ Standort: Dülmen PV (9.92 kWp)
-   └─ 51.85°N, 7.26°E
+ ✓ Standort: Bochum PV (9.92 kWp)
+   └─ 51.48°N, 7.22°E
  ✓ Datenbank: 62,212 PV / 62,256 Wetter
    └─ Zeitraum: 2019-01-01 bis 2026-02-06
  ✓ Modell: xgb (MAE: 144W)
@@ -203,7 +203,7 @@ pvforecast predict
 # 5 Tage Prognose
 pvforecast predict --days 5
 
-# Mit DWD MOSMIX (Station Dülmen)
+# Mit DWD MOSMIX (Station Bochum)
 pvforecast predict --source mosmix --days 3
 
 # Als JSON (für Weiterverarbeitung)
@@ -217,7 +217,7 @@ pvforecast predict --format csv > forecast.csv
 
 | Quelle | Beschreibung | Horizont |
 |--------|--------------|----------|
-| `mosmix` | DWD MOSMIX (Station P0051 Dülmen) | +10 Tage |
+| `mosmix` | DWD MOSMIX (Station P0327 Bochum) | +10 Tage |
 | `open-meteo` | Open-Meteo API | +16 Tage |
 
 ---
@@ -291,7 +291,7 @@ Bei HOSTRADA erscheint vor dem Download eine Warnung wegen der Datenmenge:
 ```
 ⚠️  HOSTRADA lädt komplette Deutschland-Raster herunter.
     Geschätzter Download: ~40.0 GB (7 Jahre × 5 Parameter)
-    Extrahierte Daten: wenige MB (nur Gridpunkt 51.85°N, 7.26°E)
+    Extrahierte Daten: wenige MB (nur Gridpunkt 51.48°N, 7.22°E)
 
     Für regelmäßige Updates empfehlen wir Open-Meteo.
     HOSTRADA eignet sich für einmaliges Training mit historischen Daten.
@@ -609,8 +609,8 @@ PV-Forecast Status
 ========================================
 
 📍 Standort:
-   Dülmen PV
-   51.83°N, 7.28°E
+   Bochum PV
+   51.48°N, 7.22°E
    9.92 kWp
 
 📊 Datenbank:

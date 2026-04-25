@@ -47,7 +47,7 @@ class PVArrayConfig:
 class MOSMIXConfig:
     """MOSMIX-spezifische Konfiguration."""
 
-    station_id: str = "P0051"  # Default: Dülmen
+    station_id: str = "P0327"  # Default: Bochum
     use_mosmix_l: bool = True  # MOSMIX_L (115 params) vs MOSMIX_S (40 params)
 
 
@@ -77,13 +77,13 @@ class Config:
     """Konfiguration für pvforecast."""
 
     # Standort
-    latitude: float = 51.83
-    longitude: float = 7.28
+    latitude: float = 51.48
+    longitude: float = 7.22
     timezone: str = "Europe/Berlin"
 
     # Anlage
     peak_kwp: float = 9.92
-    system_name: str = "Dülmen PV"
+    system_name: str = "Bochum PV"
 
     # Pfade
     db_path: Path = field(default_factory=_default_db_path)

@@ -39,10 +39,10 @@ UTC_TZ = ZoneInfo("UTC")
 class MOSMIXConfig:
     """Configuration for MOSMIX data source."""
 
-    station_id: str = "P0051"  # Default: Dülmen
+    station_id: str = "P0327"  # Default: Bochum
     use_mosmix_l: bool = True  # MOSMIX_L (115 params) vs MOSMIX_S (40 params)
-    lat: float = 51.83  # For sun elevation calculation
-    lon: float = 7.28
+    lat: float = 51.48  # For sun elevation calculation
+    lon: float = 7.22
     timeout: float = 30.0
     max_retries: int = 3
 
@@ -175,7 +175,7 @@ class MOSMIXSource(ForecastSource):
         config: MOSMIXConfig with station and connection settings
 
     Example:
-        >>> source = MOSMIXSource(MOSMIXConfig(station_id="P0051"))
+        >>> source = MOSMIXSource(MOSMIXConfig(station_id="P0327"))
         >>> forecast = source.fetch_forecast(hours=48)
         >>> print(forecast.head())
     """
@@ -272,7 +272,7 @@ class MOSMIXSource(ForecastSource):
         """
         try:
             with zipfile.ZipFile(io.BytesIO(kmz_data)) as zf:
-                # Find the KML file (usually named like MOSMIX_L_2026020709_P0051.kml)
+                # Find the KML file (usually named like MOSMIX_L_2026020709_P0327.kml)
                 kml_files = [n for n in zf.namelist() if n.endswith(".kml")]
                 if not kml_files:
                     raise ParseError("No KML file found in KMZ archive")

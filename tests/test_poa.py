@@ -20,14 +20,14 @@ requires_pvlib = pytest.mark.skipif(not HAS_PVLIB, reason="pvlib not installed")
 
 UTC_TZ = ZoneInfo("UTC")
 
-# Standard-Arrays (Dülmen)
+# Standard-Arrays (Bochum)
 ARRAYS = [
     PVArrayConfig(name="Wohnhaus SO", azimuth=140, tilt=43, kwp=6.08),
     PVArrayConfig(name="Wohnhaus NW", azimuth=320, tilt=43, kwp=2.56),
     PVArrayConfig(name="Gauben SW", azimuth=229, tilt=43, kwp=1.28),
 ]
 
-LAT, LON = 51.8472166, 7.2891113
+LAT, LON = 51.8472166, 7.2291113
 
 
 def _make_df(hours_utc: list[int], month: int = 6, day: int = 21,
@@ -129,7 +129,7 @@ class TestPVArrayConfig:
     def test_config_with_arrays(self):
         """Config with pv_system.arrays should parse correctly."""
         data = {
-            "location": {"latitude": 51.85, "longitude": 7.29},
+            "location": {"latitude": 51.48, "longitude": 7.29},
             "system": {"peak_kwp": 9.92, "name": "Test"},
             "pv_system": {
                 "arrays": [
@@ -146,7 +146,7 @@ class TestPVArrayConfig:
     def test_config_without_arrays(self):
         """Config without pv_system should have empty arrays."""
         data = {
-            "location": {"latitude": 51.85, "longitude": 7.29},
+            "location": {"latitude": 51.48, "longitude": 7.29},
             "system": {"peak_kwp": 9.92, "name": "Test"},
         }
         config = Config.from_dict(data)

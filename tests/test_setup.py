@@ -34,15 +34,15 @@ class TestPromptLocation:
     def test_successful_geocode(self, mock_geocode):
         """Test: Erfolgreiche Geocoding-Abfrage."""
         mock_geocode.return_value = GeoResult(
-            latitude=51.83,
-            longitude=7.28,
-            display_name="Dülmen, NRW, Deutschland",
-            city="Dülmen",
+            latitude=51.48,
+            longitude=7.22,
+            display_name="Bochum, NRW, Deutschland",
+            city="Bochum",
             state="NRW",
         )
 
         outputs = []
-        inputs = iter(["48249", "j"])  # PLZ eingeben, bestätigen
+        inputs = iter(["44787", "j"])  # PLZ eingeben, bestätigen
 
         wizard = SetupWizard(
             output_func=lambda x: outputs.append(x),
@@ -51,9 +51,9 @@ class TestPromptLocation:
 
         lat, lon, name = wizard._prompt_location()
 
-        assert lat == 51.83
-        assert lon == 7.28
-        assert "Dülmen" in name
+        assert lat == 51.48
+        assert lon == 7.22
+        assert "Bochum" in name
 
     @patch("pvforecast.setup.geocode")
     def test_geocode_not_confirmed_retry(self, mock_geocode):
@@ -66,15 +66,15 @@ class TestPromptLocation:
                 city="Falscher Ort",
             ),
             GeoResult(
-                latitude=51.83,
-                longitude=7.28,
-                display_name="Dülmen",
-                city="Dülmen",
+                latitude=51.48,
+                longitude=7.22,
+                display_name="Bochum",
+                city="Bochum",
                 state="NRW",
             ),
         ]
 
-        inputs = iter(["Berlin", "n", "Dülmen", "j"])  # Erst Berlin, ablehnen, dann Dülmen
+        inputs = iter(["Berlin", "n", "Bochum", "j"])  # Erst Berlin, ablehnen, dann Bochum
 
         wizard = SetupWizard(
             output_func=lambda x: None,
@@ -83,21 +83,21 @@ class TestPromptLocation:
 
         lat, lon, name = wizard._prompt_location()
 
-        assert lat == 51.83
-        assert lon == 7.28
+        assert lat == 51.48
+        assert lon == 7.22
         assert mock_geocode.call_count == 2
 
     @patch("pvforecast.setup.geocode")
     def test_empty_input_retry(self, mock_geocode):
         """Test: Leere Eingabe führt zu Wiederholung."""
         mock_geocode.return_value = GeoResult(
-            latitude=51.83,
-            longitude=7.28,
-            display_name="Dülmen",
-            city="Dülmen",
+            latitude=51.48,
+            longitude=7.22,
+            display_name="Bochum",
+            city="Bochum",
         )
 
-        inputs = iter(["", "48249", "j"])  # Erst leer, dann PLZ
+        inputs = iter(["", "44787", "j"])  # Erst leer, dann PLZ
 
         outputs = []
         wizard = SetupWizard(
@@ -116,14 +116,14 @@ class TestPromptLocation:
         mock_geocode.side_effect = [
             None,  # Keine Ergebnisse
             GeoResult(
-                latitude=51.83,
-                longitude=7.28,
-                display_name="Dülmen",
-                city="Dülmen",
+                latitude=51.48,
+                longitude=7.22,
+                display_name="Bochum",
+                city="Bochum",
             ),
         ]
 
-        inputs = iter(["xyz123", "Dülmen", "j"])
+        inputs = iter(["xyz123", "Bochum", "j"])
 
         outputs = []
         wizard = SetupWizard(
@@ -141,7 +141,7 @@ class TestPromptManualLocation:
 
     def test_valid_manual_input(self):
         """Test: Gültige manuelle Eingabe."""
-        inputs = iter(["51.83", "7.28", "Mein Ort"])
+        inputs = iter(["51.48", "7.22", "Mein Ort"])
 
         wizard = SetupWizard(
             output_func=lambda x: None,
@@ -150,13 +150,13 @@ class TestPromptManualLocation:
 
         lat, lon, name = wizard._prompt_manual_location()
 
-        assert lat == 51.83
-        assert lon == 7.28
+        assert lat == 51.48
+        assert lon == 7.22
         assert name == "Mein Ort"
 
     def test_empty_name_uses_default(self):
         """Test: Leerer Name verwendet Default."""
-        inputs = iter(["51.83", "7.28", ""])
+        inputs = iter(["51.48", "7.22", ""])
 
         wizard = SetupWizard(
             output_func=lambda x: None,
@@ -169,7 +169,7 @@ class TestPromptManualLocation:
 
     def test_invalid_latitude_retry(self):
         """Test: Ungültiger Breitengrad führt zu Wiederholung."""
-        inputs = iter(["abc", "51.83", "7.28", "Test"])
+        inputs = iter(["abc", "51.48", "7.22", "Test"])
 
         outputs = []
         wizard = SetupWizard(
@@ -183,7 +183,7 @@ class TestPromptManualLocation:
 
     def test_latitude_out_of_range_retry(self):
         """Test: Breitengrad außerhalb des Bereichs."""
-        inputs = iter(["95", "51.83", "7.28", "Test"])
+        inputs = iter(["95", "51.48", "7.22", "Test"])
 
         outputs = []
         wizard = SetupWizard(
@@ -208,7 +208,7 @@ class TestPromptSystem:
             input_func=lambda _: next(inputs),
         )
 
-        kwp, name = wizard._prompt_system("Dülmen")
+        kwp, name = wizard._prompt_system("Bochum")
 
         assert kwp == 9.92
         assert name == "Meine Anlage"
@@ -222,9 +222,9 @@ class TestPromptSystem:
             input_func=lambda _: next(inputs),
         )
 
-        kwp, name = wizard._prompt_system("Dülmen")
+        kwp, name = wizard._prompt_system("Bochum")
 
-        assert name == "Dülmen PV"
+        assert name == "Bochum PV"
 
     def test_invalid_kwp_retry(self):
         """Test: Ungültige kWp führt zu Wiederholung."""
@@ -397,10 +397,10 @@ class TestRunInteractive:
         mock_model_path.return_value = tmp_path / "nonexistent.pkl"
 
         mock_geocode.return_value = GeoResult(
-            latitude=51.83,
-            longitude=7.28,
-            display_name="Dülmen, NRW",
-            city="Dülmen",
+            latitude=51.48,
+            longitude=7.22,
+            display_name="Bochum, NRW",
+            city="Bochum",
             state="NRW",
         )
 
@@ -408,7 +408,7 @@ class TestRunInteractive:
         with patch.dict("sys.modules", {"xgboost": MagicMock()}):
             inputs = iter(
                 [
-                    "48249",  # 1. PLZ
+                    "44787",  # 1. PLZ
                     "j",  # Bestätigen
                     "9.92",  # 2. kWp
                     "",  # Name (default)
@@ -426,10 +426,10 @@ class TestRunInteractive:
 
             result = wizard.run_interactive()
 
-        assert result.config.latitude == 51.83
-        assert result.config.longitude == 7.28
+        assert result.config.latitude == 51.48
+        assert result.config.longitude == 7.22
         assert result.config.peak_kwp == 9.92
-        assert "Dülmen" in result.config.system_name
+        assert "Bochum" in result.config.system_name
         assert result.config_path == config_file
         assert result.model_type == "xgb"
 
@@ -441,14 +441,14 @@ class TestSetupResult:
         """Test: SetupResult kann erstellt werden."""
         from pvforecast.config import Config
 
-        config = Config(latitude=51.83, longitude=7.28, peak_kwp=9.92)
+        config = Config(latitude=51.48, longitude=7.22, peak_kwp=9.92)
         result = SetupResult(
             config=config,
             config_path=tmp_path / "config.yaml",
             xgboost_installed=True,
         )
 
-        assert result.config.latitude == 51.83
+        assert result.config.latitude == 51.48
         assert result.xgboost_installed is True
 
 
@@ -576,7 +576,7 @@ class TestTrainingAfterImport:
         with patch("pvforecast.db.Database"):
             with patch("pvforecast.data_loader.import_csv_files", return_value=100):
                 from pvforecast.config import Config
-                config = Config(latitude=51.83, longitude=7.28, peak_kwp=9.92)
+                config = Config(latitude=51.48, longitude=7.22, peak_kwp=9.92)
 
                 wizard._prompt_import(config)
 
@@ -599,7 +599,7 @@ class TestTrainingAfterImport:
         with patch("pvforecast.db.Database"):
             with patch("pvforecast.data_loader.import_csv_files", return_value=100):
                 from pvforecast.config import Config
-                config = Config(latitude=51.83, longitude=7.28, peak_kwp=9.92)
+                config = Config(latitude=51.48, longitude=7.22, peak_kwp=9.92)
 
                 wizard._prompt_import(config)
 
@@ -631,7 +631,7 @@ class TestExecuteTraining:
                             mock_train.return_value = (MagicMock(), {"mape": 0.25})
 
                             from pvforecast.config import Config
-                            config = Config(latitude=51.83, longitude=7.28, peak_kwp=9.92)
+                            config = Config(latitude=51.48, longitude=7.22, peak_kwp=9.92)
 
                             result = wizard._execute_training("xgb", config)
 
@@ -651,7 +651,7 @@ class TestExecuteTraining:
                 mock_path.return_value = tmp_path / "model.pkl"
 
                 from pvforecast.config import Config
-                config = Config(latitude=51.83, longitude=7.28, peak_kwp=9.92)
+                config = Config(latitude=51.48, longitude=7.22, peak_kwp=9.92)
 
                 result = wizard._execute_training("xgb", config)
 
@@ -675,7 +675,7 @@ class TestShowTestForecast:
             mock_path.return_value = tmp_path / "nonexistent.pkl"
 
             from pvforecast.config import Config
-            config = Config(latitude=51.83, longitude=7.28, peak_kwp=9.92)
+            config = Config(latitude=51.48, longitude=7.22, peak_kwp=9.92)
 
             wizard._show_test_forecast(config)
 
@@ -698,7 +698,7 @@ class TestShowTestForecast:
             # load_model wirft Fehler
             with patch("pvforecast.model.load_model", side_effect=Exception("Load error")):
                 from pvforecast.config import Config
-                config = Config(latitude=51.83, longitude=7.28, peak_kwp=9.92)
+                config = Config(latitude=51.48, longitude=7.22, peak_kwp=9.92)
 
                 # Sollte nicht abstürzen
                 wizard._show_test_forecast(config)
@@ -734,8 +734,8 @@ class TestHOSTRADALoadInSetup:
         )
 
         # Setze Koordinaten (normalerweise aus _prompt_location)
-        wizard._latitude = 51.83
-        wizard._longitude = 7.28
+        wizard._latitude = 51.48
+        wizard._longitude = 7.22
 
         result = wizard._prompt_hostrada_path()
 
@@ -797,8 +797,8 @@ class TestWeatherCheckBeforeTraining:
 
                 from pvforecast.config import Config
                 config = Config(
-                    latitude=51.83,
-                    longitude=7.28,
+                    latitude=51.48,
+                    longitude=7.22,
                     peak_kwp=9.92,
                     db_path=tmp_path / "test.db",
                 )
@@ -839,8 +839,8 @@ class TestWeatherCheckBeforeTraining:
                     with patch("pvforecast.model.save_model"):
                         from pvforecast.config import Config
                         config = Config(
-                            latitude=51.83,
-                            longitude=7.28,
+                            latitude=51.48,
+                            longitude=7.22,
                             peak_kwp=9.92,
                             db_path=tmp_path / "test.db",
                         )
@@ -869,8 +869,8 @@ class TestFetchWeatherForTraining:
 
         from pvforecast.config import Config
         config = Config(
-            latitude=51.83,
-            longitude=7.28,
+            latitude=51.48,
+            longitude=7.22,
             peak_kwp=9.92,
             db_path=tmp_path / "test.db",
         )
@@ -896,8 +896,8 @@ class TestFetchWeatherForTraining:
 
             from pvforecast.config import Config
             config = Config(
-                latitude=51.83,
-                longitude=7.28,
+                latitude=51.48,
+                longitude=7.22,
                 peak_kwp=9.92,
                 db_path=tmp_path / "test.db",
             )
@@ -1013,8 +1013,8 @@ class TestXGBoostCheckBeforeTraining:
                         from pvforecast.config import Config
 
                         config = Config(
-                            latitude=51.83,
-                            longitude=7.28,
+                            latitude=51.48,
+                            longitude=7.22,
                             peak_kwp=9.92,
                             db_path=tmp_path / "test.db",
                         )

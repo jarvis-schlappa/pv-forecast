@@ -24,8 +24,8 @@ Nach dem Download startet automatisch der **Setup-Wizard**:
 ══════════════════════════════════════
 
 1️⃣  Standort
-   Postleitzahl oder Ort: 48249
-   → Dülmen, NRW (51.85°N, 7.26°E) ✓
+   Postleitzahl oder Ort: 44787
+   → Bochum, NRW (51.48°N, 7.22°E) ✓
 
 2️⃣  Anlage
    Peakleistung in kWp: 9.92 ✓
@@ -97,7 +97,7 @@ pvforecast predict    # Prognose für morgen + übermorgen
 ## Beispiel-Output
 
 ```text
-PV-Ertragsprognose für Dülmen PV (9.92 kWp)
+PV-Ertragsprognose für Bochum PV (9.92 kWp)
 Erstellt: 04.02.2026 21:00
 
 ════════════════════════════════════════════════════════════

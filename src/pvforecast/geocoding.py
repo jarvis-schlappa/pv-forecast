@@ -118,7 +118,7 @@ def geocode(
     """Sucht Koordinaten für eine PLZ oder einen Ortsnamen.
 
     Args:
-        query: Suchbegriff (PLZ, Ortsname, oder Kombination wie "48249 Dülmen")
+        query: Suchbegriff (PLZ, Ortsname, oder Kombination wie "44787 Bochum")
         country_codes: Komma-getrennte ISO 3166-1 alpha-2 Ländercodes zur Einschränkung.
                       Default: "de,at,ch" (Deutschland, Österreich, Schweiz).
                       None für weltweite Suche.
@@ -222,7 +222,7 @@ def geocode_postal_code(
     Spezialisierte Funktion für PLZ-Suche mit besserem Matching.
 
     Args:
-        postal_code: Postleitzahl (z.B. "48249")
+        postal_code: Postleitzahl (z.B. "44787")
         country_code: ISO 3166-1 alpha-2 Ländercode (default: "de")
         timeout: Timeout in Sekunden
 

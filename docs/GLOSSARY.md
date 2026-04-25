@@ -367,7 +367,7 @@ Deutschland = UTC+1 (Winter) bzw. UTC+2 (Sommer).
 ### Geocoding
 **Ortssuche** – Umwandlung von PLZ oder Ortsname in Koordinaten (Lat/Lon).
 
-*Beispiel:* "48249" → Dülmen, 51.85°N, 7.26°E
+*Beispiel:* "44787" → Bochum, 51.48°N, 7.22°E
 
 ---
 

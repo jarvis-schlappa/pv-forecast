@@ -239,7 +239,7 @@ class SetupWizard:
 
                 if result is None:
                     self.output(f"   ❌ Keine Ergebnisse für '{query}'")
-                    self.output("   Versuche eine andere Eingabe (z.B. '48249' oder 'Dülmen')")
+                    self.output("   Versuche eine andere Eingabe (z.B. '44787' oder 'Bochum')")
                     self.output("")
                     continue
 
@@ -281,14 +281,14 @@ class SetupWizard:
 
         while True:
             try:
-                lat_str = self.input("   Breitengrad (z.B. 51.83): ").strip()
+                lat_str = self.input("   Breitengrad (z.B. 51.48): ").strip()
                 latitude = float(lat_str)
 
                 if not -90 <= latitude <= 90:
                     self.output("   ⚠️  Breitengrad muss zwischen -90 und 90 liegen.")
                     continue
 
-                lon_str = self.input("   Längengrad (z.B. 7.28): ").strip()
+                lon_str = self.input("   Längengrad (z.B. 7.22): ").strip()
                 longitude = float(lon_str)
 
                 if not -180 <= longitude <= 180:

@@ -22,54 +22,54 @@ class TestGeoResult:
     def test_creation(self):
         """Test: GeoResult kann erstellt werden."""
         result = GeoResult(
-            latitude=51.83,
-            longitude=7.28,
-            display_name="Dülmen, Coesfeld, NRW, Deutschland",
-            city="Dülmen",
+            latitude=51.48,
+            longitude=7.22,
+            display_name="Bochum, NRW, Deutschland",
+            city="Bochum",
             state="Nordrhein-Westfalen",
             country="Deutschland",
             country_code="DE",
         )
-        assert result.latitude == 51.83
-        assert result.longitude == 7.28
-        assert result.city == "Dülmen"
+        assert result.latitude == 51.48
+        assert result.longitude == 7.22
+        assert result.city == "Bochum"
         assert result.country_code == "DE"
 
     def test_short_name_with_city_and_state(self):
         """Test: short_name mit Stadt und Bundesland."""
         result = GeoResult(
-            latitude=51.83,
-            longitude=7.28,
-            display_name="Dülmen, Coesfeld, NRW, Deutschland",
-            city="Dülmen",
+            latitude=51.48,
+            longitude=7.22,
+            display_name="Bochum, NRW, Deutschland",
+            city="Bochum",
             state="NRW",
         )
-        assert result.short_name() == "Dülmen, NRW"
+        assert result.short_name() == "Bochum, NRW"
 
     def test_short_name_city_only(self):
         """Test: short_name nur mit Stadt."""
         result = GeoResult(
-            latitude=51.83,
-            longitude=7.28,
-            display_name="Dülmen, Deutschland",
-            city="Dülmen",
+            latitude=51.48,
+            longitude=7.22,
+            display_name="Bochum, Deutschland",
+            city="Bochum",
         )
-        assert result.short_name() == "Dülmen"
+        assert result.short_name() == "Bochum"
 
     def test_short_name_fallback_to_display_name(self):
         """Test: short_name Fallback auf display_name."""
         result = GeoResult(
-            latitude=51.83,
-            longitude=7.28,
-            display_name="Dülmen, Coesfeld, NRW, Deutschland",
+            latitude=51.48,
+            longitude=7.22,
+            display_name="Bochum, NRW, Deutschland",
         )
-        assert result.short_name() == "Dülmen, Coesfeld"
+        assert result.short_name() == "Bochum, Coesfeld"
 
     def test_short_name_empty(self):
         """Test: short_name bei leeren Feldern."""
         result = GeoResult(
-            latitude=51.83,
-            longitude=7.28,
+            latitude=51.48,
+            longitude=7.22,
             display_name="",
         )
         assert result.short_name() == ""
@@ -81,13 +81,13 @@ class TestParseAddress:
     def test_full_address(self):
         """Test: Vollständige Adresse parsen."""
         address = {
-            "city": "Dülmen",
+            "city": "Bochum",
             "state": "Nordrhein-Westfalen",
             "country": "Deutschland",
             "country_code": "de",
         }
         city, state, country, cc = _parse_address(address)
-        assert city == "Dülmen"
+        assert city == "Bochum"
         assert state == "Nordrhein-Westfalen"
         assert country == "Deutschland"
         assert cc == "DE"
@@ -129,11 +129,11 @@ class TestGeocode:
         mock_response = MagicMock()
         mock_response.json.return_value = [
             {
-                "lat": "51.8333",
-                "lon": "7.2833",
-                "display_name": "Dülmen, Coesfeld, NRW, Deutschland",
+                "lat": "51.4833",
+                "lon": "7.2233",
+                "display_name": "Bochum, NRW, Deutschland",
                 "address": {
-                    "city": "Dülmen",
+                    "city": "Bochum",
                     "state": "Nordrhein-Westfalen",
                     "country": "Deutschland",
                     "country_code": "de",
@@ -148,12 +148,12 @@ class TestGeocode:
         mock_client.__exit__ = MagicMock(return_value=False)
         mock_client_class.return_value = mock_client
 
-        result = geocode("48249 Dülmen")
+        result = geocode("44787 Bochum")
 
         assert result is not None
-        assert result.latitude == 51.8333
-        assert result.longitude == 7.2833
-        assert result.city == "Dülmen"
+        assert result.latitude == 51.4833
+        assert result.longitude == 7.2233
+        assert result.city == "Bochum"
         assert result.country_code == "DE"
 
     @patch("pvforecast.geocoding.httpx.Client")
@@ -194,7 +194,7 @@ class TestGeocode:
         mock_client_class.return_value = mock_client
 
         with pytest.raises(GeocodingError) as exc_info:
-            geocode("Dülmen")
+            geocode("Bochum")
 
         assert "fehlgeschlagen nach 3 Versuchen" in str(exc_info.value)
         assert mock_client.get.call_count == 3  # 3 Retries
@@ -216,7 +216,7 @@ class TestGeocode:
         mock_client_class.return_value = mock_client
 
         with pytest.raises(GeocodingError) as exc_info:
-            geocode("Dülmen")
+            geocode("Bochum")
 
         assert "HTTP-Fehler 500" in str(exc_info.value)
 
@@ -238,7 +238,7 @@ class TestGeocode:
         mock_client_class.return_value = mock_client
 
         with pytest.raises(GeocodingError) as exc_info:
-            geocode("Dülmen")
+            geocode("Bochum")
 
         assert "fehlgeschlagen nach 3 Versuchen" in str(exc_info.value)
         assert mock_client.get.call_count == 3
@@ -294,12 +294,12 @@ class TestGeocodePostalCode:
         mock_response = MagicMock()
         mock_response.json.return_value = [
             {
-                "lat": "51.8333",
-                "lon": "7.2833",
-                "display_name": "48249, Dülmen, NRW, Deutschland",
+                "lat": "51.4833",
+                "lon": "7.2233",
+                "display_name": "44787, Bochum, NRW, Deutschland",
                 "address": {
-                    "city": "Dülmen",
-                    "postcode": "48249",
+                    "city": "Bochum",
+                    "postcode": "44787",
                     "country_code": "de",
                 },
             }
@@ -312,10 +312,10 @@ class TestGeocodePostalCode:
         mock_client.__exit__ = MagicMock(return_value=False)
         mock_client_class.return_value = mock_client
 
-        result = geocode_postal_code("48249")
+        result = geocode_postal_code("44787")
 
         assert result is not None
-        assert result.city == "Dülmen"
+        assert result.city == "Bochum"
 
     @patch("pvforecast.geocoding.geocode")
     @patch("pvforecast.geocoding.httpx.Client")
@@ -333,10 +333,10 @@ class TestGeocodePostalCode:
         mock_client_class.return_value = mock_client
 
         mock_geocode.return_value = GeoResult(
-            latitude=51.83, longitude=7.28, display_name="Fallback"
+            latitude=51.48, longitude=7.22, display_name="Fallback"
         )
 
-        result = geocode_postal_code("48249")
+        result = geocode_postal_code("44787")
 
         assert result is not None
         mock_geocode.assert_called_once()
@@ -365,7 +365,7 @@ class TestGeocodePostalCode:
 
             # PLZ sollte normalisiert sein
             call_args = mock_client.get.call_args
-            assert call_args[1]["params"]["postalcode"] == "48249"
+            assert call_args[1]["params"]["postalcode"] == "44787"
 
     @patch("pvforecast.geocoding.httpx.Client")
     @patch("pvforecast.geocoding._enforce_rate_limit")
@@ -378,7 +378,7 @@ class TestGeocodePostalCode:
         mock_client_class.return_value = mock_client
 
         with pytest.raises(GeocodingError) as exc_info:
-            geocode_postal_code("48249")
+            geocode_postal_code("44787")
 
         assert "Netzwerkfehler" in str(exc_info.value)
 
@@ -427,9 +427,9 @@ class TestIntegration:
     """Integration-Tests mit echtem Nominatim API (optional)."""
 
     @pytest.mark.skip(reason="Integration-Test - nur manuell ausführen")
-    def test_real_geocode_duelmen(self):
-        """Test: Echte Geocoding-Abfrage für Dülmen."""
-        result = geocode("48249 Dülmen")
+    def test_real_geocode_bochum(self):
+        """Test: Echte Geocoding-Abfrage für Bochum."""
+        result = geocode("44787 Bochum")
 
         assert result is not None
         assert 51.8 < result.latitude < 51.9
